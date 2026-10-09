@@ -95,7 +95,7 @@ Chatterbox has no built-in voice, so dispatch-voice ships one: `stock-host`, "St
 ## Tests
 
 ```sh
-uv run pytest -q          # 55 tests; the 3 in test_models.py use the real models and skip without them
+uv run pytest -q          # 56 tests; the 3 in test_models.py use the real models and skip without them
 ```
 
 Before committing, install the privacy hooks once (`sh scripts/install-hooks.sh`). They run `scripts/scrub_check.py` on every commit, commit message and push; personal identifiers go in the git-ignored `scripts/scrub-rules.local.txt`.
