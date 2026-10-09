@@ -310,7 +310,6 @@ dependencies = [
     { name = "pyloudnorm" },
     { name = "python-multipart" },
     { name = "soundfile" },
-    { name = "soxr" },
     { name = "tokenizers" },
 ]
 
@@ -347,7 +346,6 @@ requires-dist = [
     { name = "resemble-perth", marker = "extra == 'watermark'", specifier = ">=1.0.1" },
     { name = "setuptools", marker = "extra == 'watermark'", specifier = "<81" },
     { name = "soundfile", specifier = ">=0.12" },
-    { name = "soxr", specifier = ">=0.5" },
     { name = "tokenizers", specifier = ">=0.20" },
     { name = "torch", marker = "extra == 'watermark'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "extra == 'watermark'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cpu" },

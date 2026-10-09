@@ -8,8 +8,8 @@ models/
 *.npz
 # personal-identifier rules for the scrub check (never commit)
 scripts/scrub-rules.local.txt
-# audio and model artefacts: only the synthetic test fixture is tracked
+# audio and model artefacts: only the synthetic stock reference clip is tracked
 *.wav
-!tests/fixtures/*.wav
+!src/dispatch_voice/stock/*.wav
 *.onnx
 *.onnx_data

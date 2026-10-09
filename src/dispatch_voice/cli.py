@@ -22,7 +22,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--models", help="model directory (default ~/.local/share/dispatch-voice/models)")
     p.add_argument("--dtype", default="q4", help="ONNX precision: q4 (default, fastest on CPU), q8, fp16, fp32")
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("fetch-models", help="download the Chatterbox-Turbo ONNX files (~720 MB at q4)")
+    fm = sub.add_parser("fetch-models", help="download the Chatterbox-Turbo ONNX files (~720 MB at q4) "
+                                             "and build the stock voice")
+    fm.add_argument("--no-stock", action="store_true",
+                    help="skip building the stock voice tensors (built on first use instead)")
     s = sub.add_parser("serve", help="run the Voices panel on loopback for testing")
     s.add_argument("--data", help="voice profile dir (default ~/.local/share/local-chat/voices)")
     s.add_argument("--port", type=int, default=8769)
@@ -36,7 +39,13 @@ def main(argv: list[str] | None = None) -> int:
     from .engine import ChatterboxOnnx, fetch_models
     models = Path(a.models) if a.models else None
     if a.cmd == "fetch-models":
-        print(fetch_models(models, a.dtype))
+        d = fetch_models(models, a.dtype)
+        print(d)
+        if not a.no_stock:
+            from .stock import build_tensors
+            t = time.perf_counter()
+            path = build_tensors(ChatterboxOnnx(d, a.dtype, watermark=False), d)
+            print(f"stock voice: {path} ({time.perf_counter() - t:.1f}s)")
         return 0
 
     from .profiles import ProfileStore

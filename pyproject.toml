@@ -10,7 +10,6 @@ dependencies = [
     "tokenizers>=0.20",
     "huggingface_hub>=0.25",
     "soundfile>=0.12",
-    "soxr>=0.5",
     "pyloudnorm>=0.1.1",
     "fastapi>=0.115.0",
     "python-multipart>=0.0.9",

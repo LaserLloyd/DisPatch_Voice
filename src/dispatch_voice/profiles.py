@@ -195,7 +195,12 @@ class ProfileStore:
         voice = self.voice(pid)
         for i, line in enumerate(FILLERS):
             wav = self.engine.synthesize(line, voice, seed=i)   # reproducible re-renders
-            sf.write(d / "fillers" / f"{i}.wav", wav, audio.SAMPLE_RATE, subtype="PCM_16")
+            # tmp + rename: DisPatch may read the fillers while this runs, and
+            # a half-written WAV played as a clipped acknowledgement.
+            out = d / "fillers" / f"{i}.wav"
+            tmp = out.with_name(f".{i}.wav.tmp")
+            sf.write(tmp, wav, audio.SAMPLE_RATE, subtype="PCM_16", format="WAV")
+            os.replace(tmp, out)
         with self._lock:
             meta = json.loads((d / "profile.json").read_text())
             meta["fillers"] = "ready"

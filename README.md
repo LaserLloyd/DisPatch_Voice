@@ -24,7 +24,7 @@ Quality check (2026-10-09): 20 renders across 10 lines, transcribed back with Pa
 ```sh
 uv sync                                  # core: onnxruntime, no torch
 uv sync --extra watermark                # + Perth watermark (CPU torch only, from the pytorch-cpu index)
-uv run dispatch-voice fetch-models       # ~690 MB into ~/.local/share/dispatch-voice/models
+uv run dispatch-voice fetch-models       # ~690 MB into ~/.local/share/dispatch-voice/models, then builds the stock voice
 ```
 
 Models are pinned to a Hugging Face commit (`MODEL_REVISION` in `engine.py`), so a re-download can't change the voice. They live in a plain directory, not the HF cache: onnxruntime refuses external-data files reached through the cache's symlinks.
@@ -59,6 +59,10 @@ ack = speak.filler(voice_store)     # pre-rendered "Mm-hmm." / "Right." in the s
 
 `build_router` refuses to build without an auth dependency. Write routes also refuse a browser `Origin` that doesn't match `Host`.
 
+## Stock voice
+
+Chatterbox has no built-in voice, so dispatch-voice ships one: `stock-host`, "Stock voice (synthetic)". It is built from `src/dispatch_voice/stock/synthetic-host.wav`, 12.6 s of fully synthetic speech (Kokoro-82M output, Apache-2.0 weights), so it is not a real person's voice. `fetch-models` builds its tensors once into `<models>/stock/stock-host.npz` (`--no-stock` skips this). `dispatch_voice.stock.ensure_stock(store)` then turns them into an ordinary profile; with `build=True` it builds the tensors itself when the cache is missing. `render_extras` adds the audition line and the fillers. A host app uses the stock profile when it has no other voice. It never becomes the default on its own.
+
 ## Voice profiles
 
 `<data>/voices/<id>/`, directory mode 0700:
@@ -84,7 +88,7 @@ ack = speak.filler(voice_store)     # pre-rendered "Mm-hmm." / "Right." in the s
 ## Tests
 
 ```sh
-uv run pytest -q          # 49 tests; the 3 in test_models.py use the real models and skip without them
+uv run pytest -q          # 55 tests; the 3 in test_models.py use the real models and skip without them
 ```
 
 Before committing, install the privacy hooks once (`sh scripts/install-hooks.sh`). They run `scripts/scrub_check.py` on every commit, commit message and push; personal identifiers go in the git-ignored `scripts/scrub-rules.local.txt`.

@@ -2,7 +2,7 @@
 
 dispatch-voice itself is MIT-licensed (see `LICENSE`). It depends on, downloads,
 or ships the following third-party material. Nothing below is bundled in this
-repository except the test fixture noted under "Test fixture".
+repository except the stock-voice reference clip noted under "Stock voice clip".
 
 ## Speech model (downloaded at runtime, not redistributed)
 
@@ -24,13 +24,18 @@ repository except the test fixture noted under "Test fixture".
 - Only installed with `uv sync --extra watermark`; it in turn pulls PyTorch
   (BSD-3-Clause), torchaudio (BSD-2-Clause) and librosa (ISC).
 
-## Test fixture (shipped in this repository)
+## Stock voice clip (shipped in this repository)
 
-**`tests/fixtures/synthetic-host.wav`** — 12.6 s of fully synthetic speech
-generated with **Kokoro-82M** (voice `am_michael`) by hexgrad.
+**`src/dispatch_voice/stock/synthetic-host.wav`** — 12.6 s of fully synthetic
+speech generated with **Kokoro-82M** (voice `am_michael`) by hexgrad. It is
+the reference clip of the stock voice (`dispatch_voice.stock`) and the tests'
+fixture.
 - Source: https://huggingface.co/hexgrad/Kokoro-82M
-- Licence: Apache-2.0
-- It is not a recording of a real person.
+- Licence of the weights: Apache-2.0
+- It is not a recording of a real person. The audio is model output, not
+  Kokoro's code, so the GPL-3.0 phonemizer used to make it does not reach it.
+  Generating it again is not part of this package: nothing here imports
+  Kokoro or its phonemizer.
 
 ## Python dependencies (installed by the package manager, not redistributed)
 
@@ -41,7 +46,6 @@ generated with **Kokoro-82M** (voice `am_michael`) by hexgrad.
 | tokenizers | Apache-2.0 |
 | huggingface_hub | Apache-2.0 |
 | soundfile | BSD-3-Clause |
-| soxr (python-soxr) | LGPL-2.1-or-later (dynamically linked; unmodified) |
 | pyloudnorm | MIT |
 | fastapi | MIT |
 | python-multipart | Apache-2.0 |

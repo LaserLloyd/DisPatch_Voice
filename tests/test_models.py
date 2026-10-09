@@ -7,7 +7,7 @@ import pytest
 from dispatch_voice import audio
 from dispatch_voice.engine import COMPONENTS, _filename, default_model_dir
 
-FIXTURE = Path(__file__).parent / "fixtures" / "synthetic-host.wav"
+FIXTURE = Path(__file__).parents[1] / "src" / "dispatch_voice" / "stock" / "synthetic-host.wav"
 have_models = all((default_model_dir() / "onnx" / _filename(c, "q4")).exists() for c in COMPONENTS)
 pytestmark = [pytest.mark.models, pytest.mark.skipif(not have_models, reason="run `dispatch-voice fetch-models`")]
 
