@@ -22,12 +22,19 @@ Quality check (2026-10-09): 20 renders across 10 lines, transcribed back with Pa
 ## Install
 
 ```sh
+git clone https://github.com/LaserLloyd/DisPatch_Voice.git dispatch-voice && cd dispatch-voice
 uv sync                                  # core: onnxruntime, no torch
 uv sync --extra watermark                # + Perth watermark (CPU torch only, from the pytorch-cpu index)
 uv run dispatch-voice fetch-models       # ~690 MB into ~/.local/share/dispatch-voice/models, then builds the stock voice
 ```
 
 Models are pinned to a Hugging Face commit (`MODEL_REVISION` in `engine.py`), so a re-download can't change the voice. They live in a plain directory, not the HF cache: onnxruntime refuses external-data files reached through the cache's symlinks.
+
+For DisPatch Chat, install it into DisPatch's environment instead (see DisPatch's `docs/voice-drive-mode.md`):
+
+```sh
+uv run --group voice --with "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice" dispatch-voice fetch-models
+```
 
 ## Use
 
