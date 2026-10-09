@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# never commit voice data or models
+voices/
+models/
+*.npz
+# personal-identifier rules for the scrub check (never commit)
+scripts/scrub-rules.local.txt
+# audio and model artefacts: only the synthetic test fixture is tracked
+*.wav
+!tests/fixtures/*.wav
+*.onnx
+*.onnx_data

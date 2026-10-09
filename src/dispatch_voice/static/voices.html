@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voices</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5d6673; --line: #dde1e6;
+  --accent: #2f6fdb; --accent-text: #ffffff; --ok: #1f8a4c; --warn: #b26a00; --fail: #c62f2f;
+  --chip-ok: #e3f4ea; --chip-warn: #fdf1dc; --chip-fail: #fbe3e3; --radius: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111418; --panel: #1a1e24; --text: #e6e9ee; --muted: #9aa3ae; --line: #2b313a;
+    --accent: #5b93f0; --accent-text: #0b0e12; --ok: #4cc27f; --warn: #e2a33c; --fail: #f06a6a;
+    --chip-ok: #15301f; --chip-warn: #33270f; --chip-fail: #3a1616;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111418; --panel: #1a1e24; --text: #e6e9ee; --muted: #9aa3ae; --line: #2b313a;
+  --accent: #5b93f0; --accent-text: #0b0e12; --ok: #4cc27f; --warn: #e2a33c; --fail: #f06a6a;
+  --chip-ok: #15301f; --chip-warn: #33270f; --chip-fail: #3a1616;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 20px 16px 60px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 0 0 12px; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+button, .btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+button.danger { color: var(--fail); }
+input[type=text], textarea { font: inherit; width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.row input[type=text] { flex: 1; width: auto; min-width: 200px; }
+textarea { min-height: 60px; resize: vertical; }
+label { display: block; margin: 10px 0 4px; font-weight: 600; }
+.drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 24px; text-align: center; color: var(--muted); }
+.drop.over { border-color: var(--accent); color: var(--accent); }
+.script { background: var(--bg); border-radius: 8px; padding: 12px; font-size: 16px; line-height: 1.6; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.chip { border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+.chip.ok { background: var(--chip-ok); color: var(--ok); }
+.chip.warn { background: var(--chip-warn); color: var(--warn); }
+.chip.fail { background: var(--chip-fail); color: var(--fail); }
+.consent label { font-weight: 400; display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.muted { color: var(--muted); font-size: 13px; }
+.card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
+.card h3 { margin: 0; font-size: 16px; }
+.badge { font-size: 12px; border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
+.meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; width: 120px; display: inline-block; vertical-align: middle; }
+.meter > i { display: block; height: 100%; background: var(--ok); }
+.status { min-height: 1.5em; margin-top: 8px; }
+.err { color: var(--fail); }
+audio { width: 100%; margin-top: 6px; }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--fail); display: inline-block; margin-right: 6px; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Voices</h1>
+  <p class="sub">Clone a voice from a short clip. It's built and kept on this computer, and used for spoken replies in Drive mode.</p>
+
+  <section class="panel" id="add">
+    <h2>Add a voice</h2>
+    <div class="tabs" role="tablist">
+      <button type="button" id="tab-upload" aria-pressed="true">Upload a clip</button>
+      <button type="button" id="tab-record" aria-pressed="false">Record now</button>
+    </div>
+
+    <div id="pane-upload">
+      <div class="drop" id="drop">Drop an audio file here, or <button type="button" id="pick">choose a file</button>
+        <input type="file" id="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.opus,.webm,.flac" hidden>
+        <div class="muted">10–20 seconds of one person talking naturally. Quiet room, no music.</div>
+      </div>
+    </div>
+
+    <div id="pane-record" hidden>
+      <p class="muted">Read this aloud in the voice you want, relaxed, like you're talking to a friend. About 20 seconds.</p>
+      <div class="script">"Hey, welcome back to the show. So, I've been thinking about this all week, and honestly? It's one of those things that sounds simple until you actually look at it. Here's the part that got me. Okay, are you ready for this?"</div>
+      <div class="row" style="margin-top:10px">
+        <button type="button" id="rec-start" class="primary">Start recording</button>
+        <button type="button" id="rec-stop" disabled>Stop</button>
+        <span id="rec-state" class="muted"></span>
+      </div>
+    </div>
+
+    <div id="review" hidden>
+      <audio id="clip-audio" controls></audio>
+      <div class="chips" id="chips"></div>
+      <label for="name">Name</label>
+      <input type="text" id="name" maxlength="60" placeholder="e.g. Morning host">
+      <label>Whose voice is this?</label>
+      <div class="consent" id="consent"></div>
+      <label for="note">Note (optional)</label>
+      <input type="text" id="note" maxlength="300" placeholder="e.g. Recorded by me on 2026-10-09">
+      <div class="row" style="margin-top:12px">
+        <button type="button" id="build" class="primary" disabled>Build voice</button>
+        <button type="button" id="discard">Discard</button>
+      </div>
+    </div>
+    <div class="status" id="add-status" role="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Your voices</h2>
+    <div id="list"><p class="muted">Loading…</p></div>
+    <p class="muted" id="engine-line"></p>
+  </section>
+
+  <template id="card-tpl">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h3><span class="v-name"></span><span class="badge v-default" hidden>Drive-mode voice</span></h3>
+        <span class="muted v-match"></span>
+      </div>
+      <div class="muted v-consent"></div>
+      <div class="chips v-chips"></div>
+      <div class="row">
+        <button type="button" class="v-play-ref">Original clip</button>
+        <button type="button" class="v-play-aud">Test line</button>
+        <button type="button" class="v-make-default">Use for Drive mode</button>
+        <button type="button" class="v-rename">Rename</button>
+        <button type="button" class="v-delete danger">Delete</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" class="v-say-text" maxlength="400" placeholder="Type a line to hear it in this voice. Tags like [chuckle] or [laugh] work.">
+        <button type="button" class="v-say">Say it</button>
+      </div>
+      <audio class="v-audio" controls hidden></audio>
+      <div class="muted v-fillers"></div>
+    </div>
+  </template>
+</main>
+<script src="ui/voices.js"></script>
+</body>
+</html>
