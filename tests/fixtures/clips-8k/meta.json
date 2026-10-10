@@ -1,0 +1,49 @@
+{
+ "$about": "Band-limited copies: 8 kHz capture (low-pass 3.6 kHz, decimate) then linear upsampling to 16 kHz, as the mic worklet does for an SCO context. Built by make_fixtures.py derive.",
+ "clips": {
+  "backchannel": {
+   "from": "clips/backchannel.wav",
+   "seconds": 0.87
+  },
+  "driver1b": {
+   "from": "clips/driver1b.wav",
+   "seconds": 2.4
+  },
+  "driver2": {
+   "from": "clips/driver2.wav",
+   "seconds": 3.72
+  },
+  "interrupt": {
+   "from": "clips/interrupt.wav",
+   "seconds": 2.28
+  },
+  "long": {
+   "from": "clips/long.wav",
+   "seconds": 15.47
+  },
+  "medium": {
+   "from": "clips/medium.wav",
+   "seconds": 7.34
+  },
+  "pause": {
+   "from": "clips/pause.wav",
+   "seconds": 5.61
+  },
+  "pause_a": {
+   "from": "clips/pause_a.wav",
+   "seconds": 2.07
+  },
+  "pause_b": {
+   "from": "clips/pause_b.wav",
+   "seconds": 2.84
+  },
+  "short": {
+   "from": "clips/short.wav",
+   "seconds": 2.2
+  },
+  "addendum": {
+   "from": "addendum.wav",
+   "seconds": 5.52
+  }
+ }
+}

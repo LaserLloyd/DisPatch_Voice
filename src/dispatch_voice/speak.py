@@ -1,4 +1,4 @@
-"""The interface Drive mode calls: speak(text_chunks, profile_id) -> PCM frames.
+"""The interface voice chat calls: speak(text_chunks, profile_id) -> PCM frames.
 
 Frames are 16-bit little-endian mono PCM at 24 kHz, FRAME_MS long, so the
 caller can push them straight down a WebSocket and stop between any two of them
@@ -49,7 +49,7 @@ def speak(store: ProfileStore, text_chunks: Iterable[str], profile_id: str | Non
 def filler(store: ProfileStore, profile_id: str | None = None, rng: random.Random | None = None) -> bytes | None:
     """A pre-rendered acknowledgement in the profile's voice, or None if not rendered yet.
 
-    Play it the moment the driver's turn ends, so the host "reacts" while the LLM works.
+    Play it the moment the person's turn ends, so the voice "reacts" while the LLM works.
     """
     pid = resolve(store, profile_id)
     picks = list(range(len(FILLERS)))

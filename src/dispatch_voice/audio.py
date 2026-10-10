@@ -199,8 +199,21 @@ def to_pcm16(a: np.ndarray) -> bytes:
     return (np.clip(a, -1.0, 1.0) * 32767).astype("<i2").tobytes()
 
 
+def crossfade(tail: np.ndarray, head: np.ndarray) -> np.ndarray:
+    """Equal-power crossfade of two same-length float32 pieces: ``tail`` fades out
+    (cos ramp), ``head`` fades in (sin ramp), so the summed power stays flat across
+    the seam. Used at every chunk boundary of the pipelined decoder, whose output
+    is a fresh noise draw per call (butted chunks click). Returns the mixed piece."""
+    n = min(len(tail), len(head))
+    if n <= 0:
+        return np.zeros(0, np.float32)
+    t = np.linspace(0.0, np.pi / 2, n, dtype=np.float32)
+    return (tail[:n] * np.cos(t) + head[:n] * np.sin(t)).astype(np.float32)
+
+
 def to_wav_bytes(a: np.ndarray, sr: int = SAMPLE_RATE) -> bytes:
     import io
+
     import soundfile as sf
     buf = io.BytesIO()
     sf.write(buf, a, sr, format="WAV", subtype="PCM_16")

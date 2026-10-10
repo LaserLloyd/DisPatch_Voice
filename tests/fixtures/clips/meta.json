@@ -1,0 +1,53 @@
+{
+ "short": {
+  "text": "What's on my calendar this afternoon?",
+  "seconds": 2.2,
+  "voice": "kokoro am_michael"
+ },
+ "medium": {
+  "text": "Can you remind me to call the dentist tomorrow morning, and also check whether the package from the hardware store has shipped yet?",
+  "seconds": 7.34,
+  "voice": "kokoro am_michael"
+ },
+ "long": {
+  "text": "So I was looking at the plan for the garage conversion again last night, and I think the budget we talked about is a little tight once you add the electrical work, the insulation, and the new door, so maybe we should push the start date back a month or two.",
+  "seconds": 15.47,
+  "voice": "kokoro am_michael"
+ },
+ "pause_a": {
+  "text": "I was thinking that maybe we could",
+  "seconds": 2.07,
+  "voice": "kokoro am_michael"
+ },
+ "pause_b": {
+  "text": "go to the beach this weekend if the weather holds.",
+  "seconds": 2.84,
+  "voice": "kokoro am_michael"
+ },
+ "backchannel": {
+  "text": "Uh-huh.",
+  "seconds": 0.87,
+  "voice": "kokoro am_michael"
+ },
+ "interrupt": {
+  "text": "Wait, stop, that's not what I meant.",
+  "seconds": 2.28,
+  "voice": "kokoro am_michael"
+ },
+ "pause": {
+  "text": "I was thinking that maybe we could go to the beach this weekend if the weather holds.",
+  "seconds": 5.61,
+  "gap_at": 2.07,
+  "voice": "kokoro am_michael"
+ },
+ "driver1b": {
+  "text": "What's on my calendar for this afternoon?",
+  "seconds": 2.4,
+  "voice": "dispatch-voice stock voice (synthetic)"
+ },
+ "driver2": {
+  "text": "Actually, wait, stop. Just tell me the first one.",
+  "seconds": 3.72,
+  "voice": "dispatch-voice stock voice (synthetic)"
+ }
+}

@@ -94,9 +94,23 @@ def _upload(fn):
 
 
 def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (), *,
-                 allow_open: bool = False, max_upload: int = audio.MAX_UPLOAD_BYTES) -> APIRouter:
+                 allow_open: bool = False, max_upload: int = audio.MAX_UPLOAD_BYTES,
+                 ui: bool = True, fillers: bool | None = None) -> APIRouter:
+    """The profile API. ``ui=True`` adds the standalone Voices page
+    (``/ui``, ``/ui/voices.js``) for ``dispatch-voice serve``; inside DisPatch
+    the add-on mounts it with ``ui=False`` (the Voices pane is the app's own,
+    and nothing under ``/api/voice`` serves HTML).
+
+    ``fillers`` (default: the same as ``ui``): render the six per-profile
+    ``fillers/<n>.wav`` after a create. Only the standalone page plays them;
+    inside DisPatch the acknowledgement lines come from the host's render queue
+    (SPEC C12), so the add-on mounts this with ``fillers=False`` and a new
+    clone costs no extra Chatterbox renders (FR-works 14)."""
+    if fillers is None:
+        fillers = ui
     if not dependencies and not allow_open:
-        raise ValueError("build_router needs an auth dependency (pass allow_open=True only for tests)")
+        raise ValueError("build_router needs an auth dependency (pass allow_open=True only for tests "
+                         "and the DisPatch add-on, whose gate is DisPatch's)")
     r = APIRouter(dependencies=list(dependencies),
                   route_class=_capped_route(max_upload + FORM_OVERHEAD_BYTES))
 
@@ -114,15 +128,16 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
         return Response(audio.to_wav_bytes(a), media_type="audio/wav",
                         headers={"Cache-Control": "no-store"})
 
-    @r.get("/ui", response_class=HTMLResponse)
-    def ui() -> HTMLResponse:
-        html = resources.files("dispatch_voice").joinpath("static/voices.html").read_text()
-        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+    if ui:
+        @r.get("/ui", response_class=HTMLResponse)
+        def ui_page() -> HTMLResponse:
+            html = resources.files("dispatch_voice").joinpath("standalone/voices.html").read_text()
+            return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
-    @r.get("/ui/voices.js")
-    def ui_js() -> Response:
-        js = resources.files("dispatch_voice").joinpath("static/voices.js").read_text()
-        return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-store"})
+        @r.get("/ui/voices.js")
+        def ui_js() -> Response:
+            js = resources.files("dispatch_voice").joinpath("standalone/voices.js").read_text()
+            return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-store"})
 
     @r.get("/consent-kinds")
     def consent_kinds() -> dict:
@@ -154,7 +169,8 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
             prof = await asyncio.to_thread(store.create, name, data, file.filename or "", consent, consent_note)
         except (audio.ClipError, ProfileError) as e:
             raise HTTPException(422, str(e)) from e
-        background.add_task(store.render_fillers, prof["id"])
+        if fillers:
+            background.add_task(store.render_fillers, prof["id"])
         return prof
 
     @r.get("/{pid}")

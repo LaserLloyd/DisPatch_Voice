@@ -1,0 +1,12 @@
+{
+ "text": "What's on my calendar this afternoon Oh, and tomorrow.",
+ "first": "What's on my calendar this afternoon",
+ "second": "Oh, and tomorrow.",
+ "first_end_sample": 34133,
+ "second_start_sample": 66133,
+ "first_end_s": 2.133,
+ "second_start_s": 4.133,
+ "gap_s": 2.0,
+ "seconds": 5.52,
+ "voice": "kokoro am_michael"
+}

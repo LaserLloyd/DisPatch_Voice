@@ -1,19 +1,25 @@
 [project]
 name = "dispatch-voice"
-version = "0.1.0"
-description = "Local voice cloning and speech for DisPatch Chat (Chatterbox-Turbo ONNX, CPU)"
+version = "1.0.0"
+description = "Voice chat for DisPatch Chat: the DisPatch Voice add-on (local speech, cloned voices, Chatterbox-Turbo ONNX on the CPU)"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.26",
     "onnxruntime>=1.20",
+    "onnx-asr>=0.12",
     "tokenizers>=0.20",
     "huggingface_hub>=0.25",
     "soundfile>=0.12",
     "pyloudnorm>=0.1.1",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
     "fastapi>=0.115.0",
     "python-multipart>=0.0.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/LaserLloyd/DisPatch_Voice"
 
 [project.optional-dependencies]
 # Resemble's Perth watermark. Needs CPU torch; install with the pytorch-cpu index, never CUDA.
@@ -22,6 +28,10 @@ serve = ["uvicorn[standard]>=0.30.0"]
 
 [project.scripts]
 dispatch-voice = "dispatch_voice.cli:main"
+
+# DisPatch discovers the add-on through this entry point (EXT_API handshake, then setup).
+[project.entry-points."dispatch.extensions"]
+voice = "dispatch_voice:EXTENSION"
 
 [build-system]
 requires = ["hatchling"]
@@ -40,8 +50,13 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [dependency-groups]
-dev = ["pytest>=8.0.0", "httpx>=0.27.0", "uvicorn[standard]>=0.30.0"]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.24.0", "httpx>=0.27.0", "uvicorn[standard]>=0.30.0", "websockets>=13.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["models: needs the downloaded Chatterbox ONNX models (slow, CPU-heavy)"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "models: needs the downloaded speech/Chatterbox models (slow, CPU-heavy; run under the models lock)",
+    "contract: runs against a DisPatch backend checkout with the extension host (DISPATCH_BACKEND)",
+]

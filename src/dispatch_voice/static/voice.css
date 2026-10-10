@@ -1,0 +1,504 @@
+/* Voice chat (DisPatch Voice add-on). Loaded by DisPatch's extension loader
+   (`css: ["voice.css"]`) while the add-on is mounted, so an install without
+   the add-on never fetches it. Owner: track T7.
+
+   Theme tokens ONLY — no literal colours. Every state colour is a semantic
+   token the app already uses for the same meaning: --live = hearing you
+   (the "connected" green), warning = working, accent = the app is acting
+   (speaking), --text-disabled = paused, danger = no connection / stopped.
+   The ring is a 6 px STROKE, so it takes the *-text member of each pair
+   (--warning-text, --accent-text, --danger-text): those are tuned per palette
+   for contrast on the ground, where the fill tokens are not — Paper's
+   --warning is the same amber as Glacier's and nearly vanishes on cream.
+   The palette, the light/dark choice and the night / high-contrast profiles
+   all reach this view for free.
+
+   One bold element: the bot's avatar inside a state ring. Everything else is
+   the Settings modal's rows, buttons, radii and type (.dev-row, .btn-*,
+   --radius-md), with exactly two Drive-only sizes, both scoped here: the
+   6 px ring and the 56 px road buttons. Internal class names keep the old
+   "drive" prefix (renaming them is churn); users only read "voice chat". */
+
+/* ---------------------------------------------------------------- overlay */
+.drive-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg-primary); color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+body.drive-open { overflow: hidden; }
+/* The column is exactly the viewport: the head and the button bar never move,
+   the picture takes the slack while nothing is captioned, and once there are
+   captions THEY take it and scroll — Hang up stays on screen at every size and
+   in a landscape car mount (FR-ux H1/H2: the bar used to scroll off below the
+   captions). The overlay still scrolls as a last resort on a tiny screen. */
+.drive-col {
+  box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 16px;
+  max-width: 720px; height: 100%; min-height: 0; margin-inline: auto;
+  padding: max(10px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+
+.drive-head { display: flex; align-items: center; gap: 12px; min-height: 48px; flex: none; }
+.drive-id { flex: 1 1 auto; min-width: 0; }
+.drive-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drive-sub { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drive-gear { width: 44px; height: 44px; color: var(--text-secondary); }
+.drive-gear .rail-icon { width: 22px; height: 22px; }
+
+/* ---------------------------------------------------------- the hero ring */
+.drive-hero {
+  flex: 1 0 auto;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; text-align: center; padding-block: 8px;
+}
+.drive-col.drive-captioned > .drive-hero { flex: 0 0 auto; }
+.drive-ring {
+  --ring: var(--border-strong);
+  --lvl: 0;
+  position: relative; display: grid; place-items: center;
+  width: 184px; height: 184px; margin-bottom: 10px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: inherit;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.drive-ring[aria-disabled="true"] { cursor: default; }
+.drive-ring::before,
+.drive-ring::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+}
+/* The ring itself. Its thickness reads the live level (mic while hearing,
+   the reply while speaking) as a gentle scale — the one thing that moves. */
+.drive-ring::before {
+  border: 6px solid var(--ring);
+  transform: scale(calc(1 + var(--lvl) * .09));
+  transition: transform 90ms linear, border-color .2s ease;
+}
+/* Orbit layer (thinking) — three arcs on the ring line, masked to 6 px. */
+.drive-ring::after {
+  display: none;
+  background: conic-gradient(
+    var(--warning-text) 0 9%, transparent 9% 33.33%,
+    var(--warning-text) 33.33% 42.33%, transparent 42.33% 66.66%,
+    var(--warning-text) 66.66% 75.66%, transparent 75.66%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), currentColor calc(100% - 6px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 6px), currentColor calc(100% - 6px));
+}
+.drive-face {
+  width: 148px; height: 148px; border-radius: 50%;
+  object-fit: cover; background: var(--bg-tertiary);
+  transition: opacity .2s ease, filter .2s ease;
+}
+.drive-letter {
+  display: grid; place-items: center;
+  font-family: var(--font-display); font-size: 56px; font-weight: 600;
+  color: var(--text-secondary);
+}
+/* The "I'm listening" dot at 12 o'clock. */
+.drive-dot {
+  display: none; position: absolute; top: -4px; left: 50%;
+  width: 14px; height: 14px; margin-inline-start: -7px;
+  border-radius: 50%; background: var(--live);
+  box-shadow: 0 0 0 3px var(--bg-primary);
+}
+[dir="rtl"] .drive-dot { left: auto; right: 50%; }
+
+.drive-overlay[data-state="connecting"] .drive-ring::before { border-style: dashed; animation: drive-spin 8s linear infinite; }
+.drive-overlay[data-state="listening"] .drive-dot { display: block; animation: drive-breathe 2s ease-in-out infinite; }
+.drive-overlay[data-state="hearing"] .drive-ring { --ring: var(--live); }
+.drive-overlay[data-state="transcribing"] .drive-ring { --ring: var(--warning-text); }
+.drive-overlay[data-state="thinking"] .drive-ring { --ring: color-mix(in oklab, var(--warning-text) 28%, transparent); }
+.drive-overlay[data-state="thinking"] .drive-ring::after { display: block; animation: drive-spin 1.6s linear infinite; }
+.drive-overlay[data-state="speaking"] .drive-ring { --ring: var(--accent-text); }
+.drive-overlay[data-state="paused"] .drive-ring { --ring: var(--text-disabled); }
+/* Dashed = not listening to you (paused, no connection, stopped, locked);
+   solid = live. The shape carries that on its own: on Paper the accent and
+   the danger red are near twins, so Speaking (solid, full-colour face) and
+   Stopped (dashed, greyed face) must never share a silhouette. */
+.drive-overlay[data-state="paused"] .drive-ring::before,
+.drive-overlay[data-state="offline"] .drive-ring::before,
+.drive-overlay[data-state="waiting"] .drive-ring::before,
+.drive-overlay[data-state="stopped"] .drive-ring::before,
+.drive-overlay[data-state="locked"] .drive-ring::before { border-style: dashed; }
+.drive-overlay[data-state="offline"] .drive-ring,
+.drive-overlay[data-state="waiting"] .drive-ring,
+.drive-overlay[data-state="stopped"] .drive-ring,
+.drive-overlay[data-state="locked"] .drive-ring { --ring: var(--danger-text); }
+.drive-overlay[data-state="paused"] .drive-face,
+.drive-overlay[data-state="offline"] .drive-face,
+.drive-overlay[data-state="waiting"] .drive-face,
+.drive-overlay[data-state="stopped"] .drive-face,
+.drive-overlay[data-state="locked"] .drive-face { opacity: .55; filter: grayscale(.6); }
+
+@keyframes drive-spin { to { transform: rotate(1turn); } }
+@keyframes drive-breathe { 0%, 100% { transform: scale(.8); opacity: .7; } 50% { transform: scale(1.15); opacity: 1; } }
+
+.drive-state {
+  font-family: var(--font-display); font-size: 26px; font-weight: 600; line-height: 1.2;
+  font-variant-numeric: tabular-nums; text-wrap: balance;
+}
+.drive-hint { font-size: 13px; line-height: 1.4; color: var(--text-secondary); min-height: 1.4em; }
+/* First-run tip (the first three opens per device) or the English-only line. */
+.drive-tip { max-width: 30rem; font-size: 13px; line-height: 1.45; color: var(--text-secondary); text-wrap: balance; }
+.drive-tip[hidden] { display: none; }
+
+/* Errors and notices live ON the overlay, under the ring. */
+.drive-notice {
+  max-width: 34rem; margin-top: 8px; padding: 10px 14px;
+  border-radius: var(--radius-md); text-align: start;
+  font-size: 14px; line-height: 1.45;
+  background: var(--danger-subtle); color: var(--danger-text);
+  border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
+}
+.drive-notice[data-kind="info"] {
+  background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-strong);
+}
+.drive-notice[hidden] { display: none; }
+.drive-notice + .drive-link { margin-top: 4px; }
+
+/* ------------------------------------------------------------- transcript */
+.drive-talk {
+  display: flex; flex-direction: column; gap: 8px;
+  flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+}
+.drive-col.drive-captioned > .drive-talk { flex: 1 1 0; min-height: 3.5em; }
+/* Scrolled: the top line fades out, so cut-off text reads as "more above". A
+   mask is alpha only — currentColor is any opaque colour here, not a palette one. */
+.drive-talk.drive-scrolled {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, currentColor 1.5em);
+          mask-image: linear-gradient(to bottom, transparent, currentColor 1.5em);
+}
+.drive-talk[hidden] { display: none; }
+.drive-you, .drive-them { margin: 0; overflow-wrap: anywhere; }
+.drive-you { font-size: 17px; line-height: 1.4; color: var(--text-secondary); }
+.drive-them { font-size: 19px; line-height: 1.4; font-weight: 500; color: var(--text-primary); }
+.drive-you:empty, .drive-them:empty { display: none; }
+.drive-sentence { border-radius: var(--radius-xs, 4px); transition: background-color .2s ease; }
+/* Narrator segments (role-play "dialogue + narrator"): italic, same colour. */
+.drive-narrator { font-style: italic; }
+/* Live captions: settled words full colour, the still-changing tail dimmed. */
+.drive-you > .drive-committed { color: var(--text-primary); }
+.drive-you > .drive-tail { color: var(--text-tertiary, var(--text-secondary)); }
+.drive-sentence.now {
+  background: var(--accent-subtle);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+.drive-undo { align-self: center; min-height: 44px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.drive-undo[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- buttons */
+.drive-bar { display: flex; gap: 12px; flex: none; }
+.drive-road {
+  min-height: 56px; font-size: 16px; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.drive-road[hidden] { display: none; }
+.drive-road .rail-icon { width: 20px; height: 20px; flex: none; }
+/* Mute sizes to its word (German and Arabic run long), Hang up takes the
+   rest: the wide one is the one a hand finds without looking. */
+.drive-pause { flex: 0 1 auto; min-width: 34%; padding-inline: 18px; }
+.drive-end { flex: 1 1 0; }
+
+.drive-overlay :is(.drive-ring, .drive-road, .drive-gear, .drive-undo, .drive-seg-btn):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+/* Every select the add-on draws (Settings › Voice, the quick sheet, the Bots
+   popover): DisPatch's .lang-select:focus only swaps the border for the accent,
+   fainter than the resting border on the default dark palette (FR-ux M4). */
+.drive-select:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+/* Windows High Contrast drops backgrounds and box shadows: the chosen segment
+   keeps a system-colour outline (FR-ux L8). */
+@media (forced-colors: active) {
+  .drive-seg-btn[aria-checked="true"] { outline: 2px solid CanvasText; outline-offset: -2px; }
+}
+
+/* ---------------------------------------------------- quick settings sheet */
+.drive-scrim { position: fixed; inset: 0; z-index: 2; background: var(--scrim); }
+.drive-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
+  box-sizing: border-box; width: 100%; max-width: 720px; margin-inline: auto;
+  max-height: min(88dvh, calc(100dvh - 32px)); overflow-y: auto; overscroll-behavior: contain;
+  padding: 6px 12px calc(14px + env(safe-area-inset-bottom));
+  background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border-strong); border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.drive-sheet::before {
+  content: ""; display: block; width: 36px; height: 4px; margin: 4px auto 2px;
+  border-radius: 2px; background: var(--border-strong);
+}
+.drive-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 8px 4px; }
+/* The app's phone bottom sheet (Tools, .tools-menu-title) titles itself this
+   way: small caps-tracked header in --text-muted. Same here, nothing new. */
+.drive-sheet-title {
+  margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted);
+}
+.drive-sheet-close { width: 44px; height: 44px; }
+.drive-sheet .dev-group-body > .dev-row { min-height: 56px; box-sizing: border-box; }
+@media (prefers-reduced-motion: no-preference) {
+  .drive-sheet { animation: drive-sheet-in .18s ease-out; }
+  @keyframes drive-sheet-in { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+}
+
+/* --------------------------------------- shared row controls (sheet + tab) */
+.drive-row-block { flex-wrap: wrap; }
+.drive-row-block > .dev-row-text { flex: 1 1 220px; }
+.drive-row-block > .drive-seg { flex: 1 1 260px; max-width: 360px; }
+.drive-sheet .drive-row-block > .drive-seg { max-width: none; flex-basis: 100%; }
+
+.drive-seg {
+  display: flex; gap: 3px; padding: 3px; box-sizing: border-box;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--bg-input, var(--bg-secondary));
+}
+.drive-seg-btn {
+  flex: 1 1 0; min-height: 40px; padding: 6px 10px;
+  border: 0; border-radius: calc(var(--radius-md) - 3px);
+  background: transparent; color: var(--text-secondary);
+  font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.drive-sheet .drive-seg-btn { min-height: 46px; font-size: 14.5px; }
+.drive-seg-btn:hover { color: var(--text-primary); }
+.drive-seg-btn[aria-checked="true"] {
+  background: var(--accent-subtle); color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-text) 45%, transparent);
+}
+
+.dev-row > .drive-select { order: 3; flex: 0 1 auto; max-width: 48%; min-width: 150px; }
+@media (min-width: 769px) { .dev-row > .drive-select.drive-select-wide { max-width: 62%; } }
+.dev-row > .drive-preview { order: 3; flex: none; width: 40px; height: 40px; }
+.drive-preview .rail-icon { width: 16px; height: 16px; }
+.drive-preview[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-text); }
+.drive-preview.busy { opacity: .7; cursor: progress; }
+.dev-row > .drive-range {
+  order: 3; width: 150px; height: 28px; margin: 0;
+  -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer;
+}
+.drive-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--border-strong); }
+.drive-range::-moz-range-track { height: 6px; border-radius: 3px; background: var(--border-strong); }
+.drive-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 20px; height: 20px; margin-top: -7px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--accent-text);
+}
+.drive-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 2px solid var(--accent-text); }
+.drive-range:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 2px; }
+.dev-row > .drive-range-value { order: 3; min-width: 4.5em; font-size: 12.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.drive-note { display: block; }
+
+/* The Settings switch, for rows outside #spane-device / #spane-voice (the quick sheet). */
+.dev-row > input.dev-switch {
+  -webkit-appearance: none; appearance: none; order: 3;
+  width: 44px; height: 26px; margin: 0; flex: none; cursor: pointer;
+  border-radius: 999px; box-shadow: none;
+  border: 1.5px solid var(--text-secondary);
+  background-color: var(--bg-input, var(--bg-secondary));
+  background-image: radial-gradient(circle closest-side, var(--text-secondary) 0 82%, transparent 90%);
+  background-size: 22px 22px; background-repeat: no-repeat; background-position: 1px center;
+  transition: background-color .18s ease, border-color .18s ease, background-position .2s ease;
+}
+.dev-row > input.dev-switch:checked {
+  border-color: var(--accent-text); background-color: var(--accent);
+  background-image: radial-gradient(circle closest-side, var(--on-accent) 0 82%, transparent 90%);
+  background-position: calc(100% - 1px) center;
+}
+[dir="rtl"] .dev-row > input.dev-switch { background-position: calc(100% - 1px) center; }
+[dir="rtl"] .dev-row > input.dev-switch:checked { background-position: 1px center; }
+.dev-row > input.dev-switch:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 2px; }
+
+/* "All settings" row in the sheet: a .dev-row that is a button. */
+.dev-group-body > .drive-row-link {
+  width: 100%; background: none; font: inherit; text-align: start; cursor: pointer;
+}
+.drive-row-link:hover { background: var(--bg-hover); }
+.drive-row-link > .rail-icon { width: 18px; height: 18px; flex: none; color: var(--text-secondary); }
+[dir="rtl"] .drive-row-link > .rail-icon { transform: scaleX(-1); }
+
+/* ------------------------------------------------------- Settings → Voice */
+.drive-settings[hidden] { display: none; }
+.drive-settings-hint { padding-inline: 20px; }
+/* The pane's lead line sits where the Device pane's does (app.css: 14px on a phone). */
+@media (max-width: 768px) { .drive-settings-hint { padding-inline: 14px; } }
+/* Settings opened from the voice chat screen sits OVER it (experience L8);
+   toasts (1100, app.css) stay above both. */
+body.drive-open .modal-backdrop { z-index: 1050; }
+/* The collapsed Status group: a <details> whose summary is the group title. */
+.drive-fold > .drive-fold-title { cursor: pointer; list-style: none; user-select: none; }
+.drive-fold > .drive-fold-title::-webkit-details-marker { display: none; }
+.drive-fold > .drive-fold-title::before { content: "▸\00a0"; }
+.drive-fold[open] > .drive-fold-title::before { content: "▾\00a0"; }
+[dir="rtl"] .drive-fold:not([open]) > .drive-fold-title::before { content: "◂\00a0"; }
+.drive-fold > .drive-fold-title:hover { color: var(--text-primary); }
+.drive-fold > .drive-fold-title:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs, 4px); }
+.drive-fold[open] > .drive-fold-title { margin-bottom: 6px; }
+/* Voice off or not ready: the status row under the switch (what turning it
+   on needs, and the commands). Also the voice tools' "not installed" card. */
+.drive-setup-fix { display: block; margin: 8px 0 0; }
+.drive-missing { margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--warning-text); }
+.voice-steps { margin-top: 10px; }
+.voice-step-where { display: block; margin: 10px 0 4px; }
+.voice-steps > .voice-step-where:first-child { margin-top: 0; }
+.voice-cmd {
+  margin: 0; padding: 8px 10px; overflow-x: auto;
+  background: var(--bg-input, var(--bg-secondary)); color: var(--text-primary);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5;
+  /* Wrapped, not scrolled: a phone shows the whole command, and a copy
+     still gets it in one piece. */
+  white-space: pre-wrap; overflow-wrap: anywhere; text-align: left;
+}
+.voice-cmd > code { font: inherit; background: none; padding: 0; }
+.dev-row-block > .voice-cmd { margin-top: 6px; }
+
+/* ------------------------------------------------------ Voice tools pane */
+.vtool-loading { margin: 18px 20px; }
+.vtool-default { display: block; }
+.vtool-voice-row > .drive-preview:disabled { opacity: .5; cursor: not-allowed; }
+.vtool-heard { margin: 12px 0 0; font-size: 14px; line-height: 1.45; color: var(--text-primary); overflow-wrap: anywhere; }
+.vtool-timings > .drive-chip { background: var(--bg-input, var(--bg-secondary)); color: var(--text-secondary); border: 1px solid var(--border-strong); font-variant-numeric: tabular-nums; }
+.vtool-test-result[hidden] { display: none; }
+.voices-stock {
+  margin-inline-start: 8px; min-height: 22px; padding: 2px 9px; font-size: 11px;
+  vertical-align: middle; cursor: default;
+}
+.voices-stock:hover { background: transparent; color: inherit; }
+
+/* Voice chat screen: the Voice lab's "show timings" line under the state word. */
+.drive-timings { font-size: 12px; line-height: 1.4; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.drive-timings[hidden] { display: none; }
+
+/* The Voice pill on a Bots-tab card (.bm-safe-btn) and its popover, which is
+   the app's .menu surface holding ordinary .dev-row rows. */
+/* The add-on's slot in a Bots-tab row: hidden while voice is off, otherwise
+   transparent to the row's flex layout. */
+.bm-voice-host:not([hidden]) { display: contents; }
+.bm-voice-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+.bm-voice-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 11em; cursor: pointer; }
+.bm-voice-pill .rail-icon { width: 12px; height: 12px; flex: none; }
+.bm-voice-word { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-voice-pill:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 2px; }
+.menu.bm-voice-pop {
+  top: calc(100% + 6px); inset-inline-end: 0; z-index: 70;
+  width: min(340px, calc(100vw - 32px)); padding: 0; overflow: visible;
+}
+.bm-voice-pop > .dev-group-body { border: 0; border-radius: var(--radius-md) var(--radius-md) 0 0; }
+.bm-voice-pop .dev-row { padding: 10px 12px; }
+.bm-voice-pop .dev-row > .drive-select { flex: 1 1 auto; max-width: 60%; min-width: 0; }
+/* The popover is DisPatch's .menu, whose buttons are borderless menu items:
+   the ▶ keeps the Settings button's chrome, and a voice row wraps so its
+   select gets the full width instead of truncating the voice name (FR-ux L1). */
+.bm-voice-pop .drive-preview {
+  border: 1px solid var(--border-strong); background: var(--bg-tertiary); padding: 0;
+  display: inline-grid; place-items: center;
+}
+.bm-voice-pop .dev-row:has(> .drive-select + .drive-preview) { flex-wrap: wrap; }
+.bm-voice-pop .dev-row:has(> .drive-select + .drive-preview) > .dev-row-text { flex-basis: 100%; }
+.bm-voice-pop .dev-row:has(> .drive-select + .drive-preview) > .drive-select { max-width: none; flex: 1 1 0; }
+.bm-voice-note { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--border-strong); }
+
+/* ----------------------------------------------------- Voices sub-pane */
+.voices-pane { padding-bottom: 18px; }
+.voices-top { display: flex; align-items: center; gap: 6px; margin: 12px 18px 0; }
+.voices-back {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 8px 0 2px;
+  background: none; border: 0; border-radius: var(--radius-sm);
+  color: var(--accent-text); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.voices-back .rail-icon { width: 18px; height: 18px; }
+[dir="rtl"] .voices-back .rail-icon { transform: scaleX(-1); }
+.voices-back:hover { background: var(--bg-hover); }
+.voices-title { margin: 0; margin-inline-start: auto; font-size: 15px; font-weight: 600; }
+.voices-intro, .voices-engine { margin: 10px 20px 0; }
+.voices-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.voices-actions > .btn-secondary, .voices-actions > .btn-primary { min-height: 40px; }
+.voices-default {
+  margin-inline-start: 8px; min-height: 22px; padding: 2px 9px; font-size: 11px;
+  vertical-align: middle; cursor: default;
+}
+.voices-default:hover { background: var(--accent); color: var(--on-accent); }
+.voices-delete { color: var(--danger-text); }
+.voices-builtin-row { flex-wrap: wrap; }
+.voices-script {
+  margin: 10px 0 0; padding: 12px 14px;
+  background: var(--bg-input, var(--bg-secondary)); color: var(--text-primary);
+  border-inline-start: 3px solid var(--accent); border-radius: var(--radius-md);
+  border-start-start-radius: 0; border-end-start-radius: 0;
+  font-size: 16px; line-height: 1.6;
+}
+.voices-rec-time { font-variant-numeric: tabular-nums; color: var(--danger-text); font-weight: 600; }
+.voices-rec[hidden], .voices-review[hidden] { display: none; }
+.voices-clip { display: block; width: 100%; margin-top: 10px; }
+.voices-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.drive-chip { font-size: 12px; line-height: 1.35; padding: 3px 9px; border-radius: 999px; }
+.drive-chip.ok { background: var(--success-subtle); color: var(--success-text); }
+.drive-chip.warn { background: var(--warning-subtle); color: var(--warning-text); }
+.drive-chip.fail { background: var(--danger-subtle); color: var(--danger-text); }
+.voices-field { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
+.voices-name {
+  background: var(--bg-input); border: 1px solid var(--border-strong); border-radius: 10px;
+  padding: 9px 10px; color: var(--text-primary); font: inherit; font-size: 15px;
+}
+.voices-name:focus { outline: none; border-color: var(--accent); }
+.voices-consent { border: 0; padding: 0; margin: 14px 0 0; min-width: 0; }
+.voices-consent > legend { padding: 0; margin-bottom: 4px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.voices-consent-opt { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; font-size: 13.5px; line-height: 1.4; color: var(--text-primary); cursor: pointer; }
+.voices-consent-opt > input { margin-top: 2px; accent-color: var(--accent); }
+.voices-status { margin: 0; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+.voices-status.err { color: var(--danger-text); }
+.dev-group-body > .voices-status-row:has(> .voices-status:empty) { display: none; }
+
+/* -------------------------------------------------------------- layout */
+/* "When the connection is slow" sits two by two at every width: a quarter of the
+   control squeezed "Always use the phone's voice" into four or five lines. The
+   short four-choice rows (Hang up when quiet) stay on one line. */
+.drive-seg:has(> .drive-seg-btn[data-value="always_phone"]) { display: grid; grid-template-columns: 1fr 1fr; }
+@media (max-width: 768px) {
+  .drive-row:has(> .drive-select), .drive-row:has(> .drive-range) { flex-wrap: wrap; }
+  .drive-row:has(> .drive-select) > .dev-row-text,
+  .drive-row:has(> .drive-range) > .dev-row-text { flex-basis: 100%; }
+  .dev-row > .drive-select { flex: 1 1 auto; max-width: none; min-width: 0; }
+  .dev-row > .drive-range { flex: 1 1 auto; }
+  .voices-top { margin-inline: 12px; }
+  .voices-intro, .voices-engine { margin-inline: 14px; }
+}
+@media (max-height: 600px) {
+  .drive-ring { width: 128px; height: 128px; margin-bottom: 4px; }
+  .drive-face { width: 102px; height: 102px; }
+  .drive-letter { font-size: 40px; }
+  .drive-state { font-size: 22px; }
+  .drive-col { gap: 10px; }
+}
+/* A phone on its side (a landscape mount): the picture and its words on the
+   start side, the captions on the end side, the buttons across the bottom —
+   everything inside the viewport (FR-ux H2). The first-run tip is dropped here. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .drive-col {
+    display: grid; max-width: none; gap: 8px 20px;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .drive-head { grid-column: 1 / -1; min-height: 40px; }
+  .drive-hero { grid-column: 1; grid-row: 2; min-height: 0; overflow-y: auto; padding-block: 0; }
+  .drive-talk { grid-column: 2; grid-row: 2; align-self: stretch; }
+  .drive-col.drive-captioned > .drive-talk { min-height: 0; }
+  .drive-col:has(> .drive-talk[hidden]) > .drive-hero { grid-column: 1 / -1; }
+  .drive-bar { grid-column: 1 / -1; grid-row: 3; }
+  .drive-tip { display: none; }
+  .drive-ring { width: 112px; height: 112px; margin-bottom: 2px; }
+  .drive-face { width: 88px; height: 88px; }
+  .drive-letter { font-size: 34px; }
+  .drive-state { font-size: 20px; }
+}
+
+/* Motion is decoration here: colour + dash pattern + the word carry every
+   state, so reduced motion keeps all of them and drops only the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .drive-ring::before, .drive-ring::after, .drive-dot, .drive-face, .drive-sentence,
+  .dev-row > input.dev-switch { animation: none !important; transition: none !important; }
+  .drive-ring::before { transform: none !important; }
+  .drive-overlay[data-state="thinking"] .drive-ring::after { transform: rotate(20deg); }
+}
+.voices-err { color: var(--danger-text); }

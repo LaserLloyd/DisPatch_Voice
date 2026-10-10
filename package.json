@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "name": "dispatch-voice-client-tests",
+  "type": "module",
+  "//": "Not a build step: the add-on ships vanilla ES modules (src/dispatch_voice/static/) that DisPatch serves under /ext/voice/. This file exists so `node --test` imports those modules directly as ESM. The ONE devDependency is jsdom, for the DOM half of the client suites; without it those tests SKIP, and CI sets CI_REQUIRE_DOM=1 so a missing jsdom fails instead (tests/js/_require-dom.js). Nothing under static/ imports it.",
+  "scripts": {
+    "//test": "A quoted glob, expanded by node itself.",
+    "test": "node --test \"tests/js/*.test.js\"",
+    "test:ci": "CI_REQUIRE_DOM=1 node --test \"tests/js/*.test.js\"",
+    "locales": "python3 scripts/check-locales.py"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}

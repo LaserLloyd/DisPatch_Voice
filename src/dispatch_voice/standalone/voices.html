@@ -67,7 +67,7 @@ audio { width: 100%; margin-top: 6px; }
 <body>
 <main>
   <h1>Voices</h1>
-  <p class="sub">Clone a voice from a short clip. It's built and kept on this computer, and used for spoken replies in Drive mode.</p>
+  <p class="sub">Clone a voice from a short clip. It's built and kept on this computer, and used for spoken replies in voice chat.</p>
 
   <section class="panel" id="add">
     <h2>Add a voice</h2>
@@ -119,7 +119,7 @@ audio { width: 100%; margin-top: 6px; }
   <template id="card-tpl">
     <div class="card">
       <div class="row" style="justify-content:space-between">
-        <h3><span class="v-name"></span><span class="badge v-default" hidden>Drive-mode voice</span></h3>
+        <h3><span class="v-name"></span><span class="badge v-default" hidden>Default</span></h3>
         <span class="muted v-match"></span>
       </div>
       <div class="muted v-consent"></div>
@@ -127,7 +127,7 @@ audio { width: 100%; margin-top: 6px; }
       <div class="row">
         <button type="button" class="v-play-ref">Original clip</button>
         <button type="button" class="v-play-aud">Test line</button>
-        <button type="button" class="v-make-default">Use for Drive mode</button>
+        <button type="button" class="v-make-default">Set as default</button>
         <button type="button" class="v-rename">Rename</button>
         <button type="button" class="v-delete danger">Delete</button>
       </div>

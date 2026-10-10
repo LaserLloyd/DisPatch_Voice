@@ -1,0 +1,444 @@
+{
+ "$about": "Recorded B.1a frame sequences (v3 contracts §B.1a): the frames subscribe_frames delivers for ONE thread, with the field shapes DisPatch's main.py and advisor.py emit at e8a5f75. 'snapshot_mid_stream' is what a subscriber that joins while a reply streams receives first (stream_start + stream_chunk {replace: true}); 'after_snapshot' is the rest of that same advisor_turn. Owned by T0; tracks read it, never edit it.",
+ "thread_id": "t-voice-1",
+ "bot_id": "sage",
+ "reply": "You have two things this afternoon. A dentist appointment at three, and a call with the school at four thirty. Want me to remind you before each one?",
+ "user_text": "What's on my calendar this afternoon?",
+ "sequences": {
+  "advisor_turn": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "message",
+    "bot_id": "sage",
+    "message": {
+     "id": "m-user-1",
+     "thread_id": "t-voice-1",
+     "role": "user",
+     "content": "What's on my calendar this afternoon?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": {
+      "voice": true
+     }
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "started"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_start",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40",
+    "text": "You have two things this afternoon."
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40",
+    "text": " A dentist appointment at three,"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40",
+    "text": " and a call with the school at four thirty."
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40",
+    "text": " Want me to remind you before each one?"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_done",
+    "bot_id": "sage",
+    "message_id": "m-asst-1",
+    "message": {
+     "id": "m-asst-1",
+     "thread_id": "t-voice-1",
+     "role": "assistant",
+     "content": "You have two things this afternoon. A dentist appointment at three, and a call with the school at four thirty. Want me to remind you before each one?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": null
+    },
+    "provisional_id": "run:advisor-3f9c2a1b7d40"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "stopped"
+   }
+  ],
+  "gateway_turn": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "message",
+    "bot_id": "sage",
+    "message": {
+     "id": "m-user-1",
+     "thread_id": "t-voice-1",
+     "role": "user",
+     "content": "What's on my calendar this afternoon?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": {
+      "voice": true
+     }
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "started"
+   },
+   {
+    "type": "progress",
+    "thread_id": "t-voice-1",
+    "item": {
+     "kind": "tool",
+     "name": "brave_search",
+     "text": "afternoon calendar"
+    }
+   },
+   {
+    "type": "progress",
+    "thread_id": "t-voice-1",
+    "item": {
+     "kind": "thinking",
+     "text": "Checking the calendar"
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_start",
+    "bot_id": "sage",
+    "message_id": "run:gw-91d2"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:gw-91d2",
+    "text": "You have two things this afternoon."
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:gw-91d2",
+    "text": " A dentist appointment at three,"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:gw-91d2",
+    "text": " and a call with the school at four thirty."
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:gw-91d2",
+    "text": " Want me to remind you before each one?"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_done",
+    "bot_id": "sage",
+    "message_id": "m-asst-2",
+    "message": {
+     "id": "m-asst-2",
+     "thread_id": "t-voice-1",
+     "role": "assistant",
+     "content": "You have two things this afternoon. A dentist appointment at three, and a call with the school at four thirty. Want me to remind you before each one?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": null
+    },
+    "provisional_id": "run:gw-91d2"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "stopped"
+   }
+  ],
+  "simulated_stream_turn": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "message",
+    "bot_id": "sage",
+    "message": {
+     "id": "m-user-1",
+     "thread_id": "t-voice-1",
+     "role": "user",
+     "content": "What's on my calendar this afternoon?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": {
+      "voice": true
+     }
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "started"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_start",
+    "bot_id": "sage",
+    "message_id": "m-asst-3"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "m-asst-3",
+    "text": "You have two things this afternoon."
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "m-asst-3",
+    "text": " A dentist appointment at three,"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "m-asst-3",
+    "text": " and a call with the school at four thirty."
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "m-asst-3",
+    "text": " Want me to remind you before each one?"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_done",
+    "bot_id": "sage",
+    "message_id": "m-asst-3",
+    "message": {
+     "id": "m-asst-3",
+     "thread_id": "t-voice-1",
+     "role": "assistant",
+     "content": "You have two things this afternoon. A dentist appointment at three, and a call with the school at four thirty. Want me to remind you before each one?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": null
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "stopped"
+   }
+  ],
+  "short_reply_turn": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "message",
+    "bot_id": "sage",
+    "message": {
+     "id": "m-user-1",
+     "thread_id": "t-voice-1",
+     "role": "user",
+     "content": "What's on my calendar this afternoon?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": {
+      "voice": true
+     }
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "started"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "message",
+    "bot_id": "sage",
+    "message": {
+     "id": "m-asst-4",
+     "thread_id": "t-voice-1",
+     "role": "assistant",
+     "content": "Two things: the dentist at three and the school at four thirty.",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": null
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "stopped"
+   }
+  ],
+  "error_turn": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "message",
+    "bot_id": "sage",
+    "message": {
+     "id": "m-user-1",
+     "thread_id": "t-voice-1",
+     "role": "user",
+     "content": "What's on my calendar this afternoon?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": {
+      "voice": true
+     }
+    }
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "started"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "error",
+    "bot_id": "sage",
+    "message": "The provider did not answer",
+    "detail": "timeout after 60 s"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "stopped"
+   }
+  ],
+  "snapshot_mid_stream": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_start",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40",
+    "text": "You have two things this afternoon. A dentist appointment at three,",
+    "replace": true
+   }
+  ],
+  "after_snapshot": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40",
+    "text": " and a call with the school at four thirty."
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_chunk",
+    "bot_id": "sage",
+    "message_id": "run:advisor-3f9c2a1b7d40",
+    "text": " Want me to remind you before each one?"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "stream_done",
+    "bot_id": "sage",
+    "message_id": "m-asst-1",
+    "message": {
+     "id": "m-asst-1",
+     "thread_id": "t-voice-1",
+     "role": "assistant",
+     "content": "You have two things this afternoon. A dentist appointment at three, and a call with the school at four thirty. Want me to remind you before each one?",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": null
+    },
+    "provisional_id": "run:advisor-3f9c2a1b7d40"
+   },
+   {
+    "thread_id": "t-voice-1",
+    "type": "thinking",
+    "bot_id": "sage",
+    "status": "stopped"
+   }
+  ],
+  "partial_row_on_interrupt": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "message",
+    "bot_id": "sage",
+    "message": {
+     "id": "m-asst-5",
+     "thread_id": "t-voice-1",
+     "role": "assistant",
+     "content": "You have two things this afternoon. A dentist appointment at three,",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": {
+      "voice_heard": {
+       "interrupted": true
+      }
+     }
+    }
+   }
+  ],
+  "note_heard_update": [
+   {
+    "thread_id": "t-voice-1",
+    "type": "message_update",
+    "bot_id": "sage",
+    "message_id": "m-asst-5",
+    "message": {
+     "id": "m-asst-5",
+     "thread_id": "t-voice-1",
+     "role": "assistant",
+     "content": "You have two things this afternoon. A dentist appointment at three,",
+     "created_at": "2026-10-10T09:00:00",
+     "media_url": null,
+     "metadata": {
+      "voice_heard": {
+       "interrupted": true,
+       "upto": 45,
+       "heard": "You have two things this afternoon. A dentist",
+       "unheard": "appointment at three,"
+      }
+     }
+    }
+   }
+  ]
+ }
+}

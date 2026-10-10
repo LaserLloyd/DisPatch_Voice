@@ -1,0 +1,29 @@
+{
+ "$about": "Parakeet TDT 0.6B v2 (int8, onnx-asr, CPU) on every fixture clip, 2026-10-10, as a baseline: the 8 kHz copies transcribe identically except the 0.87 s backchannel, which Parakeet never hears as 'uh-huh' (16k: 'Odd High.', 8k: 'Out high.') - a backchannel classifier must key on duration/tokens, not on recognising the word.",
+ "16k": {
+  "backchannel": "Odd High.",
+  "driver1b": "What's on my calendar for this afternoon?",
+  "driver2": "Actually, wait, stop. Just tell me the first one.",
+  "interrupt": "Wait stop, that's not what I meant.",
+  "long": "So I was looking at the plan for the garage conversion again last night, and I think the budget we talked about is a little tight once you add the electrical work, the insulation, and the new door. So maybe we should push the start date back a month or two.",
+  "medium": "Can you remind me to call the dentist tomorrow morning and also check whether the package from the hardware store has shipped yet?",
+  "pause": "I was thinking that maybe we could go to the beach this weekend if the weather holds.",
+  "pause_a": "I was thinking that maybe we could.",
+  "pause_b": "Go to the beach this weekend if the weather holds.",
+  "short": "What's on my calendar this afternoon?",
+  "addendum": "What's on my calendar this afternoon? Oh, and tomorrow."
+ },
+ "8k": {
+  "addendum": "What's on my calendar this afternoon? Oh, and tomorrow.",
+  "backchannel": "Out high.",
+  "driver1b": "What's on my calendar for this afternoon?",
+  "driver2": "Actually, wait, stop. Just tell me the first one.",
+  "interrupt": "Wait stop, that's not what I meant.",
+  "long": "So I was looking at the plan for the garage conversion again last night, and I think the budget we talked about is a little tight once you add the electrical work, the insulation, and the new door. So maybe we should push the start date back a month or two.",
+  "medium": "Can you remind me to call the dentist tomorrow morning and also check whether the package from the hardware store has shipped yet?",
+  "pause": "I was thinking that maybe we could go to the beach this weekend if the weather holds.",
+  "pause_a": "I was thinking that maybe we could.",
+  "pause_b": "Go to the beach this weekend if the weather holds.",
+  "short": "What's on my calendar this afternoon?"
+ }
+}

@@ -136,8 +136,10 @@ def _ensure_locked(store, d: Path, build: bool, model_dir: Path | None) -> str |
     return STOCK_ID
 
 
-def render_extras(store, pid: str = STOCK_ID) -> None:
-    """The audition line and the fillers for the stock profile (slow)."""
+def render_extras(store, pid: str = STOCK_ID, *, fillers: bool = True) -> None:
+    """The audition line and (``fillers``) the fillers for the stock profile
+    (slow). Inside DisPatch only the audition is wanted: the acknowledgement
+    lines are the host's render queue's (SPEC C12)."""
     from ..profiles import AUDITION_LINE
     d = Path(store.root) / pid
     if not (d / "audition.wav").exists():
@@ -145,6 +147,8 @@ def render_extras(store, pid: str = STOCK_ID) -> None:
         tmp = d / ".audition.wav.tmp"           # tmp + rename: never a half-written file
         sf.write(tmp, wav, audio.SAMPLE_RATE, subtype="PCM_16", format="WAV")
         os.replace(tmp, d / "audition.wav")
+    if not fillers:
+        return
     meta = json.loads((d / "profile.json").read_text())
     if meta.get("fillers") != "ready":
         store.render_fillers(pid)

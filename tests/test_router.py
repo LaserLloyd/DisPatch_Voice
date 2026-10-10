@@ -151,3 +151,18 @@ def test_cap_applies_only_to_upload_routes(client):
     """JSON routes (say/patch) are not upload routes and keep working."""
     r = client.post("/api/voices/nope/say", json={"text": "hi"})
     assert r.status_code == 404
+
+
+def test_inside_dispatch_a_new_clone_renders_no_fillers(store):
+    """FR-works 14: the six per-profile fillers are the standalone page's; inside
+    DisPatch the acknowledgement lines are the host's render queue's (SPEC C12), so
+    the ui=False mount renders none (it used to run six Chatterbox renders per clone)."""
+    app = FastAPI()
+    app.include_router(build_router(store, [Depends(gate)], ui=False), prefix="/api/voice/profiles")
+    c = TestClient(app, headers={"x-test-unlocked": "1"})
+    r = c.post("/api/voice/profiles", files={"file": ("h.wav", wav_bytes(speechlike(14.0)), "audio/wav")},
+               data={"name": "Host", "consent": "synthetic"})
+    assert r.status_code == 200, r.text
+    pid = r.json()["id"]
+    assert c.get(f"/api/voice/profiles/{pid}").json()["fillers"] == "pending"
+    assert c.get(f"/api/voice/profiles/{pid}/files/fillers/0.wav").status_code == 404

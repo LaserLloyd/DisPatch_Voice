@@ -1,0 +1,179 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Audio modules check</title>
+<pre id="out">running…</pre>
+<script type="module">
+// Real-browser check of the T8 client audio modules (driven by audio_modules_check.py over
+// CDP). Everything here runs the shipped files from src/dispatch_voice/static/ unchanged:
+// WebCodecs Opus both ways, the mic and player AudioWorklets in OfflineAudioContexts, and
+// the wire3 framing. Results go back as uploads + window.__result.
+import { opusSupport, createUplink, createDownlink, unpackDown } from '/src/dispatch_voice/static/opus-codec.js';
+import { createPlayerClient } from '/src/dispatch_voice/static/voice-player-worklet.js';
+import { waitForVoices } from '/src/dispatch_voice/static/local-voice.js';
+
+const STATIC = '/src/dispatch_voice/static/';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const res = { ua: navigator.userAgent };
+
+async function upload(name, data) {
+  const r = await fetch(`/upload?name=${encodeURIComponent(name)}`, { method: 'POST', body: data });
+  if (!r.ok) throw new Error(`upload ${name}: ${r.status}`);
+}
+function wavInt16(buf) {
+  const dv = new DataView(buf);
+  let p = 12;
+  while (p + 8 <= buf.byteLength) {
+    const id = String.fromCharCode(dv.getUint8(p), dv.getUint8(p + 1), dv.getUint8(p + 2), dv.getUint8(p + 3));
+    const n = dv.getUint32(p + 4, true);
+    if (id === 'data') return new Int16Array(buf.slice(p + 8, p + 8 + n));
+    p += 8 + n + (n & 1);
+  }
+  throw new Error('no data chunk');
+}
+/** u32-length-prefixed blobs. */
+function splitFrames(buf) {
+  const dv = new DataView(buf);
+  const out = [];
+  for (let p = 0; p + 4 <= buf.byteLength;) { const n = dv.getUint32(p, true); out.push(new Uint8Array(buf, p + 4, n)); p += 4 + n; }
+  return out;
+}
+function joinFrames(frames) {
+  const n = frames.reduce((a, f) => a + 4 + f.byteLength, 0);
+  const out = new Uint8Array(n);
+  const dv = new DataView(out.buffer);
+  let p = 0;
+  for (const f of frames) { dv.setUint32(p, f.byteLength, true); out.set(new Uint8Array(f.buffer ?? f, f.byteOffset ?? 0, f.byteLength), p + 4); p += 4 + f.byteLength; }
+  return out;
+}
+
+/** The mic worklet in an OfflineAudioContext at `rate`, fed a 16 kHz clip. */
+async function micRun(clip16, rate) {
+  const len = Math.ceil((clip16.length / 16000 + 0.3) * rate);
+  const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: len, sampleRate: rate });
+  await ctx.audioWorklet.addModule(`${STATIC}voice-worklet.js`);
+  const node = new AudioWorkletNode(ctx, 'drive-mic');
+  const frames = [];
+  let levels = 0;
+  node.port.onmessage = (e) => { const d = e.data; if (d && d.buf) frames.push(d); else if (d && typeof d.level === 'number') levels += 1; };
+  const b = ctx.createBuffer(1, clip16.length, 16000);
+  b.getChannelData(0).set(Float32Array.from(clip16, (v) => v / 32768));
+  const src = ctx.createBufferSource();
+  src.buffer = b;
+  src.connect(node);
+  node.connect(ctx.destination);
+  src.start(0);
+  await ctx.startRendering();
+  await sleep(400);
+  return { frames, levels };
+}
+
+/** The player worklet in an OfflineAudioContext; `script` maps suspend times → actions. */
+async function playerRun(feedFrames, { seconds, rate = 48000, script = [] }) {
+  const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: Math.ceil(seconds * rate), sampleRate: rate });
+  await ctx.audioWorklet.addModule(`${STATIC}voice-player-worklet.js`);
+  const node = new AudioWorkletNode(ctx, 'drive-player', { numberOfInputs: 0, outputChannelCount: [1] });
+  node.connect(ctx.destination);
+  const ev = { played: [], idle: [], underrun: [] };
+  const client = createPlayerClient(node.port, { onPlayed: (d) => ev.played.push(d), onIdle: (d) => ev.idle.push(d), onUnderrun: (d) => ev.underrun.push(d) });
+  const down = createDownlink({ player: client });
+  for (const f of feedFrames) down.feed(f);
+  await down.flush();
+  const last = unpackDown(feedFrames.at(-1));
+  client.end(last.gen, last.seq);
+  const steps = [{ t: 0, run: () => {} }, ...script];
+  for (const s of steps) {
+    ctx.suspend(s.t).then(async () => { s.run(client); await sleep(150); ctx.resume(); });
+  }
+  const rendered = ctx.startRendering();
+  const buf = await rendered;
+  await sleep(300);
+  return { pcm: buf.getChannelData(0), ev };
+}
+
+(async () => {
+  try {
+    res.support = await opusSupport();
+    const clip = wavInt16(await (await fetch('/tests/fixtures/clips/medium.wav')).arrayBuffer());
+    res.clipSamples = clip.length;
+
+    // 1. Mic worklet at a phone (48 k), a 44.1 k and a Bluetooth SCO (8 k) context rate.
+    res.mic = {};
+    let mic48 = null;
+    for (const rate of [48000, 44100, 8000]) {
+      const t0 = performance.now();
+      const { frames, levels } = await micRun(clip, rate);
+      res.mic[rate] = { frames: frames.length, levels, ms: Math.round(performance.now() - t0), firstOff: frames[0]?.off, lastOff: frames.at(-1)?.off };
+      const blob = new Uint8Array(frames.length * 644);
+      const dv = new DataView(blob.buffer);
+      frames.forEach((f, i) => { dv.setUint32(i * 644, f.off, true); blob.set(new Uint8Array(f.buf), i * 644 + 4); });
+      await upload(`mic_${rate}.bin`, blob);
+      if (rate === 48000) mic48 = frames;
+    }
+
+    // 2. Uplink: the 48 k mic frames through the real AudioEncoder at 16 and 12 kbps.
+    res.uplink = {};
+    let up16 = [];
+    for (const kbps of [16, 12]) {
+      const msgs = [];
+      const errors = [];
+      const up = createUplink({ codec: res.support.up ? 'opus' : 'pcm16', kbps, onMessage: (b) => msgs.push(b), onError: (w, e) => errors.push(`${w}: ${e && e.message}`) });
+      const t0 = performance.now();
+      for (const f of mic48) up.push(new Int16Array(f.buf.slice(0)), f.off);
+      await up.flush();
+      const ms = performance.now() - t0;
+      const bytes = msgs.reduce((a, m) => a + m.byteLength, 0);
+      res.uplink[kbps] = { codec: up.codec, messages: msgs.length, bytes, kbpsOnWire: +(bytes * 8 / (mic48.length * 20)).toFixed(1), usPerFrame: +(ms * 1000 / mic48.length).toFixed(1), errors };
+      await upload(`up_opus${kbps}.bin`, joinFrames(msgs));
+      if (kbps === 16) up16 = msgs;
+    }
+
+    // 2b. The replay ring, loaded the way bridge.js loads it (`?v=<hash>`): its opus-codec.js
+    //     must come through the same query (one instance per file, amendment T7a-3), and a
+    //     replay of the real browser messages must carry the same packets with the replay flag.
+    const QV = '?v=t8check';
+    const { createUplinkRing } = await import(`${STATIC}uplink-ring.js${QV}`);
+    const ring = createUplinkRing();
+    for (const m of up16) ring.put(0, m);
+    const replay = ring.replayFrom(0, { nowOff: ring.newest() + 16000 });
+    const names = performance.getEntriesByType('resource').map((e) => e.name);
+    res.ring = {
+      siblingQueried: names.filter((n) => n.endsWith(`opus-codec.js${QV}`)).length,
+      messages: replay.length, seconds: ring.seconds, cutOff: ring.cutOff,
+    };
+    await upload('ring_replay16.bin', joinFrames(replay));
+
+    // 3. Downlink + player: server libopus frames (24 kHz, 24 kbps) decoded by WebCodecs at 48 k,
+    //    played by the real worklet; and the PCM16 24 kHz path.
+    const opusFrames = splitFrames(await (await fetch('/run/down_opus.bin')).arrayBuffer());
+    const pcmFrames = splitFrames(await (await fetch('/run/down_pcm.bin')).arrayBuffer());
+    const seconds = clip.length / 16000 + 1;
+    const o = await playerRun(opusFrames, { seconds });
+    await upload('play_opus.f32', o.pcm.buffer.slice(0));
+    res.playOpus = { played: o.ev.played.length, idle: o.ev.idle, underruns: o.ev.underrun.length, lastPlayed: o.ev.played.at(-1) };
+    const p = await playerRun(pcmFrames, { seconds });
+    await upload('play_pcm.f32', p.pcm.buffer.slice(0));
+    res.playPcm = { played: p.ev.played.length, idle: p.ev.idle, underruns: p.ev.underrun.length };
+
+    // 4. Pause / resume / pause / resume{rewind} on the real worklet, at quantum-aligned times.
+    const Q = 128 / 48000;
+    const T = (q) => q * Q;
+    const script = [
+      { t: T(192), run: (c) => c.pause() },             // 0.512 s
+      { t: T(384), run: (c) => c.resume(false) },       // 1.024 s
+      { t: T(576), run: (c) => c.pause() },             // 1.536 s
+      { t: T(768), run: (c) => c.resume(true) },        // 2.048 s
+    ];
+    const pr = await playerRun(pcmFrames, { seconds: seconds + 2, script });
+    await upload('play_pause.f32', pr.pcm.buffer.slice(0));
+    res.pause = { played: pr.ev.played.length, times: script.map((s) => s.t) };
+
+    // 5. Headless has no system voices; waitForVoices must give up quietly.
+    const t0 = performance.now();
+    res.voices = { count: (await waitForVoices(speechSynthesis, { timeoutMs: 500 })).length, waitedMs: Math.round(performance.now() - t0) };
+  } catch (e) {
+    res.error = String((e && e.stack) || e);
+  }
+  document.getElementById('out').textContent = JSON.stringify(res, null, 2);
+  window.__result = res;
+})();
+</script>
