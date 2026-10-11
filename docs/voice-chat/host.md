@@ -14,7 +14,7 @@ switch and the models behave, and the power-profile hold.
 | DisPatch ↔ add-on, Python | DisPatch `app/extensions.py: EXT_API`; add-on `dispatch_voice.EXTENSION["api"]` | `1`; the add-on accepts `[1, 1]` |
 | DisPatch ↔ add-on, JS | `shell.EXT_API`; `static/index.js: EXT.api` | `1`; `[1, 1]` |
 | Add-on ↔ its plugins (Kokoro) | `dispatch_voice.host.registry.ExtensionAPI.api_version` | `3` (unchanged since DisPatch 2.1) |
-| Release numbers | `dispatch-voice 1.0.0`, `dispatch-voice-kokoro 0.1.1` | informational, never compared |
+| Release numbers | `dispatch-voice 1.0.1`, `dispatch-voice-kokoro 0.1.1` | informational, never compared |
 
 DisPatch discovers the add-on through the `dispatch.extensions` entry point
 (`voice = dispatch_voice:EXTENSION`), or `DISPATCH_EXTENSIONS=dispatch_voice:EXTENSION`
@@ -535,7 +535,7 @@ live at the next restart, and a work-in-progress dependency in it would make the
 `--offline` overlay fail to resolve:
 
 ```sh
-git -C <dispatch-voice> worktree add --detach <release-dir> v1.0.0     # a new release: checkout --detach <tag> in it
+git -C <dispatch-voice> worktree add --detach <release-dir> v1.0.1     # a new release: checkout --detach <tag> in it
 ```
 
 DisPatch's `scripts/local-chat-launch` is the recommended `ExecStart`: it proves the

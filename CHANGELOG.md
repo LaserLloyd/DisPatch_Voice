@@ -2,6 +2,62 @@
 
 All notable changes to DisPatch Voice.
 
+## [1.0.1] — 2026-10-11
+
+A patch release: fixes from the review of 1.0.0. Same extension API (1) and the same
+settings; no model or dependency changes.
+
+### Voice chat screen
+- The bot's picture no longer jumps to the top at your first word and leaves the
+  lower half of the screen empty. The captions area keeps a few lines' room from the
+  start and grows with the reply (up to about half the screen, then it scrolls and
+  follows the sentence being spoken), so the picture stays where it was and only
+  drifts up as a long reply grows. Mute and Hang up stay on screen as before.
+- "Low signal — using the phone's voice" is cleared when the chat stops (busy, voice
+  switched off, the link gave up) or DisPatch locks; the stopped screen no longer
+  shows two lines that contradict each other.
+- Mute and Unmute are announced to screen readers on the tap, once, instead of a
+  round trip later when the server echoes the state (or never, on a server that
+  does not echo it).
+- In forced-colours mode (Windows High Contrast) a switch in the quick sheet shows
+  whether it is on: a Highlight track with the knob at the end, an outlined track
+  with the knob at the start when off. DisPatch's own switches in Settings › Voice
+  are DisPatch's to fix.
+- The "Show timings" line and the Voice lab's link and MiniMax rows read as short
+  sentences ("Heard in 420 ms. Reply started in 1.6 s. 420 ms, 31 kbps, phone
+  voice.") instead of middle-dot strings; `drive.timing_link` changed in all eight
+  languages.
+- The Voice lab names the fallback engine ("Fallback voice: Kokoro.") instead of
+  showing its id.
+- German: the stock voice is "Mitgelieferte Stimme" (badge "Mitgeliefert"), so it no
+  longer shares the word "Standardstimme" with the default voice.
+
+### Spoken replies
+- A local phone number ("555-0123") is read digit by digit, not as a range ("555 to
+  one hundred twenty-three"). A three-and-four-digit pair still reads as a range when
+  it looks like one ("500-1000 people").
+- ASCII emoticons (":)", ";-)", ":D", "<3") are dropped instead of being read or
+  left in the caption ("run:)").
+- With "Skip actions in asterisks", a dropped action no longer leaves its "and" or
+  "but" behind ("Then she says let's go and." is now "Then she says let's go.").
+
+### Acknowledgements
+- Good news about yourself said with a "!" ("We got the house!", "I passed my
+  exam!") gets a new `upbeat` pool ("Oh wow.", "No way!", "Whoa.") instead of
+  "Noted." or "Okay."; a negated or bad-news line ("I didn't pass!", "I made a
+  mistake!") does not. `voice-acks.yaml` accepts `upbeat` like the other intents.
+- Any "can you believe …?" / "can you imagine …?" is treated as rhetorical and gets
+  no thinking line, whatever its length (only short ones did).
+- The `trainer` style no longer answers bad news with "Okay.".
+
+### Tests
+- The same-chat reconnect test waits for `ready` instead of a fixed pause, and the
+  host fixture resets the per-chat registry, learned endpointing and the commit
+  cursor between tests (it was order-dependent).
+- The doctor tests pass when DisPatch is importable (run from DisPatch's backend
+  environment, the way the runbook runs the doctor); the earcon fallback test waits
+  for the earcon instead of a 50 ms pause.
+
 ## [1.0.0] — 2026-10-11
 
 The first release as DisPatch's voice chat **add-on**: the whole feature (speech

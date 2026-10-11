@@ -34,7 +34,7 @@ discovers through an entry point; nothing in DisPatch names it.
    ```
 
    On a server, make `<dispatch-voice>` a release checkout that nobody develops in
-   (`git worktree add --detach <dir> v1.0.0`): what is in the overlay's folder goes
+   (`git worktree add --detach <dir> v1.0.1`): what is in the overlay's folder goes
    live at the next restart. DisPatch's `scripts/local-chat-launch` is the
    recommended service command: it checks the overlay in a throwaway process and
    starts DisPatch without the add-on (Settings → Voice then says why) rather than
