@@ -353,9 +353,10 @@ what moves through it, with every browser object and clock injected
   frame and every `ACTIVITY_EVERY_MS` (20 s) while the chat is open, listening and
   visible; close code 4002 ("quiet", the server's own bound) hangs up without a
   reconnect.
-- **Layout.** `.drive-col` is the viewport's height; `.drive-captioned` (set when
-  captions exist) gives the captions the slack and they scroll, following the `now`
-  sentence (`follow()`, paused for `FOLLOW_PAUSE_MS` after a wheel/touch/pointer on
+- **Layout.** `.drive-col` is the viewport's height and the picture takes the
+  slack. The captions area holds 3.5 lines' room from the start (so the picture does
+  not move at the first word), grows with its text up to 55 % of the viewport and
+  then scrolls, following the `now` sentence (`follow()`, paused for `FOLLOW_PAUSE_MS` after a wheel/touch/pointer on
   the area). `(orientation: landscape) and (max-height: 500px)` switches to two
   columns with the bar across the bottom.
 

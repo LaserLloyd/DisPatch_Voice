@@ -864,8 +864,10 @@ export function openDrive(thread, ctx) {
   /**
    * The captions area shows with Captions on, and ALSO whenever replies take the
    * text path (a slow link on "Text only", no phone voice): then the text on this
-   * screen is the reply, whatever the Captions setting says (FR-ux M2). The column
-   * gives the captions the room the picture does not need once there are some.
+   * screen is the reply, whatever the Captions setting says (FR-ux M2). The area
+   * keeps a few lines' room from the start and grows with its text (voice.css), so
+   * the picture stays put at the first word; `drive-captioned` only marks that
+   * there is text.
    */
   function syncTalk() {
     const textPath = link.path === 'text' || !!them.querySelector('.drive-text-path');

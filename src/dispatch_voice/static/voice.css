@@ -28,10 +28,12 @@
 }
 body.drive-open { overflow: hidden; }
 /* The column is exactly the viewport: the head and the button bar never move,
-   the picture takes the slack while nothing is captioned, and once there are
-   captions THEY take it and scroll — Hang up stays on screen at every size and
-   in a landscape car mount (FR-ux H1/H2: the bar used to scroll off below the
-   captions). The overlay still scrolls as a last resort on a tiny screen. */
+   and the picture takes the slack. The captions area holds a few lines' room
+   from the start and grows with its text up to a cap, then scrolls; so the
+   picture does not move at the first word and only drifts up as a reply grows
+   (1.0.1: it used to jump to the top at the first partial and leave the lower
+   half empty). Hang up stays on screen at every size and in a landscape car
+   mount (FR-ux H1/H2). The overlay still scrolls as a last resort on a tiny screen. */
 .drive-col {
   box-sizing: border-box;
   display: flex; flex-direction: column; gap: 16px;
@@ -52,7 +54,6 @@ body.drive-open { overflow: hidden; }
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 6px; text-align: center; padding-block: 8px;
 }
-.drive-col.drive-captioned > .drive-hero { flex: 0 0 auto; }
 .drive-ring {
   --ring: var(--border-strong);
   --lvl: 0;
@@ -158,9 +159,9 @@ body.drive-open { overflow: hidden; }
 /* ------------------------------------------------------------- transcript */
 .drive-talk {
   display: flex; flex-direction: column; gap: 8px;
-  flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  flex: 0 1 auto; min-height: 3.5em; max-height: 55vh;
+  overflow-y: auto; overscroll-behavior: contain;
 }
-.drive-col.drive-captioned > .drive-talk { flex: 1 1 0; min-height: 3.5em; }
 /* Scrolled: the top line fades out, so cut-off text reads as "more above". A
    mask is alpha only — currentColor is any opaque colour here, not a palette one. */
 .drive-talk.drive-scrolled {
@@ -482,8 +483,7 @@ body.drive-open .modal-backdrop { z-index: 1050; }
   }
   .drive-head { grid-column: 1 / -1; min-height: 40px; }
   .drive-hero { grid-column: 1; grid-row: 2; min-height: 0; overflow-y: auto; padding-block: 0; }
-  .drive-talk { grid-column: 2; grid-row: 2; align-self: stretch; }
-  .drive-col.drive-captioned > .drive-talk { min-height: 0; }
+  .drive-talk { grid-column: 2; grid-row: 2; align-self: stretch; min-height: 0; max-height: none; }
   .drive-col:has(> .drive-talk[hidden]) > .drive-hero { grid-column: 1 / -1; }
   .drive-bar { grid-column: 1 / -1; grid-row: 3; }
   .drive-tip { display: none; }
