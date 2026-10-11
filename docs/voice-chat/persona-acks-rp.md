@@ -117,9 +117,9 @@ An acknowledgement is the short reaction a bot says while it works out the reply
 such as "Let me see." or "On it.". The old version played one of six lines on
 every turn, picked at random, so "Hmm, good question" followed statements. Now:
 
-- **Pools.** The default pool has 62 distinct lines across 7 intents:
-  question, request, statement, emotional, a follow-up after an interruption,
-  a wait line at 5 s and a wait line at 15 s. Four style pools add character:
+- **Pools.** The default pool has 77 lines (69 distinct) across 8 intents:
+  question, request, statement, emotional, upbeat (good news), a follow-up
+  after an interruption, a wait line at 5 s and a wait line at 15 s. Four style pools add character:
   `wry` (dry, measured), `bright` (quick, playful), `trainer` (calm, action
   first, "boss") and `gruff` (low, few words). A bot gets a style through
   `voice-acks.yaml: bots.<bot id>.flavour`. DisPatch's `advisor` bot gets `wry`
@@ -146,13 +146,17 @@ every turn, picked at random, so "Hmm, good question" followed statements. Now:
   - a hard feeling that is not a question: `emotional`. A negated feeling ("no
     pain today", "not tired at all", "beat my anxiety") does not count, and nor
     does one outweighed by good news in the first clause; both are statements;
-  - "can you …" asking an opinion or a fact ("Can you believe it?", "Will you
+  - "can you believe …?" / "can you imagine …?", at any length: no
+    acknowledgement (it is an exclamation; no thinking line fits it);
+  - "can you …" asking an opinion or a fact ("Do you think …", "Will you
     be here tomorrow?"): `question`;
   - an imperative or "can you …": `request`. This includes the car verbs:
     navigate, call, text, play, skip, pause, set, start, open;
   - a question word, a final "?", or an auxiliary verb at the start
     (only when the transcript has no end punctuation: "Had a rough day." is not
     a question): `question`. "What a day!" is not a question;
+  - good news about yourself said with a "!" ("We got the house!", "I passed
+    my exam!"), not negated and not bad news ("I made a mistake!"): `upbeat`;
   - anything else: `statement`.
 
   Question lines are neutral thinking lines ("Let me see.") that fit both
@@ -198,7 +202,7 @@ every turn, picked at random, so "Hmm, good question" followed statements. Now:
     while a reply is being synthesised or any session is thinking or speaking
     (the `busy()` callback).
   - It renders in this order: statement, request, question, follow-up,
-    emotional, then the wait lines. Character lines come before default lines
+    emotional, upbeat, then the wait lines. Character lines come before default lines
     (`Pools.render_lines`).
   - Each line gets a fixed seed (`crc32(text)`), so the result depends only on
     the voice and the text.

@@ -66,12 +66,12 @@ __all__ = [
     "validate_line",
 ]
 
-Intent = Literal["question", "request", "statement", "emotional", "followup", "none"]
-INTENTS = ("question", "request", "statement", "emotional", "followup")
+Intent = Literal["question", "request", "statement", "emotional", "upbeat", "followup", "none"]
+INTENTS = ("question", "request", "statement", "emotional", "upbeat", "followup")
 TIERS = ("wait_5s", "wait_15s")
 POOL_KEYS = INTENTS + TIERS
 #: Background render order: the commonest reactions first, then the tiers.
-RENDER_ORDER = ("statement", "request", "question", "followup", "emotional", "wait_5s", "wait_15s")
+RENDER_ORDER = ("statement", "request", "question", "followup", "emotional", "upbeat", "wait_5s", "wait_15s")
 SKIP_RATE = {"off": 1.0, "sometimes": 0.35, "often": 0.10}
 RECENT_WINDOW = 4
 FAST_TURN_S = 4.0
@@ -210,7 +210,7 @@ class Pools:
 
     def render_lines(self, *, bot_id: str | None, voice: str | None) -> list[str]:
         """Every line this bot can say in this voice, in render priority order
-        (statement → request → question → follow-up → emotional → tiers; flavour
+        (statement → request → question → follow-up → emotional → upbeat → tiers; flavour
         before default)."""
         out: list[str] = []
         seen: set[str] = set()
@@ -507,6 +507,16 @@ _NEGATOR = re.compile(r"\b(?:not|no|never|without|beat|beaten|over|gone|free|not
 _UPBEAT = re.compile(r"\b(?:great|fine|happy|better|good news|amazing|love it|awesome|"
                      r"wonderful|excited|glad|relieved|fantastic|brilliant|perfect)\b",
                      re.IGNORECASE)
+# Good news about yourself, said with a "!": "We got the house!", "I passed my
+# exam!", "My daughter got into college!". "Noted." after that is tone-deaf.
+_ACHIEVEMENT = re.compile(
+    r"^(?:i|we|my\s+\w+|our\s+\w+)\b.*\b(?:got|won|passed|finished|made|did|beat|landed|"
+    r"bought|sold|nailed|aced|graduated|booked|signed|hit|reached|completed|scored|qualified|"
+    r"engaged|married|pregnant|promoted|hired|accepted|approved)\b", re.IGNORECASE)
+# ... unless it is negated or bad news: "I didn't get it!", "I made a mistake!".
+_SETBACK = re.compile(
+    r"\b(?:not|never|no|n't|nothing|mistake|wrong|lost|missed|forgot|failed|crashed|broke|"
+    r"flat|ticket|fine|late|stuck|bill|bug|error|cold|flu|covid)\b|n't\b", re.IGNORECASE)
 _CLAUSE_SPLIT = re.compile(r"[,;:.!?—–]|\s-\s|\bbut\b", re.IGNORECASE)
 
 
@@ -565,14 +575,15 @@ def _emotional(raw: str) -> bool:
 
 
 def intent_of(text: str, *, after_barge_in: bool = False) -> Intent:
-    """question | request | statement | emotional | followup | none.
+    """question | request | statement | emotional | upbeat | followup | none.
 
     ≤ 2-word utterances ("yes", "okay thanks") get none: the reply is quick and
     a reaction to "yes" sounds silly. After a barge-in the person has moved on:
     ``followup``. Greetings, thanks, goodbyes, affection and small talk ("I love
     you.", "How are you?", "Sounds good to me.") get none: a listening noise
     after them is a misfit. A hard feeling (not negated, not outweighed by good
-    news) without a question is ``emotional``; an imperative (car verbs included:
+    news) without a question is ``emotional``; good news about yourself said
+    with a "!" ("We got the house!") is ``upbeat``; an imperative (car verbs included:
     navigate, call, text, play, skip, pause, set, start, open) or "can you …" is
     a ``request`` unless it asks for an opinion ("can you believe it?"); a
     wh-start, an auxiliary start (only with a "?" when the transcript is
@@ -595,11 +606,13 @@ def intent_of(text: str, *, after_barge_in: bool = False) -> Intent:
     if _MODAL_QUESTION.search(core):
         # "Can you believe it?" / "Can you imagine?" are exclamations; no
         # thinking line fits them, so a short one gets nothing.
-        if _RHETORICAL.search(core) and len(_WORD_RE.findall(core)) <= 5:
+        if _RHETORICAL.search(core):
             return "none"
         return "question"
     if _REQUEST.search(core):
         return "request"
+    if not is_q and raw.endswith("!") and _ACHIEVEMENT.search(core) and not _SETBACK.search(core):
+        return "upbeat"
     if is_q:
         return "question"
     return "statement"

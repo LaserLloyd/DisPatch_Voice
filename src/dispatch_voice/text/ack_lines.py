@@ -92,6 +92,16 @@ DEFAULT: dict[str, tuple[str, ...]] = {
         "Oh no.",
         "Ugh, that's rough.",
     ),
+    # after good news said with a "!" ("We got the house!") — surprise, not a verdict
+    "upbeat": (
+        "Oh wow.",
+        "Whoa.",
+        "Oh, wow!",
+        "No way!",
+        "Wow, okay!",
+        "Oh, hey!",
+        "Ooh!",
+    ),
     # after a barge-in: the person stopped the reply and said something new
     "followup": (
         "Okay.",
@@ -153,7 +163,7 @@ FLAVOUR: dict[str, dict[str, tuple[str, ...]]] = {
         "question": ("One second.", "Let me think, boss.", "Okay, let me see."),
         "request": ("On it, boss.", "Got it.", "Okay.", "Will do."),
         "statement": ("Okay.", "Noted.", "Right.", "Heard."),
-        "emotional": ("Okay.", "Heard.", "I hear you, boss."),
+        "emotional": ("Heard.", "I hear you, boss."),
         "followup": ("Okay.", "Right."),
         "wait_5s": ("Still on it.",),
         "wait_15s": ("Hang tight, boss. Still working.",),

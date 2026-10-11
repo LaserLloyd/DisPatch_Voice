@@ -143,7 +143,10 @@ INTENT_TABLE = [
     ("What a day!", "statement"),
     # "can you …" asking an opinion or a fact is a question, not a request
     ("Can you believe it?", "none"),                     # rhetorical: no line fits it
-    ("Can you believe what my boss said in the meeting today?", "question"),
+    # 1.0.1: a long "can you believe …?" is just as rhetorical as a short one
+    ("Can you believe what my boss said in the meeting today?", "none"),
+    ("Can you believe they cancelled the show?", "none"),
+    ("Could you imagine living there?", "none"),
     ("Do you think it'll snow?", "question"),
     ("Will you be here tomorrow?", "question"),
     ("Would you say that's normal?", "question"),
@@ -159,6 +162,15 @@ INTENT_TABLE = [
     ("Great news, my dog is not sick anymore.", "statement"),
     ("I'm so stressed, but it's fine.", "emotional"),
     ("I miss my dad so much.", "emotional"),
+    # 1.0.1: good news about yourself with a "!" is upbeat, never "Noted."
+    ("We got the house!", "upbeat"),
+    ("I passed my exam!", "upbeat"),
+    ("My daughter got into college!", "upbeat"),
+    ("I finally finished the report!", "upbeat"),
+    ("We got the house.", "statement"),                  # no "!": a plain statement
+    ("I didn't pass!", "statement"),                     # negated
+    ("I made a mistake!", "statement"),                  # bad news
+    ("I got fired!", "emotional"),
     # review-T5 #15: a lower-case name after a greeting
     ("hey nova tell me a joke", "request"),
     ("hey tell me a joke", "request"),
@@ -826,3 +838,37 @@ def test_thanks_that_helps_is_phatic(text):
 
 def test_that_helps_with_content_is_still_a_statement():
     assert intent_of("That helps me decide what to do tomorrow.") == "statement"
+
+
+# ---- 1.0.1: upbeat pool, trainer's emotional lines ------------------------------- #
+
+def test_the_upbeat_pool_is_surprise_not_a_verdict_and_never_flat():
+    lines = ack_lines.DEFAULT["upbeat"]
+    assert len(lines) >= 5
+    flat = {"Noted.", "Okay.", "Right.", "Mm.", "Mm-hm.", "I see."}
+    assert not flat & set(lines)
+    for line in lines:
+        assert not any(bad in line.lower() for bad in ack_lines.FORBIDDEN)
+    # a word-only voice (Kokoro) still has upbeat lines once "Ooh!" is filtered out
+    _, base = default_pools().lines("upbeat", bot_id="x", voice="builtin:af_heart")
+    assert base and "Ooh!" not in base
+
+
+def test_upbeat_is_picked_after_good_news_and_does_not_repeat():
+    sel = AckSelector(default_pools(), mode="often", rng=random.Random(3))
+    got = []
+    for i in range(12):
+        line = sel.pick(intent_of("We got the house!"), bot_id="x", voice="profile-1",
+                        now=100.0 * i, last_turn_at=None, last_acked=False)
+        if line:
+            assert line in ack_lines.DEFAULT["upbeat"]
+            got.append(line)
+    assert got
+    assert all(a != b for a, b in zip(got, got[1:]))
+
+
+def test_the_trainer_never_answers_bad_news_with_okay():
+    assert "Okay." not in ack_lines.FLAVOUR["trainer"]["emotional"]
+    p = replace(default_pools(), bot_flavour={"t": "trainer"})
+    own, base = p.lines("emotional", bot_id="t", voice="profile-1")
+    assert "Okay." not in own + base
