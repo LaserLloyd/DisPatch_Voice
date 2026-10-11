@@ -17,8 +17,24 @@ from dispatch_voice.host.engines import chatterbox
 NOT_REACHABLE = {"url": "http://127.0.0.1:1", "reachable": False, "detail": "ConnectError"}
 
 
+def _without_dispatch(monkeypatch):
+    """Answer as an environment without DisPatch, wherever the suite runs: from
+    DisPatch's backend env (the way the runbook runs the doctor) ``app.extensions``
+    IS importable and the "file" / "not importable" branches were never reached."""
+    import importlib.util
+    real = importlib.util.find_spec
+
+    def find_spec(name, *a, **k):
+        if name == "app" or name.startswith("app."):
+            return None
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch, host_env):
+    _without_dispatch(monkeypatch)
     monkeypatch.setattr(cli, "probe_running", lambda url: dict(NOT_REACHABLE, url=url))
     monkeypatch.setattr(cli, "_run", lambda argv, cwd, timeout: (1, "stubbed: no uv in tests"))
     monkeypatch.setattr(chatterbox, "available", lambda: False)
@@ -137,6 +153,22 @@ def test_doctor_reads_ext_api_from_a_backend_dir_without_importing_it(env, capsy
     cli.print_doctor(rep)
     out = capsys.readouterr().out
     assert "EXT_API 7 -> compatible: no" in out and "app/extensions.py" in out
+
+
+def test_doctor_imports_the_extension_host_when_dispatch_is_importable(env, monkeypatch):
+    """The other branch: inside DisPatch's env the handshake comes from the import."""
+    import importlib.util
+    import sys
+    import types
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a, **k: object())
+    app = types.ModuleType("app")
+    ext = types.ModuleType("app.extensions")
+    ext.EXT_API = 1
+    app.extensions = ext
+    monkeypatch.setitem(sys.modules, "app", app)
+    monkeypatch.setitem(sys.modules, "app.extensions", ext)
+    assert cli.probe_dispatch_import(None) == {"importable": True, "ext_api": 1,
+                                               "compatible": True, "source": "import"}
 
 
 def test_doctor_names_a_backend_that_predates_the_extension_host(env, capsys):

@@ -356,8 +356,11 @@ async def test_no_rendered_line_falls_back_to_the_earcon():
     s, ws, _, _ = make([[utterance()]])              # the silent kit: nothing rendered
     s.acks.selector.rng = _NoSkip()                  # the Reactions roll did not skip
     task = await start(s, ws)
-    ws.push_audio(); await settle(10)
-    assert ws.json_of("ack") and not ws.json_of("say")
+    # The earcon is due ack_after_s (50 ms) after the transcript; a fixed settle(10)
+    # (~50 ms) had no margin and failed on a loaded box. Wait for it instead.
+    ws.push_audio()
+    assert await wait_until(lambda: ws.json_of("ack"), timeout=5.0)
+    assert not ws.json_of("say")
     ws.hang_up(); await task
 
 
