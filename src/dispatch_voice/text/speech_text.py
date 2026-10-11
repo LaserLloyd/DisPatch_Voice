@@ -473,13 +473,20 @@ _RP_MARKERS = set("*\"'\u201c\u201d\u2018\u2019\u300c\u300d\u300e\u300f\u00ab\u0
 _DROP_FORMAT = {"\u200d", "\ufe0e", "\ufe0f", "\u20e3", "\u00ad", "\u2060"}
 
 
+# ASCII emoticons at a word's edge (":)", ";-)", ":D", "=P", "<3"): the eyes need
+# a space or the start before them, so "http://", "10:30" and "Note:D" are untouched.
+_EMOTICON = re.compile(r"(?:(?<=\s)|^)(?:[:;=][-^']?[)(\]\[DPpOo3/\\|]+|<3+)(?=\s|$|[.,!?;:])")
+
+
 def strip_symbols(t: str) -> str:
     """NFKC, then keep letters, numbers, punctuation, marks and whitespace.
 
     Every emoji, pictograph, arrow and math symbol is Unicode category S* and
     goes, except ``$ ¥ € £ % °`` (spoken by :func:`expand_numbers`) and
     ``+ = ~ & #`` (mapped to words). Combining marks stay (Devanagari, Arabic),
-    except the emoji modifiers (variation selectors, ZWJ, keycap)."""
+    except the emoji modifiers (variation selectors, ZWJ, keycap). ASCII
+    emoticons (``:)``, ``;-)``, ``<3``) go too."""
+    t = _EMOTICON.sub(" ", t)
     t = t.replace("\u00bd", " one half").replace("\u00bc", " a quarter").replace("\u00be", " three quarters")
     t = unicodedata.normalize("NFKC", t)
     out = []
@@ -589,6 +596,14 @@ _MONTH_RX = (r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?
 _MD_DATE = re.compile(r"\b" + _MONTH_RX + r"\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(1\d{3}|20\d{2})\b)?")
 _DM_DATE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+" + _MONTH_RX + r"(?:,?\s+(1\d{3}|20\d{2})\b)?")
 _PHONE = re.compile(r"(?<![\w.])(?:\+\d{1,3}[-\s])?(?:\(\d{2,4}\)\s?|\d{2,4}[-\s])\d{3,4}[-\s]\d{3,4}(?![\w])")
+# A local number ("555-0123") has two groups, so _PHONE misses it and the range rule
+# would read "555 to one hundred twenty-three". It is read digit by digit unless it
+# looks like a range: ascending, no leading zero, a round right side, no phone word
+# just before it ("500-1000 people" stays a range).
+_PHONE_LOCAL = re.compile(r"(?<![\w.,-])(\d{3})-(\d{4})(?![\w-]|[.,]\d)")
+_PHONE_WORDS = re.compile(r"\b(?:call|phone|dial|text|number|tel|fax|ring|reach|contact|line|ext)\w*"
+                          r"(?:\W+\w+){0,2}\W*\Z",
+                          re.IGNORECASE)
 _ORDINAL = re.compile(r"\b(\d+)(st|nd|rd|th)\b")
 _UNITS = {"km": ("kilometre", "kilometres"), "cm": ("centimetre", "centimetres"),
           "mm": ("millimetre", "millimetres"), "kg": ("kilo", "kilos"), "lb": ("pound", "pounds"),
@@ -736,6 +751,15 @@ def _dm_date(m: re.Match) -> str:
     return f"the {ordinal_words(d)} of {_month(m.group(2))}" + (f", {_year(int(y))}" if y else "")
 
 
+def _phone_local(m: re.Match) -> str:
+    a, b = m.group(1), m.group(2)
+    before = m.string[max(0, m.start() - 24):m.start()]
+    if (b[0] != "0" and int(b) > int(a) and int(b) % 10 == 0
+            and not _PHONE_WORDS.search(before)):
+        return m.group(0)                      # "500-1000": a range, said later
+    return _phone(m)
+
+
 def _phone(m: re.Match) -> str:
     groups = re.findall(r"\+?\d+", m.group(0))
     spoken = []
@@ -788,6 +812,7 @@ def expand_numbers(t: str) -> str:
     t = _MD_DATE.sub(_md_date, t)
     t = _DM_DATE.sub(_dm_date, t)
     t = _PHONE.sub(_phone, t)
+    t = _PHONE_LOCAL.sub(_phone_local, t)
     t = _ORDINAL.sub(lambda m: ordinal_words(int(m.group(1))), t)
     t = _UNIT.sub(_unit, t)
     t = _TIMES_X.sub(lambda m: f"{m.group(1)} times", t)
@@ -981,6 +1006,10 @@ def _canonical_mode(mode: str | None) -> str:
     return m if m in RP_MODES else "all"
 
 
+# A word that only joins prose to the action that followed it.
+_DANGLING = re.compile(r"(?:\s+(?:and|but|or|so|then|while|as|with))+\s*$", re.IGNORECASE)
+
+
 def rp_render(text: str, mode: str = "all", *, has_dialogue: bool | None = None
               ) -> list[tuple[str, str]]:
     """``[(role, text)]`` with role ∈ {character, narrator} for one normalised sentence.
@@ -1023,12 +1052,24 @@ def rp_render(text: str, mode: str = "all", *, has_dialogue: bool | None = None
                 role = "narrator" if kind == "action" else "character"
         if role is not None:
             pieces.append((role, s, idx, kind))
-        elif pieces and pieces[-1][2] == idx - 1 and s[-1:] in ".!?…":
-            # "she asks, *tilting her head*." without the action: keep the full stop
+        elif pieces and pieces[-1][2] == idx - 1 and (s[-1:] in ".!?…" or idx == len(segs) - 1):
+            # "she asks, *tilting her head*." without the action: keep the full stop;
+            # "she says hi and *waves*." without it: drop the "and" it leaves behind
             r0, s0, i0, k0 = pieces[-1]
             s0 = re.sub(r"[\s,;:\u2014\u2013-]+$", "", s0)
             if s0 and s0[-1] not in ".!?…":
-                pieces[-1] = (r0, s0 + s[-1], i0, k0)
+                end = s[-1] if s[-1:] in ".!?…" else ""
+                trimmed = re.sub(r"[\s,;:\u2014\u2013-]+$", "", _DANGLING.sub("", " " + s0)).strip()
+                if _speakable(trimmed):
+                    pieces[-1] = (r0, trimmed + ("" if trimmed[-1] in ".!?…" else end), i0, k0)
+                elif _DANGLING.fullmatch(" " + s0) and len(pieces) > 1:
+                    # '… "let's go" and *smiles*.': the bare "and" goes, the stop stays
+                    pieces.pop()
+                    r1, s1, i1, k1 = pieces[-1]
+                    if end and s1.rstrip()[-1:] not in ".!?…":
+                        pieces[-1] = (r1, s1.rstrip() + end, i1, k1)
+                else:
+                    pieces[-1] = (r0, s0 + end, i0, k0)
     merged: list[list] = []          # [role, text, last idx, last kind]
     for role, s, idx, kind in pieces:
         if merged and merged[-1][0] == role:

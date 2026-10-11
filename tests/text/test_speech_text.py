@@ -353,3 +353,51 @@ def test_numeric_slash_dates(src, want):
     """FR-works 8: "12/24/2025" became "12/24/twenty twenty-five", which Kokoro read
     as "12 slash 24 slash 2025"."""
     assert normalise(src, tags_ok=False) == want
+
+
+# --- 1.0.1: a local phone number, ASCII emoticons, a conjunction left by a dropped action ---
+
+@pytest.mark.parametrize("raw, spoken", [
+    ("Call 555-0123.", "Call five five five, zero one two three."),
+    ("Call 555-1234 now.", "Call five five five, one two three four now."),
+    ("My number is 555-1230.", "My number is five five five, one two three zero."),
+    ("Between 500-1000 people.", "Between 500 to one thousand people."),
+    ("Pages 10-20.", "Pages 10 to 20."),
+    ("Call 555-123-4567.", "Call five five five, one two three, four five six seven."),
+])
+def test_a_two_group_phone_number_is_read_digit_by_digit_not_as_a_range(raw, spoken):
+    assert normalise(raw, tags_ok=False) == spoken
+
+
+@pytest.mark.parametrize("raw, spoken", [
+    ("3km run :)", "three kilometres run"),
+    ("Nice one ;-)", "Nice one"),
+    ("See you :D.", "See you."),
+    ("Wow :P that was close.", "Wow that was close."),
+    ("Love you <3", "Love you"),
+    ("Hmm :/ not sure.", "Hmm not sure."),
+    # look-alikes that are not emoticons
+    ("Time is 10:30.", "Time is ten thirty."),
+    ("Ratio 8:3 is fine.", "Ratio 8:3 is fine."),
+    ("Note:D is next.", "Note:D is next."),
+])
+def test_ascii_emoticons_are_not_spoken(raw, spoken):
+    assert normalise(raw, tags_ok=False) == spoken
+
+
+@pytest.mark.parametrize("src, want", [
+    ('Then she says "let\'s go" and *smiles warmly*.', "Then she says let's go."),
+    ("She laughs but *looks away*.", "She laughs."),
+    ("He nods, then *walks to the door*.", "He nods."),
+    ("Go. And *she walks off slowly*.", "Go."),
+    ("Wait, *she sighs heavily*!", "Wait!"),
+    ("He waits, *tilting his head*.", "He waits."),
+])
+def test_skipping_an_action_leaves_no_dangling_conjunction(src, want):
+    assert rp_render(normalise(src, tags_ok=False), "skip_actions") == [("character", want)]
+
+
+def test_speak_all_keeps_the_conjunction_with_the_action():
+    src = 'Then she says "let\'s go" and *smiles warmly*.'
+    assert rp_render(normalise(src, tags_ok=False), "all") == [
+        ("character", "Then she says let's go and smiles warmly.")]
