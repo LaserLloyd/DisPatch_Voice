@@ -279,6 +279,18 @@ test('timings line reads as sentences in the UI language, no middle dots (1.0.1,
   }
 }));
 
+test('locales: the stock voice and the default voice are two different words in every language (1.0.1, audit L14)', () => {
+  for (const lang of ['en', 'de', 'es', 'fr', 'pt', 'ja', 'zh', 'ar']) {
+    const b = loadBundle(lang);
+    assert.notEqual(b.drive.default_voice, b.drive.voice_stock, `${lang}: drive.default_voice vs drive.voice_stock`);
+    assert.notEqual(b.voices.default_badge, b.voices.stock_badge, `${lang}: voices.default_badge vs voices.stock_badge`);
+    assert.doesNotMatch(b.drive.timing_link, /·/, `${lang}: drive.timing_link`);
+  }
+  const DE = loadBundle('de');
+  assert.equal(DE.drive.voice_stock, 'Mitgelieferte Stimme');
+  assert.equal(DE.voices.stock_badge, 'Mitgeliefert');
+});
+
 test('timings line: heard / first audio, plus the link line when the server sent one (Voice lab)', () => {
   const { shell } = { shell: { i18n: { t: (k, v) => `${k}:${JSON.stringify(v || {})}` } } };
   const prev = bindShell(shell);
