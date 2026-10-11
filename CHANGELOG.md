@@ -44,8 +44,8 @@ together in this release.
   (and `say_end` after the last one), numbers sentences when they are queued, and
   has a text mode in which the phone reads the `say` and the server never
   synthesises.
-- **Acknowledgements** (`text/acks.py`, `text/ack_lines.py`): 62 default lines over
-  seven intents plus per-character pools (`wry`, `bright`, `trainer`, `gruff`),
+- **Acknowledgements** (`text/acks.py`, `text/ack_lines.py`): 70 default lines (62 distinct)
+  over seven intents plus per-character pools (`wry`, `bright`, `trainer`, `gruff`),
   chosen by what was said, never repeating any of the last four, only when the reply
   is really going to take a while; spoken status lines for tool calls; wait lines at
   5 s and 15 s. No more "good question" after a statement, and no listening noise
