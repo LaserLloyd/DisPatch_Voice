@@ -49,6 +49,16 @@ def _clear_caches():
     profiles_bridge._STORE = None
     profiles_bridge._EXTRAS_STARTED.clear()
     ws._SESSIONS.clear()
+    # the per-chat registry, learned endpointing and the commit cursor are module
+    # state too: a test that left one behind made the next one order-dependent
+    ws._BY_STREAM.clear()
+    ws._LEARNED.clear()
+    with ws._WIRE_LOCK:
+        if ws._CURSOR is not None:
+            import contextlib
+            with contextlib.suppress(Exception):
+                ws._CURSOR[1].close()
+        ws._CURSOR = None
 
 
 @pytest.fixture

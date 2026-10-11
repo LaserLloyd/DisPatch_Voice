@@ -23,6 +23,27 @@ async def settle(n=30):
         await asyncio.sleep(0.005)
 
 
+async def wait_json(ws, t, timeout=5.0):
+    """The frames of type ``t`` once at least one arrived (polls; a fixed settle()
+    raced the event loop under load and made the reconnect test order-dependent)."""
+    loop = asyncio.get_running_loop()
+    end = loop.time() + timeout
+    while not ws.json_of(t):
+        if loop.time() > end:
+            raise AssertionError(f"no {t!r} frame within {timeout} s")
+        await asyncio.sleep(0.005)
+    return ws.json_of(t)
+
+
+async def wait_until(cond, timeout=5.0):
+    loop = asyncio.get_running_loop()
+    end = loop.time() + timeout
+    while not cond():
+        if loop.time() > end:
+            raise AssertionError("condition not met within %s s" % timeout)
+        await asyncio.sleep(0.005)
+
+
 @pytest.fixture
 def served(host_env, monkeypatch, fake_engines, no_models):
     """setup(ctx) with voice forced on, fake engines, a one-turn detector and a
@@ -333,20 +354,22 @@ async def test_a_reconnect_of_the_same_voice_chat_replaces_the_older_session(ser
     dead socket for up to 30 s; one voice chat holds one session slot. A second tab — a
     different stream id — is a different voice chat and is left alone."""
     ctx, _holds = served
+    assert not ws_mod._BY_STREAM and ws_mod.open_count() == 0    # the fixture's clean slate
     ws_a = fake_engines.FakeWS(query=dict(V3_QUERY))
     task_a = asyncio.create_task(ctx.connect("voice", THREAD, ws_a))
-    await settle(10)
-    assert ws_a.json_of("ready")[0]["proto"] == 3 and ws_mod.open_count() == 1
+    assert (await wait_json(ws_a, "ready"))[0]["proto"] == 3
+    await wait_until(lambda: ws_mod.open_count() == 1)
     ws_b = fake_engines.FakeWS(query=dict(V3_QUERY))
     task_b = asyncio.create_task(ctx.connect("voice", THREAD, ws_b))
     await asyncio.wait_for(task_a, 5)                 # A ended without its socket ever closing
     assert ws_a.closed_with == ws_mod.REPLACED and ws_a.close_reason == "replaced"
-    await settle(10)
-    assert ws_b.json_of("ready") and ws_b.closed_with is None and ws_mod.open_count() == 1
+    await wait_json(ws_b, "ready")
+    assert ws_b.closed_with is None and ws_mod.open_count() == 1
     ws_c = fake_engines.FakeWS(query={**V3_QUERY, "s": "str-another-tab-1"})
     task_c = asyncio.create_task(ctx.connect("voice", THREAD, ws_c))
-    await settle(10)
-    assert ws_mod.open_count() == 2 and ws_b.closed_with is None
+    await wait_json(ws_c, "ready")
+    await wait_until(lambda: ws_mod.open_count() == 2)
+    assert ws_b.closed_with is None
     for ws, task in ((ws_b, task_b), (ws_c, task_c)):
         ws.hang_up()
         await asyncio.wait_for(task, 5)
