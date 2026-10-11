@@ -1245,6 +1245,41 @@ for (const ending of ['busy', 'locked']) {
   });
 }
 
+test('overlay: Mute and Unmute are announced on the tap, once, without waiting for the server (1.0.1, audit L10)', dom, async (t) => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, firstRunOpens: 3 }));
+    t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: 5_000_000 });
+    const o = await openOverlay(world);
+    try {
+      o.ws.msg({ type: 'ready', proto: 3, sid: 'aaaa', sample_rate_in: 16000, codec_in: 'pcm16', codec_out: 'pcm16' });
+      o.ws.msg({ type: 'state', state: 'listening' });
+      advance(t, 100, 50);
+      const status = o.overlay.querySelector('.sr-only[role=status]');
+      const said = [];
+      const seen = () => { const x = status.textContent; if (x && said.at(-1) !== x) said.push(x); };
+      const mo = new MutationObserver(seen);
+      mo.observe(status, { childList: true, characterData: true, subtree: true });
+      const pause = o.overlay.querySelector('.drive-pause');
+      pause.click();                                     // Mute
+      advance(t, 100, 50); await settle(); seen();
+      assert.deepEqual(said, [EN.drive.state_paused], 'Muted is said on the tap, before any echo');
+      status.textContent = '';
+      o.ws.msg({ type: 'state', state: 'paused' });       // the server's echo
+      advance(t, 100, 50); await settle(); seen();
+      assert.equal(status.textContent, '', 'the echo does not say it again');
+      pause.click();                                     // Unmute
+      advance(t, 100, 50); await settle(); seen();
+      assert.equal(said.at(-1), EN.drive.state_listening);
+      const n = said.length;
+      o.ws.msg({ type: 'state', state: 'listening' });
+      advance(t, 100, 50); await settle(); seen();
+      assert.equal(said.length, n, 'one announcement per tap');
+      mo.disconnect();
+    } finally { t.mock.timers.reset(); o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
 test('overlay: replies shown as text appear even with Captions off; no "Low signal" for a pinned phone voice (FR-ux M2, L3)', dom, async () => {
   const world = fakeAudioWorld();
   await withDom(async () => {

@@ -828,9 +828,14 @@ export function openDrive(thread, ctx) {
   function earcon(kind) {
     if (settings.sounds) { try { playEarcon(ac, kind); } catch { /* closed context */ } }
   }
+  let localWord = null;           // the word setListening() announced itself (L10)
+  let lastSaid = { text: '', at: 0 };
   function announce(text) {
     status.textContent = '';
-    if (text) setTimeout(() => { status.textContent = text; }, 30);
+    if (text) {
+      lastSaid = { text, at: Date.now() };
+      setTimeout(() => { status.textContent = text; }, 30);
+    }
   }
 
   // ---- notice strip ------------------------------------------------------
@@ -960,7 +965,12 @@ export function openDrive(thread, ctx) {
     if (s === 'hearing') quiet.heard();
     else if (s === 'speaking') quiet.activity();
     paint();
-    if (prev !== s && ANNOUNCE.has(s)) announce(stateWord.textContent);
+    if (prev !== s && ANNOUNCE.has(s)) {
+      // Mute/Unmute was already announced on the tap; the server's echo
+      // (`state: paused`) must not say it a second time.
+      if (stateWord.textContent !== localWord) announce(stateWord.textContent);
+      localWord = null;
+    }
     // Push-to-talk: a finished reply leaves the mic paused.
     if (prev === 'speaking' && s === 'listening' && !settings.autoListen && listening) setListening(false);
   }
@@ -1438,6 +1448,13 @@ export function openDrive(thread, ctx) {
     } else {
       sendStart();
       if (ready && state === 'paused') setState('listening'); else paint();
+    }
+    // Announce here, not on the server's echo: that is a round trip later on a weak
+    // link, and never on a server that does not echo (audit L10).
+    const word = stateWord.textContent;
+    if (!(lastSaid.text === word && Date.now() - lastSaid.at < 1500)) {
+      announce(word);
+      localWord = word;
     }
   }
 
