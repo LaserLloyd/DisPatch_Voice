@@ -22,7 +22,19 @@
 // as the same app as Settings → Voice.
 
 const Q = new URL(import.meta.url).search;
-const { el, railIcon, t, listFormat, metaList } = await import(`./shell.js${Q}`);
+const { el, railIcon, t, listFormat, metaList, sentences } = await import(`./shell.js${Q}`);
+
+/**
+ * Engine ids as people read them: proper names, not translated. The add-on's own
+ * engines are spelled here; a plugin's engine id gets a capital letter (a plugin
+ * names itself, so its id is not hard-coded in this file).
+ */
+const ENGINE_NAMES = { chatterbox: 'Chatterbox', minimax: 'MiniMax' };
+export function engineName(id) {
+  const k = String(id || '').trim();
+  if (!k) return '';
+  return ENGINE_NAMES[k.toLowerCase()] || k.charAt(0).toUpperCase() + k.slice(1);
+}
 const {
   voiceStatus, voiceLab, voiceJson, patchVoiceSettings, row, switchInput, selectInput,
   previewButton, builtinValue, engineLine, setupSteps, stepsBlock, loadDriveSettings,
@@ -356,7 +368,7 @@ async function renderLab(me, st, ctx) {
   else if (lab.warm === 'running') modelsHint = t('vtools.models_loading');
   else if (lab.loaded) modelsHint = t('vtools.models_loaded');
   let engine = engineLine({ ...st, tts: lab.tts_resolved || lab.tts, smart_turn: lab.smart_turn, stt: lab.stt });
-  if (lab.fallback) engine += ` ${t('vtools.fallback', { name: lab.fallback })}`;
+  if (lab.fallback) engine += ` ${t('vtools.fallback', { name: engineName(lab.fallback) })}`;
   const status = group('drive.group_status', [
     statusRow,
     row(t('vtools.lab_engine'), engine, [], { id: 'vtool-lab-engine' }),
@@ -365,10 +377,10 @@ async function renderLab(me, st, ctx) {
 
   // ---- Cloud and rig voices (status only: keys and addresses stay env-only)
   const mm = lab.minimax || {};
-  const mmHint = [
+  const mmHint = sentences([
     mm.selected ? t('vtools.minimax_in_use') : t('vtools.minimax_not_used'),
     mm.key_set ? t('vtools.key_set') : t('vtools.key_missing'),
-  ].join(' · ');
+  ]);
   const hq = lab.hq || {};
   const hqHint = hq.configured
     ? t('vtools.hq_on', { host: hq.host || '?', model: hq.model || '—', s: hq.timeout_s })

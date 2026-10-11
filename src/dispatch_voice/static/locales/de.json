@@ -199,7 +199,7 @@
     "phone_voice_sample": "Hallo, so liest dein Telefon die Antworten vor.",
     "phone_voice_android_hint": "Dein Telefon liest Antworten mit der Stimme vor, die unter Einstellungen › System › Sprachen › Sprachausgabe gewählt ist.",
     "local_voice_failed": "Die Stimme des Telefons funktioniert nicht – die Antworten erscheinen als Text.",
-    "timing_link": "{rtt} ms · {kbps} kbps · {mode}",
+    "timing_link": "{rtt} ms, {kbps} kbps, {mode}",
     "acks_off": "Aus",
     "acks_sometimes": "Manchmal",
     "acks_often": "Oft",

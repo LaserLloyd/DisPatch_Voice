@@ -262,6 +262,23 @@ test('error words: turn errors, codes, and 2.1.0 English messages', () => {
   assert.equal(errorFrameKey({ message: 'Speech synthesis failed.' }), 'drive.err_tts');
 });
 
+test('timings line reads as sentences in the UI language, no middle dots (1.0.1, audit L12)', dom, () => withDom(async () => {
+  const times = { heard: 420, first: 1600, link: { rtt_ms: 420.4, down_kbps: 31, mode: 'phone' } };
+  for (const [lang, want] of [
+    ['en', 'Heard in 420 ms. Reply started in 1.6 s. 420 ms, 31 kbps, phone voice.'],
+    ['ja', null],
+  ]) {
+    const { shell } = fakeShell({ lang });
+    const prev = bindShell(shell);
+    try {
+      const line = timingsLine(times);
+      assert.doesNotMatch(line, /·/);
+      if (want) assert.equal(line, want);
+      else assert.match(line, /^[^。]+。[^。]+。[^。]+。$/, `${lang}: three sentences ending in 。, no spaces between (${line})`);
+    } finally { bindShell(prev); }
+  }
+}));
+
 test('timings line: heard / first audio, plus the link line when the server sent one (Voice lab)', () => {
   const { shell } = { shell: { i18n: { t: (k, v) => `${k}:${JSON.stringify(v || {})}` } } };
   const prev = bindShell(shell);

@@ -203,7 +203,7 @@
     "phone_voice_sample": "مرحبًا، هكذا سيقرأ هاتفك الردود.",
     "phone_voice_android_hint": "يقرأ هاتفك الردود بالصوت المختار في الإعدادات › النظام › اللغات › تحويل النص إلى كلام.",
     "local_voice_failed": "صوت الهاتف لا يعمل — تظهر الردود نصًا.",
-    "timing_link": "{rtt} ms · {kbps} kbps · {mode}",
+    "timing_link": "{rtt} ms، {kbps} kbps، {mode}",
     "acks_off": "إيقاف",
     "acks_sometimes": "أحيانًا",
     "acks_often": "كثيرًا",

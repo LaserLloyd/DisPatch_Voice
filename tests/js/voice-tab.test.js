@@ -15,7 +15,7 @@ import { HAS_DOM, STATIC, fakeFetch, fakeShell, settle, withDom } from './_shell
 
 import {
   cloningState, builtinState, mountVoiceTool, unmountVoiceTool, mountedVoiceTool, VOICE_TOOLS, VOICE_TOOL_TILES,
-  INSTALL, fmtMs, builtinPlugin, ackRows, lastChatRows, STT_ENGINES, DECODER_PROMPT_S,
+  INSTALL, fmtMs, builtinPlugin, ackRows, lastChatRows, STT_ENGINES, DECODER_PROMPT_S, engineName,
 } from '../../src/dispatch_voice/static/voice-tools.js';
 import { createVoicesPane, isStock, canBuild, chipClass, voiceMetaLine } from '../../src/dispatch_voice/static/voices.js';
 import { noteMetrics } from '../../src/dispatch_voice/static/drive.js';
@@ -192,6 +192,25 @@ test('Voice lab: engines, acknowledgements + Rebuild, sessions + power, timing, 
   }, fetch);
 });
 
+test('Voice lab: engine names, not ids; status lines are sentences, not middle-dot strings (1.0.1, audit L12/L13)', dom, async () => {
+  assert.equal(engineName('kokoro'), 'Kokoro');
+  assert.equal(engineName('chatterbox'), 'Chatterbox');
+  assert.equal(engineName('minimax'), 'MiniMax');
+  assert.equal(engineName('piper'), 'Piper', 'a plugin engine gets a capital, not a raw id');
+  assert.equal(engineName(''), '');
+  const lab = { ...LAB(), fallback: 'kokoro', minimax: { selected: true, key_set: false } };
+  const fetch = fakeFetch({ 'GET /api/voice/status': LAB_STATUS(), 'GET /api/voice/lab': lab });
+  await inShell(async (host) => {
+    await mountVoiceTool(host, 'voice-lab', {});
+    const engine = host.querySelector('#vtool-lab-engine').textContent;
+    assert.match(engine, /Fallback voice: Kokoro\./);
+    assert.doesNotMatch(engine, /: kokoro/);
+    const mm = host.querySelector('#vtool-minimax').textContent;
+    assert.match(mm, /In use\. No API key\./);
+    assert.doesNotMatch(host.textContent, /·/, 'no middle-dot meta string anywhere in the lab (SPEC §7.5)');
+  }, fetch);
+});
+
 test('Voice lab: the learned pause shows and Reset clears it on this device', dom, async () => {
   const fetch = fakeFetch({ 'GET /api/voice/status': LAB_STATUS(), 'GET /api/voice/lab': LAB() });
   await inShell(async (host) => {
@@ -220,7 +239,8 @@ test('Voice lab: the last voice chat\'s speculation and link numbers (from metri
     const rows = lastChatRows(m);
     const by = Object.fromEntries(rows.map((r) => [r.id, r.textContent]));
     assert.match(by['vtool-spec'], /2 started, 1 used, 1 dropped, 0 too late/);
-    assert.match(by['vtool-link'], /420 ms · 31 kbps · phone voice/);
+    assert.match(by['vtool-link'], /420 ms, 31 kbps, phone voice/);
+    assert.doesNotMatch(by['vtool-link'], /·/, 'no middle-dot meta string (SPEC §7.5)');
     assert.match(by['vtool-link'], /Tailscale relay/);
     assert.match(by['vtool-last-timing'], /Reply started in 2\.4 s/);
     assert.match(by['vtool-power'], /performance, up to 5090 MHz/);

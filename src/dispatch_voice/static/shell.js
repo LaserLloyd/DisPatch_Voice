@@ -120,6 +120,18 @@ export function metaList(items) {
   } catch { return parts.join(', '); }
 }
 
+/**
+ * Short statements as sentences, "Heard in 420 ms. Reply started in 1.6 s." —
+ * the readable form of a status line (SPEC §7.5: no middle-dot meta strings).
+ * Japanese and Chinese end each with "。" and need no space between them.
+ */
+export function sentences(items) {
+  const parts = (items || []).filter(Boolean).map((x) => String(x).trim()).filter(Boolean);
+  const cjk = /^(ja|zh)\b/i.test(language());
+  const stop = cjk ? '\u3002' : '.';
+  return parts.map((p) => (/[.!?\u3002\uff01\uff1f\u061f]$/.test(p) ? p : p + stop)).join(cjk ? '' : ' ');
+}
+
 /** The UI language code ("en", "de", …). */
 export function language() {
   if (bound && typeof bound.language === 'function') return bound.language() || 'en';

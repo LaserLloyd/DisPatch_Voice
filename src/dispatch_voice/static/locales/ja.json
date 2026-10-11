@@ -198,7 +198,7 @@
     "phone_voice_sample": "こんにちは。電話はこのように返答を読み上げます。",
     "phone_voice_android_hint": "電話は 設定 › システム › 言語 › テキスト読み上げの出力 で選んだ音声で返答を読み上げます。",
     "local_voice_failed": "電話の音声が動作しません。返答は文字で表示されます。",
-    "timing_link": "{rtt} ms · {kbps} kbps · {mode}",
+    "timing_link": "{rtt} ms、{kbps} kbps、{mode}",
     "acks_off": "オフ",
     "acks_sometimes": "ときどき",
     "acks_often": "よく",

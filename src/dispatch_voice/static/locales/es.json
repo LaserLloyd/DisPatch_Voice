@@ -200,7 +200,7 @@
     "phone_voice_sample": "Hola, así leerá tu teléfono las respuestas.",
     "phone_voice_android_hint": "Tu teléfono lee las respuestas con la voz elegida en Ajustes › Sistema › Idiomas › Salida de texto a voz.",
     "local_voice_failed": "La voz del teléfono no funciona: las respuestas se muestran como texto.",
-    "timing_link": "{rtt} ms · {kbps} kbps · {mode}",
+    "timing_link": "{rtt} ms, {kbps} kbps, {mode}",
     "acks_off": "Nunca",
     "acks_sometimes": "A veces",
     "acks_often": "A menudo",

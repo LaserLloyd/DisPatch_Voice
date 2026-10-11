@@ -200,7 +200,7 @@
     "phone_voice_sample": "Olá, é assim que o telemóvel vai ler as respostas.",
     "phone_voice_android_hint": "O telemóvel lê as respostas com a voz escolhida em Definições › Sistema › Idiomas › Saída de texto para voz.",
     "local_voice_failed": "A voz do telemóvel não está a funcionar — as respostas aparecem como texto.",
-    "timing_link": "{rtt} ms · {kbps} kbps · {mode}",
+    "timing_link": "{rtt} ms, {kbps} kbps, {mode}",
     "acks_off": "Nunca",
     "acks_sometimes": "Às vezes",
     "acks_often": "Muitas vezes",

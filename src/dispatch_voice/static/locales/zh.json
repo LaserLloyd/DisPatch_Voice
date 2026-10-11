@@ -198,7 +198,7 @@
     "phone_voice_sample": "你好，你的手机会这样朗读回复。",
     "phone_voice_android_hint": "手机会用 设置 › 系统 › 语言 › 文字转语音输出 中选择的声音朗读回复。",
     "local_voice_failed": "手机的声音无法使用 — 回复以文字显示。",
-    "timing_link": "{rtt} ms · {kbps} kbps · {mode}",
+    "timing_link": "{rtt} ms，{kbps} kbps，{mode}",
     "acks_off": "关闭",
     "acks_sometimes": "有时",
     "acks_often": "经常",

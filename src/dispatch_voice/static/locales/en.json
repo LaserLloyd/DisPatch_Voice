@@ -199,7 +199,7 @@
     "phone_voice_sample": "Hi, this is how your phone will read replies.",
     "phone_voice_android_hint": "Your phone reads replies with the voice chosen under Settings › System › Languages › Text-to-speech output.",
     "local_voice_failed": "The phone’s voice isn’t working — replies are shown as text.",
-    "timing_link": "{rtt} ms · {kbps} kbps · {mode}",
+    "timing_link": "{rtt} ms, {kbps} kbps, {mode}",
     "acks_off": "Off",
     "acks_sometimes": "Sometimes",
     "acks_often": "Often",

@@ -40,7 +40,7 @@
 // runs inside openDrive().
 
 const Q = new URL(import.meta.url).search;
-const { el, railIcon, iconPaths, t, language, acquireInert, releaseInert, activity: shellActivity } = await import(`./shell.js${Q}`);
+const { el, railIcon, iconPaths, t, language, sentences, acquireInert, releaseInert, activity: shellActivity } = await import(`./shell.js${Q}`);
 const {
   PATIENCE_PRESETS, loadDriveSettings, saveDriveSettings, onDriveSettings, startPayload,
   buildQuickSheet, MIC_ICON, phoneVoices, isAndroid,
@@ -131,9 +131,9 @@ const fmtMs = (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFix
 const MODE_KEYS = { audio: 'drive.mode_server', phone: 'drive.mode_phone', text: 'drive.mode_text' };
 
 /**
- * The Voice lab "Show timings" line from the last `metrics` frames:
- * "Heard in 420 ms · Reply started in 1.6 s", plus the link line
- * "420 ms · 31 kbps · phone voice" when the server reported one; '' when nothing yet.
+ * The Voice lab "Show timings" line from the last `metrics` frames, as sentences:
+ * "Heard in 420 ms. Reply started in 1.6 s.", plus the link sentence
+ * "420 ms, 31 kbps, phone voice." when the server reported one; '' when nothing yet.
  */
 export function timingsLine(times) {
   const parts = [];
@@ -144,7 +144,7 @@ export function timingsLine(times) {
     const kbps = typeof link.down_kbps === 'number' ? link.down_kbps : '–';
     parts.push(t('drive.timing_link', { rtt: Math.round(link.rtt_ms), kbps, mode: t(MODE_KEYS[link.mode] || MODE_KEYS.audio) }));
   }
-  return parts.join(' · ');
+  return sentences(parts);
 }
 
 /**
