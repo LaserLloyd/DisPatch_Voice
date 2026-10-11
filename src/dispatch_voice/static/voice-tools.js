@@ -22,7 +22,7 @@
 // as the same app as Settings → Voice.
 
 const Q = new URL(import.meta.url).search;
-const { el, railIcon, t, listFormat, metaList, sentences } = await import(`./shell.js${Q}`);
+const { el, railIcon, t, has, listFormat, metaList, sentences } = await import(`./shell.js${Q}`);
 
 /**
  * Engine ids as people read them: proper names, not translated. The add-on's own
@@ -38,7 +38,7 @@ export function engineName(id) {
 const {
   voiceStatus, voiceLab, voiceJson, patchVoiceSettings, row, switchInput, selectInput,
   previewButton, builtinValue, engineLine, setupSteps, stepsBlock, loadDriveSettings,
-  saveDriveSettings, THINKING_LEVELS, MIC_ICON, DV_STEPS, sessionLines,
+  saveDriveSettings, THINKING_LEVELS, MIC_ICON, DV_STEPS, sessionLines, rigLabLine,
 } = await import(`./drive-settings.js${Q}`);
 const { createVoicesPane } = await import(`./voices.js${Q}`);
 const { getLastMetrics } = await import(`./drive.js${Q}`);
@@ -142,6 +142,38 @@ export function notInstalled(titleKey, hintKey, steps, { missing = null } = {}) 
     stepsBlock(steps),
     el('p', { class: 'dev-row-hint drive-setup-fix', text: t('drive.setup_restart') }),
   ], 'vtool-install')], { id: 'vtool-install-group' });
+}
+
+/**
+ * The Voice lab's GPU rig row (ADDON-ENGINE §5): the line, then the fields an
+ * owner checks once the rig is up — where, the engines (sha8), the card, the
+ * limits, the deadlines, the ping — and how to set it up. No token, ever.
+ */
+export function rigLabRow(rg) {
+  const r = rg && typeof rg === 'object' ? rg : null;
+  const facts = [];
+  if (r) {
+    const ready = r.state === 'ready' ? r : (r.last || {});
+    if (r.host) facts.push(t('vtools.rig_where', { host: r.host }));
+    const eng = ready.engines && typeof ready.engines === 'object'
+      ? Object.entries(ready.engines).filter(([, v]) => v && v.sha8).map(([k, v]) => `${k} ${v.name || '?'} ${v.sha8}`) : [];
+    if (eng.length) facts.push(t('vtools.rig_engines', { list: eng.join(', ') }));
+    const lim = ready.limits;
+    if (lim && Number.isFinite(lim.sessions)) {
+      facts.push(t('vtools.rig_limits', { sessions: lim.sessions, contexts: lim.contexts ?? '?', ahead: Math.round((lim.ahead_ms_max || 0) / 1000) }));
+    }
+    const lease = r.state === 'ready' ? r.lease : null;
+    if (lease) facts.push(t('vtools.rig_lease', { state: has(`vtools.rig_lease_${lease}`) ? t(`vtools.rig_lease_${lease}`) : String(lease) }));
+    const d = r.deadlines;
+    if (d && Number.isFinite(d.stt_final_ms)) facts.push(t('vtools.rig_deadlines', { final: d.stt_final_ms, start: d.tts_start_ms }));
+    const m = r.metrics || {};
+    if (Number.isFinite(m.ping_rtt)) facts.push(t('vtools.rig_ping', { ms: fmtMs(m.ping_rtt) }));
+  }
+  return blockRow(t('vtools.rig'), rigLabLine(r, fmtMs), [
+    ...facts.map((f) => el('p', { class: 'dev-row-hint vtool-rig-fact', text: f })),
+    el('p', { class: 'dev-row-hint', text: t('vtools.rig_how') }),
+    el('pre', { class: 'voice-cmd', dir: 'ltr' }, [el('code', { text: 'rig:\n  enabled: true\n  url: ws://<rig>:1236/v1/realtime\n# ~/.config/local-chat/speechforge.env (chmod 600)\nSPEECHFORGE_TOKEN=…' })]),
+  ], 'vtool-rig');
 }
 
 /** The line that says voice itself is off, with the way to turn it on. */
@@ -386,6 +418,7 @@ async function renderLab(me, st, ctx) {
     ? t('vtools.hq_on', { host: hq.host || '?', model: hq.model || '—', s: hq.timeout_s })
     : t('vtools.hq_off');
   const cloud = group('vtools.group_cloud', [
+    rigLabRow(lab.rig),
     blockRow(t('vtools.minimax'), mmHint, [
       el('p', { class: 'dev-row-hint', text: t('vtools.minimax_how') }),
       el('pre', { class: 'voice-cmd', dir: 'ltr' }, [el('code', { text: 'DISPATCH_VOICE_TTS=minimax\nMINIMAX_API_KEY=…' })]),

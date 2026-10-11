@@ -28,7 +28,7 @@ dispatch-voice fetch-models
 **On a server you keep running**, point the overlay at a release checkout that nobody develops in, and start DisPatch through its launcher, which falls back to DisPatch without voice (instead of a restart loop) when the overlay cannot be resolved or crashes on import:
 
 ```sh
-git -C <dispatch-voice> worktree add --detach <release-dir> v1.0.1     # later releases: git -C <release-dir> checkout --detach <tag>
+git -C <dispatch-voice> worktree add --detach <release-dir> v1.1.0     # later releases: git -C <release-dir> checkout --detach <tag>
 cd <dispatch-chat>/backend
 uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm once, online, after every release
 <dispatch-chat>/scripts/local-chat-launch --uv "$(command -v uv)" --with-editable <release-dir> \
@@ -61,6 +61,24 @@ Quality check (2026-10-09): 20 renders across 10 lines, transcribed back with Pa
 **Sampling matters.** Resemble's ONNX example decodes greedily, and on a cloned voice that looped the reference clip's words for ten seconds. The engine samples the way Resemble's own PyTorch code does (temperature 0.8, top-p 0.95, top-k 1000, repetition penalty 1.2), and caps output length by word count. `tests/test_models.py::test_no_runaway_or_reference_replay` guards this.
 
 Models are pinned to a Hugging Face commit (`MODEL_REVISION` in `engine.py`) and to revisions with sha256 checksums for the speech models (`host/download.py`), so a re-download can't change what you tested. They live in plain directories, not the HF cache: onnxruntime refuses external-data files reached through the cache's symlinks.
+
+## Optional: GPU rig
+
+A machine with an NVIDIA GPU running SpeechForge (a speech server speaking the `sf.1` protocol) can do the speech recognition, the end-of-turn score and the reply voice, so replies start sooner. It is off until you set it up:
+
+```yaml
+# <data>/voice.yaml
+rig:
+  enabled: true
+  url: ws://<rig>:1236/v1/realtime
+```
+
+```sh
+# the token, readable by you only (or SPEECHFORGE_TOKEN in DisPatch's environment)
+mkdir -p ~/.config/local-chat && (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '<token>' > ~/.config/local-chat/speechforge.env)
+```
+
+Then Settings → Voice → *Use the GPU rig when available*. This computer stays in charge of the conversation and takes over the speech work whenever the rig is slow, busy or away: a turn only starts on a rig that answered recently, a dead rig is noticed in under a second, and the words in flight replay into the local recogniser. Only voice conditionals go to the rig, never the reference clip. Details: [docs/voice-chat/rig.md](docs/voice-chat/rig.md).
 
 ## Standalone use
 

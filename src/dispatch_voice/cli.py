@@ -224,6 +224,66 @@ def probe_update() -> dict:
     return out
 
 
+def probe_rig(settings) -> dict:
+    """The GPU rig line: set up? switched on? and, when an address and a token are
+    set, ``GET /health`` + ``GET /ready`` on it (3 s each). The token is never printed."""
+    from .host import rig
+    rs = settings.rig
+    tok = rig.read_token()
+    out: dict = {"enabled": rs.enabled, "url_set": bool(rs.url), "url_ok": bool(rs.url) and rig.valid_url(rs.url),
+                 "host": rig.host_of(rs.url), "token": tok.source, "token_problem": tok.problem,
+                 "token_file": str(rig.token_path())}
+    if not (out["url_ok"] and tok.value):
+        return out
+    import httpx
+    base = rig.http_base(rs.url)
+    try:
+        r = httpx.get(base + "/health", timeout=3.0)
+        out["health"] = r.status_code
+        out["version"] = (r.json() or {}).get("version") if r.status_code == 200 else None
+    except Exception as e:
+        out["health"] = None
+        out["detail"] = type(e).__name__
+        return out
+    try:
+        r = httpx.get(base + "/ready", timeout=3.0, headers={"Authorization": f"Bearer {tok.value}"})
+        out["ready"] = r.status_code
+        if r.status_code == 200:
+            body = r.json() or {}
+            out["gpu"] = (body.get("gpu") or {}).get("name")
+            out["engine_shas"] = body.get("engine_shas")
+    except Exception as e:
+        out["ready"] = None
+        out["detail"] = type(e).__name__
+    return out
+
+
+def rig_line(r: dict) -> tuple[str, int]:
+    """(the doctor's GPU rig line, problems it counts)."""
+    where = f" ({r['host']})" if r.get("host") else ""
+    if not r["url_set"] and not r["enabled"]:
+        return "GPU rig: not set up (optional; see docs/voice-chat/rig.md)", 0
+    if r["url_set"] and not r["url_ok"]:
+        return "GPU rig: rig.url in voice.yaml is not a ws:// or wss:// address", 1
+    if r.get("token_problem") == "permissions":
+        return f"GPU rig: {r['token_file']} is readable by other users: chmod 600 it", 1
+    if not r.get("token"):
+        line = f"GPU rig{where}: no SPEECHFORGE_TOKEN (set it in {r['token_file']}, mode 600)"
+        return line, 1 if r["enabled"] else 0
+    if not r["url_set"]:
+        return "GPU rig: a token is set but rig.url is not (voice.yaml)", 1 if r["enabled"] else 0
+    state = "on" if r["enabled"] else "off (rig.enabled is false)"
+    if r.get("health") is None:
+        return f"GPU rig{where}: {state}; not reachable ({r.get('detail', 'no answer')}): this computer speaks", 0
+    if r.get("ready") == 401:
+        return f"GPU rig{where}: {state}; the rig refused the token (401)", 1
+    if r.get("ready") == 200:
+        gpu = f" on {r['gpu']}" if r.get("gpu") else ""
+        return f"GPU rig{where}: {state}; SpeechForge {r.get('version') or '?'} ready{gpu}", 0
+    return (f"GPU rig{where}: {state}; SpeechForge {r.get('version') or '?'} reachable, not ready "
+            f"(HTTP {r.get('ready')}): this computer speaks until it is"), 0
+
+
 class DoctorContext:
     """What the doctor hands the plugins in place of DisPatch's context: a
     plugin that mounts routes (``api.include_router``) is a plugin that loads,
@@ -268,6 +328,7 @@ def doctor_report(*, backend: Path | None, url: str, check_update: bool) -> dict
     rep["builtin_voices"] = len(registry.builtin_voices(settings))
     rep["switch"] = {"enabled": settings.switched_on, "forced": settings.forced,
                      "voice_yaml": str(context.paths().voice_yaml)}
+    rep["rig"] = probe_rig(settings)
     rep["running"] = probe_running(url)
     if backend is not None:
         rep["backend"] = probe_backend(backend, checkout if editable else None)
@@ -322,6 +383,10 @@ def print_doctor(rep: dict) -> int:
     sw = rep["switch"]
     print(f"switch: {'on' if sw['enabled'] else 'off'}" + (f" (forced by DISPATCH_VOICE={sw['forced']})" if sw["forced"] else "")
           + f"  [{sw['voice_yaml']}]")
+    if rep.get("rig") is not None:
+        line, bad = rig_line(rep["rig"])
+        print(line)
+        problems += bad
     r = rep["running"]
     if not r["reachable"]:
         print(f"running server ({r['url']}): not reachable")

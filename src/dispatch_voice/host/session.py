@@ -611,7 +611,7 @@ class VoiceSession:
                  learned_from_server: bool = False,
                  transport: Transport | None = None, cursor=None, cursor_key: tuple | None = None,
                  relay: Callable[[], Awaitable[dict | None]] | None = None,
-                 send_ahead_s: float | None = SEND_AHEAD_S) -> None:
+                 send_ahead_s: float | None = SEND_AHEAD_S, rig=None) -> None:
         self.ws = ws
         self.thread_id = thread_id
         self.settings = settings
@@ -843,6 +843,12 @@ class VoiceSession:
         self._ack_metrics: dict = {}
         # heard tracking (SPEC §4.8)
         self.heard = HeardMap()
+        #: The GPU rig's reply engine (host/engines/rig_tts.py) when one is in play, else
+        #: None: cancel{gen} before the host abort, pause/resume with the duck, credit
+        #: from `heard`, and its word timings for the heard map (ADDON-ENGINE §4).
+        self.rig = rig
+        if rig is not None and callable(getattr(rig, "words_for", None)):
+            self.heard.words_of = rig.words_for
         self._last_heard: _Heard | None = None
         self._heard_fut: asyncio.Future | None = None
         self._heard_gen: int | None = None
@@ -1667,6 +1673,10 @@ class VoiceSession:
         else:
             last = r.last_seq
         r.end_sent = True
+        done_fn = getattr(self.tts, "reply_done", None)
+        if done_fn is not None:
+            with contextlib.suppress(Exception):
+                done_fn(rid)
         await self.send({"type": "say_end", "gen": self.gen, "message_id": r.mid or rid,
                          "last_seq": last})
 
@@ -1804,10 +1814,16 @@ class VoiceSession:
         # The engine finished the piece before anything stopped it (its audio is whole).
         complete = [False]
 
+        reply_fn = getattr(self.tts, "stream_reply", None)
+
         def produce():
             REPLY_ACTIVITY.enter()
             try:
-                for chunk in self.tts.stream(words, item.voice, stop):
+                # With a rig in play the engine needs the reply's identity (one reply,
+                # one engine; one rig context per reply).
+                chunks = (reply_fn(words, item.voice, stop, gen=gen, seq=item.seq, rid=item.rid, kind=kind)
+                          if callable(reply_fn) else self.tts.stream(words, item.voice, stop))
+                for chunk in chunks:
                     loop.call_soon_threadsafe(q.put_nowait, ("chunk", chunk))
                     if stop.is_set():
                         break
@@ -2310,6 +2326,9 @@ class VoiceSession:
         ``abort`` the host's turn is stopped too (returns its row id)."""
         self.gen += 1
         self._stop_tts.set()
+        if self.rig is not None:
+            # cancel{gen} to the rig first (L8 order: before abort_turn / Speculator.start).
+            self.rig.cancel_gen(self.gen - 1)
         self._duck = False
         # The client flushes everything older than the new gen (C.4 `barge_in`): nothing it
         # holds is playing any more, so the send-ahead clock starts over at the next audio
@@ -2343,6 +2362,9 @@ class VoiceSession:
             self._duck_at = self.clock()
             self._duck_verdict = False
             self._duck_informational = self._phone_voice_out()
+        if self.rig is not None:
+            # A false interruption pauses the rig's rendering too (tts.pause/resume).
+            self.rig.pause() if on else self.rig.resume()
         await self.send({"type": "duck", "on": on, "gen": self.gen})
 
     async def _resume_reply(self, *, why: str = "") -> None:
@@ -2846,6 +2868,9 @@ class VoiceSession:
         end-of-turn decision (SPEC §4.1, §4.3, §4.6)."""
         loop = asyncio.get_running_loop()
         turn_fn = self.detector.ep.turn_fn
+        rig_turn = getattr(self.sstt, "turn_fn_for", None)
+        if callable(rig_turn):
+            turn_fn = rig_turn(turn_fn)       # the rig's eou{p} while the utterance is on it
         st_fut = loop.run_in_executor(None, turn_fn, ev.audio) if turn_fn is not None else None
         partial = None
         if not self._sink_busy():
@@ -2859,7 +2884,8 @@ class VoiceSession:
         p: float | None = None
         if st_fut is not None:
             try:
-                p = float(await st_fut)
+                got = await st_fut
+                p = float(got) if got is not None else None
             except Exception:
                 log.exception("voice: smart turn failed at the probe")
                 p = None
@@ -3474,6 +3500,8 @@ class VoiceSession:
         source = source if source in ("server", "phone") else ("phone" if self._mode_next == "text" else "server")
         h = _Heard(gen, seq, played, source, self.clock())
         self._last_heard = h
+        if self.rig is not None and source == "server":
+            self.rig.heard(gen, seq, played)     # credit{played_ms} for the rig
         if gen == self._heard_gen:
             for fut in (self._heard_fut, self._refine_fut):
                 if fut is not None and not fut.done():

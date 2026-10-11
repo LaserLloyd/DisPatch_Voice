@@ -32,7 +32,9 @@ role-play speech mode (``rp_speech``) and its narrator voice
 (``narrator_voice``), whether a cloned voice renders expressive tags
 (``expressive_tags``), the gateway trailer form (``gateway_trailer``) and the
 per-bot conversation defaults (``bots.<id>.backchannel`` / ``follow_up``;
-contracts §F.1 — add-on-owned, never new DisPatch bot fields). They
+contracts §F.1 — add-on-owned, never new DisPatch bot fields) and the
+optional GPU rig (``rig.enabled`` / ``rig.url`` / its deadlines; the token
+is never a setting, see ``host/rig.py``). They
 live in ``<data>/voice.yaml`` and override the matching environment
 defaults; :func:`load_settings` reads the file (cached on its mtime), so a
 change applies to the next turn without a restart.
@@ -61,6 +63,7 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
 from ..rt.settings import RtSettings
+from .rig import RigSettings, clean_rig
 
 log = logging.getLogger("dispatch.voice")
 
@@ -215,6 +218,9 @@ class VoiceSettings:
     #: validates and clamps them). ``hard_silence_s`` is copied in from the
     #: top-level key; ``power_hold`` mirrors the field above.
     rt: RtSettings = field(default_factory=RtSettings)
+    #: The optional GPU rig (``rig:``; host/rig.py). Off unless ``rig.enabled`` AND
+    #: ``rig.url`` AND the SPEECHFORGE_TOKEN are all present.
+    rig: RigSettings = field(default_factory=RigSettings)
 
     # ---- derived paths -------------------------------------------------- #
     @property
@@ -382,7 +388,7 @@ def _bool(name: str, default: bool) -> bool:
 PREF_KEYS = ("enabled", "builtin_voice", "speed", "voice_turn_thinking",
              "merge_window_s", "hard_silence_s", "max_sessions", "rt",
              "rp_speech", "narrator_voice", "expressive_tags", "gateway_trailer", "bots",
-             "opus", "opus_down_kbps", "opus_up_kbps")
+             "opus", "opus_down_kbps", "opus_up_kbps", "rig")
 #: voice.yaml keys from 2.1 → today's names.
 PREF_ALIASES = {"kokoro_voice": "builtin_voice", "kokoro_speed": "speed"}
 #: voice.yaml key → VoiceSettings field, where the two differ.
@@ -539,6 +545,9 @@ def clean_prefs(raw) -> dict:
         bots = clean_bots(raw.get("bots"))
         if bots or raw.get("bots") == {}:
             out["bots"] = bots
+    rig = clean_rig(raw.get("rig"))
+    if rig:
+        out["rig"] = rig
     return out
 
 
@@ -580,6 +589,8 @@ def save_prefs(update: dict) -> dict:
         clean = clean_prefs(update)
         if "rt" in clean or "rt" in current:
             clean["rt"] = {**current.get("rt", {}), **clean.get("rt", {})}
+        if "rig" in clean or "rig" in current:
+            clean["rig"] = {**current.get("rig", {}), **clean.get("rig", {})}
         if "bots" in clean or "bots" in current:
             merged = {k: dict(v) for k, v in current.get("bots", {}).items()}
             for bot_id, conf in clean.get("bots", {}).items():
@@ -636,6 +647,8 @@ def load_settings() -> VoiceSettings:
     )
     prefs = {PREF_FIELDS.get(k, k): v for k, v in load_prefs().items()}
     rt = prefs.pop("rt", None) or {}
+    if "rig" in prefs:
+        prefs["rig"] = RigSettings.from_mapping(prefs["rig"])
     if "power_hold" in rt:
         prefs["power_hold"] = rt["power_hold"]
     s = replace(base, **prefs) if prefs else base

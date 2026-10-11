@@ -61,6 +61,18 @@ class LazyStore:
         return getattr(store(), name)
 
 
+class _RigAwareStore(LazyStore):
+    """The Voices manager's store. Deleting a profile also deletes its conditionals
+    from the GPU rig (SPEC §8.4 deletion sync) when a rig address and token are set."""
+
+    def delete(self, pid: str) -> None:
+        from . import rig
+        sha = rig.sha_for_delete(store(), pid)
+        store().delete(pid)
+        if sha:
+            rig.delete_voice_async(sha)
+
+
 def release_engine() -> None:
     """Drop the loaded Chatterbox sessions; the lazy engine reloads on use."""
     from .engines.chatterbox import LazyEngine
@@ -244,4 +256,4 @@ def install():
     # The profile fillers are NOT registered as acknowledgements any more: the
     # session plays the render queue's lines (SPEC §6.2, host/acks.py).
     log.info("voice: cloned voices mounted at /api/voice/profiles (unlocked tier only)")
-    return build_router(LazyStore(), allow_open=True, ui=False, fillers=False)
+    return build_router(_RigAwareStore(), allow_open=True, ui=False, fillers=False)

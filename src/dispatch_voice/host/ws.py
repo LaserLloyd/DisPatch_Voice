@@ -27,6 +27,12 @@ reply faster, so a slow or wedged power daemon must not delay the ready tone
 (``ready.power_hold`` may therefore read ``off`` for the first ~0.3 s; the
 status route catches up). A socket the gate evicts (4001 "replaced") ends
 its session at once through ``sock.on_replaced``.
+
+With the optional GPU rig set up and switched on (``host/rig.py``), its sf.1
+socket opens right after the accept, beside the CPU engines' warm-up; the
+session then gets the rig behind its own seams (``RigStreamingSTT`` around the
+streaming STT, ``ReplyEngine`` around the TTS engine) and the rig's power gate
+in place of the hold. Without a rig nothing here changes.
 """
 from __future__ import annotations
 
@@ -38,7 +44,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from . import context, routes
+from . import context, rig, routes
 from .config import RP_MODES, VoiceSettings, load_settings
 from .routes import MODELS_MISSING, OFF_SERVER, OFF_SETTINGS, UNAVAILABLE
 
@@ -200,9 +206,9 @@ async def end_all_sessions(code: int = UNAVAILABLE, reason: str = OFF_SETTINGS) 
 
 
 async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tuple | None = None,
-                detector=None, voice_for_bot: Callable | None = None) -> None:
+                detector=None, voice_for_bot: Callable | None = None, rig_http=None) -> None:
     """The handler DisPatch calls for a gated ``/ws/voice/{thread_id}`` socket.
-    ``settings``/``engines``/``detector``/``voice_for_bot`` are test seams."""
+    ``settings``/``engines``/``detector``/``voice_for_bot``/``rig_http`` are test seams."""
     ctx = context.get_context()
     if ctx is None:
         raise RuntimeError("voice: serve() needs the DisPatch extension context (host.setup)")
@@ -225,11 +231,23 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
     # and buffers the mic until `ready`. With the start-up prewarm the loads
     # below are cache hits; on a cold process they take a few seconds.
     await ws.accept()
+    # The GPU rig, when one is set up and switched on: its socket opens NOW, beside the
+    # CPU engines' warm (the open is the rig's warm-up). None = the CPU-only session.
+    rig_session = None
+    rs = getattr(settings, "rig", None)
+    if rs is not None and rs.enabled and rs.url:
+        token = await asyncio.to_thread(_rig_token, settings)
+        if token:
+            try:
+                rig_session = rig.open_for_session(settings, token=token, http_transport=rig_http)
+            except Exception:
+                log.exception("voice: the rig could not be opened; this computer speaks")
     if engines is None:
         try:
             engines = await routes.warm_models(settings)
         except Exception:
             log.exception("voice: model load failed")
+            await _close_rig(rig_session)
             with contextlib.suppress(Exception):
                 await ws.close(code=UNAVAILABLE, reason="voice models failed to load")
             return
@@ -240,6 +258,7 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
             detector = await asyncio.to_thread(build_detector, settings)
         except Exception:
             log.exception("voice: turn detector load failed")
+            await _close_rig(rig_session)
             with contextlib.suppress(Exception):
                 await ws.close(code=UNAVAILABLE, reason="voice models failed to load")
             return
@@ -267,12 +286,26 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
         host = build_host(ctx, sock, bot_id=bot_id, profile_id=profile_id, tts_engine=tts_engine)
         from . import power
         from .session import VoiceSession
+        session_tts, reply_engine = tts_engine, None
+        if rig_session is not None:
+            # The rig sits behind the session's own seams: the streaming STT (with the
+            # CPU recogniser behind it) and a reply engine (with the CPU engine behind it).
+            from dispatch_voice.rt.stt_rig import RigStreamingSTT
+
+            from .engines.rig_tts import ReplyEngine
+            if rt_pieces.get("sstt") is not None:
+                rt_pieces["sstt"] = RigStreamingSTT(rt_pieces["sstt"], rig_session.conn)
+            session_tts = reply_engine = ReplyEngine(tts_engine, rig_session)
+            rig_session.conn._spawn(rig_session.sync_voices([profile_id, conv.get("narrator_id")]))
         session = VoiceSession(ws, thread_id=thread_id, settings=settings,
                                detector=detector, stt_engine=stt_engine,
-                               tts_engine=tts_engine, host=host, profile_id=profile_id,
+                               tts_engine=session_tts, host=host, profile_id=profile_id,
                                notice=lambda text: routes.notice_pcm(tts_engine, profile_id, text),
                                bot_id=bot_id, power_state=lambda: power.state(settings), **conv,
-                               **rt_pieces, **wire)
+                               **rt_pieces, **wire, rig=reply_engine)
+        if rig_session is not None:
+            rig_session.conn.busy_check = lambda: (session._talking()
+                                                   or bool(getattr(detector, "active", False)))
         _SESSIONS[id(session)] = session
         if reservation.ended is not None:
             session.end(*reservation.ended)     # switched off while the chat was being built
@@ -285,6 +318,9 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
                          thread_id)
                 with contextlib.suppress(Exception):
                     older.end(REPLACED, "replaced")
+    except BaseException:
+        await _close_rig(rig_session)
+        raise
     finally:
         _SESSIONS.pop(id(reservation), None)
     # Evicted by a newer socket of the same session (DisPatch's slot, 4001):
@@ -294,7 +330,9 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
     if callable(on_replaced):
         on_replaced(lambda: session.end(REPLACED, "replaced"))
     unsubscribe = None
-    hold = _Hold(settings)
+    # With a rig in play the power hold is the rig's (taken only while this computer
+    # serves: at the first CPU failover, released when the rig is promoted again).
+    hold = rig_session.power if rig_session is not None else _Hold(settings)
     try:
         # Everything that must be undone is inside the try: a failure anywhere
         # from here (thread exhaustion, a raising context) still runs the
@@ -314,7 +352,7 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
         # server shutting down, a test client tearing the handler down): a
         # cancelled await here would leave the power profile held and the
         # frame subscription open, so it runs shielded, as its own task.
-        cleanup = asyncio.ensure_future(_cleanup(ws, session, unsubscribe, hold))
+        cleanup = asyncio.ensure_future(_cleanup(ws, session, unsubscribe, hold, rig_session))
         try:
             await asyncio.shield(cleanup)
         except asyncio.CancelledError:
@@ -470,7 +508,21 @@ STOP_SLACK_S = 2.0
 REPLACED = 4001
 
 
-async def _cleanup(ws, session, unsubscribe, hold: _Hold) -> None:
+def _rig_token(settings: VoiceSettings) -> str:
+    """The rig token when a rig is set up and switched on, else "" (off the loop: it
+    reads the env file). "" keeps the session exactly the CPU one."""
+    tok = rig.read_token().value
+    return tok if settings.rig.active(tok) else ""
+
+
+async def _close_rig(rig_session) -> None:
+    if rig_session is not None:
+        with contextlib.suppress(Exception):
+            await rig_session.close()
+
+
+async def _cleanup(ws, session, unsubscribe, hold: _Hold, rig_session=None) -> None:
+    await _close_rig(rig_session)          # `bye`: the rig's idle clock releases the card
     try:
         await asyncio.to_thread(hold.release)
     except Exception:

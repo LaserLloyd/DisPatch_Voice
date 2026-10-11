@@ -33,6 +33,25 @@ car state for the run — use the two together for the power-saver column).
     flock "$VOICE_LOCK" uv run python tests/latency_ws.py \\
         --backend ~/Projects/dispatch-chat/backend --port 19032 --out <dir> [--kokoro <plugin>]
 
+**The GPU rig** (``--rig ws://<rig-tailnet-ip>:1236/v1/realtime``, token from
+``SPEECHFORGE_TOKEN`` in the environment, never on the command line): the scratch
+``voice.yaml`` gets ``rig: {enabled: true, url}``, every chat waits (streaming silence) until
+the rig is proven before it speaks, and every row records whether the utterance and the
+reply ran on the rig (``/api/voice/status`` rig counters), any fallback, and the scratch
+server's CPU (percent of one core, its whole process tree) over the chat. Two more
+scenarios use it: ``long`` (a > 2000-character reply of ≥ 3 s sentences: the rig's
+per-context text cap and its credit, so no ``too_long``/``tts_late`` and every sentence
+spoken once) and ``drop`` (a multi-sentence reply; ``--drop-after`` s into its audio a
+loopback proxy in front of the rig cuts every connection and refuses new ones for 3 s:
+the reply goes on from this computer, every sentence still gets its audio). ``--voice
+clone`` builds a profile from a synthetic fixture clip and makes it the default, so the
+rig gets it by HEAD 404 → PUT; ``stock`` (the default) speaks the stock voice. Without
+``--rig`` the same scenarios are the CPU baseline. Be polite to a shared GPU: one
+harness at a time, ``--runs 1``.
+
+    SPEECHFORGE_TOKEN=… uv run python tests/latency_ws.py --backend … --port 19300 --out <dir> \
+        --rig ws://<rig-tailnet-ip>:1236/v1/realtime --scenarios turn,long,drop --passes idle --runs 3
+
 Thresholds (SPEC §12): speech end → first reply audio ≤ 3.8 s cloned / ≤ 2.8 s Kokoro in
 power-saver, ≤ 3.0 / ≤ 2.3 s under the hold, idle and under load; onset → `barge_in` ≤ 1.0 s;
 false interruption resumed ≤ 2.0 s (rewound when the pause was > 0.8 s); the addendum → one
@@ -76,6 +95,22 @@ UP_MS = 20                                  # uplink pacing: 20 ms of PCM per me
 OUT_RATE = 24000                            # downlink PCM16 rate (C.2)
 BOT = "adv"
 
+#: Set by main(): the rig in play (``{"url", "proxy", "llm", "drop_after"}``) or None.
+RIG: dict | None = None
+SERVER: dict = {}                           # {"pid": the scratch server's pid, "llm": the stub}
+
+#: ``long``: 20 sentences of ≥ 3 s each, > 2000 characters in all (the rig's per-context
+#: text cap is 2000). Every sentence is different and starts differently.
+LONG_SENTENCES = [
+    f"Item {i}, {topic}, is something I would like to walk you through slowly and carefully right now."
+    for i, topic in enumerate([
+        "the garden hose", "the school forms", "the dentist bill", "the car service", "the library books",
+        "the plumber visit", "the birthday cake", "the train tickets", "the window blinds", "the tax letter",
+        "the recycling day", "the piano lesson", "the paint samples", "the grocery list", "the phone plan",
+        "the bike repair", "the swim class", "the roof gutter", "the dog walker", "the spare keys"], 1)]
+LONG_REPLY = " ".join(LONG_SENTENCES)
+DROP_REPLY = " ".join(LONG_SENTENCES[:6])
+
 
 # --------------------------------------------------------------------------- #
 # clips and their speech marks (Silero, the engines-mode rule)
@@ -114,7 +149,7 @@ class Marks:
 # --------------------------------------------------------------------------- #
 
 def start_scratch(port: int, data: Path, backend: Path, llm_base: str, *, kokoro: Path | None,
-                  power_hold: str, speculate: str = "advisor") -> subprocess.Popen:
+                  power_hold: str, speculate: str = "advisor", rig_url: str | None = None) -> subprocess.Popen:
     import httpx
     shutil.rmtree(data, ignore_errors=True)
     know = data / "knowledge"
@@ -132,7 +167,9 @@ def start_scratch(port: int, data: Path, backend: Path, llm_base: str, *, kokoro
     data.mkdir(parents=True, exist_ok=True)
     (data / "config.yaml").write_text(json.dumps(cfg))
     os.chmod(data / "config.yaml", 0o600)
-    voice = {"enabled": True, "rt": {"power_hold": power_hold, "speculate": speculate}}
+    voice: dict = {"enabled": True, "rt": {"power_hold": power_hold, "speculate": speculate}}
+    if rig_url:
+        voice["rig"] = {"enabled": True, "url": rig_url}      # the token stays in the environment
     (data / "voice.yaml").write_text(json.dumps(voice))
     os.chmod(data / "voice.yaml", 0o600)
     env = {k: v for k, v in os.environ.items() if k not in ("DISPATCH_VOICE_PKG", "DISPATCH_EXTENSIONS", "DISPATCH_VOICE")}
@@ -149,6 +186,7 @@ def start_scratch(port: int, data: Path, backend: Path, llm_base: str, *, kokoro
             "--ws-ping-timeout", "60", "--ws-max-size", "262144"]
     with open(data / "server.log", "wb") as log:     # the child keeps its own copy of the fd
         proc = subprocess.Popen(argv, cwd=backend, env=env, stdout=log, stderr=subprocess.STDOUT)
+    SERVER["pid"] = proc.pid
     base = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + 240
     while time.monotonic() < deadline:
@@ -178,6 +216,76 @@ def wait_warm(base: str, timeout: float = 240) -> dict:
             return st
         time.sleep(0.5)
     return st
+
+
+def make_clone(base: str) -> str:
+    """A cloned profile from a synthetic fixture clip (the stock voice's own words, not a
+    person), made the default: the rig gets its conditionals by HEAD 404 → PUT."""
+    import httpx
+    wav = HERE / "fixtures" / "clips" / "long.wav"
+    with open(wav, "rb") as f:
+        r = httpx.post(base + "/api/voice/profiles", timeout=600,
+                       files={"file": ("long.wav", f, "audio/wav")},
+                       data={"name": "Harness clone", "consent": "synthetic"})
+    r.raise_for_status()
+    pid = r.json()["id"]
+    httpx.patch(base + f"/api/voice/profiles/{pid}", json={"default": True}, timeout=30).raise_for_status()
+    return pid
+
+
+def rig_status(base: str) -> dict:
+    import httpx
+    try:
+        return httpx.get(base + "/api/voice/status", timeout=5).json().get("rig") or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def tree_cpu_s(pid: int | None) -> float:
+    """CPU seconds (user + system) of ``pid`` and every descendant (``/proc``)."""
+    if not pid:
+        return 0.0
+    tick = os.sysconf("SC_CLK_TCK")
+    kids: dict[int, list[int]] = {}
+    stats: dict[int, float] = {}
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        try:
+            raw = (d / "stat").read_text()
+        except OSError:
+            continue
+        rest = raw[raw.rindex(")") + 2:].split()
+        ppid = int(rest[1])
+        kids.setdefault(ppid, []).append(int(d.name))
+        stats[int(d.name)] = (int(rest[11]) + int(rest[12])) / tick
+    total, todo = 0.0, [pid]
+    while todo:
+        q = todo.pop()
+        total += stats.get(q, 0.0)
+        todo += kids.get(q, [])
+    return total
+
+
+class Meter:
+    """Rig counters and the server's CPU over one chat."""
+
+    def __init__(self, base: str) -> None:
+        self.base = base
+        self.m0 = (rig_status(base).get("metrics") or {}) if RIG else {}
+        self.c0, self.t0 = tree_cpu_s(SERVER.get("pid")), time.perf_counter()
+
+    def fill(self, row) -> None:
+        row.cpu_pct = round(100 * (tree_cpu_s(SERVER.get("pid")) - self.c0) / max(1e-3, time.perf_counter() - self.t0), 1)
+        if not RIG:
+            return
+        st = rig_status(self.base)
+        m1 = st.get("metrics") or {}
+        d = {k: (m1.get(k) or 0) - (self.m0.get(k) or 0) for k in ("turns", "stt", "replies", "tts", "fell_back")}
+        row.rig_stt, row.rig_tts, row.rig_fell_back = d["stt"], d["tts"], d["fell_back"]
+        row.rig_reason = m1.get("last_fallback_reason") if d["fell_back"] else None
+        row.rig_ttfa_p50 = m1.get("ttfa_p50")
+        row.rig_lease = st.get("lease") or (st.get("last") or {}).get("lease")
 
 
 # --------------------------------------------------------------------------- #
@@ -227,6 +335,22 @@ class Row:
     user_rows: int | None = None
     merged: bool | None = None
     replies: int | None = None
+    cpu_pct: float | None = None            # the scratch server's CPU over the chat (% of one core)
+    rig_stt: int | None = None              # utterances recognised on the rig (this chat)
+    rig_tts: int | None = None              # replies spoken on the rig
+    rig_fell_back: int | None = None
+    rig_reason: str | None = None
+    rig_ttfa_p50: int | None = None
+    rig_lease: str | None = None
+    rig_wait_s: float | None = None         # chat open -> rig proven
+    reply_chars: int | None = None
+    reply_pieces: int | None = None         # `say` pieces of the reply
+    pieces_without_audio: list | None = None
+    words_missing: list | None = None       # reply words no `say` carried
+    underruns: int | None = None            # the modelled player ran dry mid-reply
+    dry_s: float | None = None              # ... for this long in all
+    cut_at: float | None = None             # drop: s after the reply's first audio
+    audio_after_cut_s: float | None = None  # drop: the first audio that arrived after the cut
     ok: bool = True
     notes: list[str] = field(default_factory=list)
 
@@ -250,6 +374,10 @@ class Client:
         self._last_heard = 0.0
         self.done_sent = False
         self.timed_out = False
+        self.rig_ready: float | None = None        # perf_counter when the rig was proven
+        self.underruns = 0
+        self.dry_s = 0.0                           # total time the player waited for audio mid-reply
+        self.audio_at: list[float] = []            # arrival of each reply audio message
 
     def now(self) -> float:
         return time.perf_counter()
@@ -295,6 +423,10 @@ class Client:
             if kind == 0:
                 if self.first_reply_audio is None and now >= self.reply_audio_after:
                     self.first_reply_audio = now
+                if self.seq_ms and not self.say_end and now > self.play_end + 0.05:
+                    self.underruns += 1                    # the player ran dry mid-reply
+                    self.dry_s += now - self.play_end
+                self.audio_at.append(now)
                 if seq not in self.seq_start:
                     self.seq_start[seq] = max(now, self.play_end)
                 self.seq_ms[seq] = self.seq_ms.get(seq, 0.0) + ms
@@ -356,6 +488,18 @@ async def chat(url: str, script, *, max_s: float = 90.0) -> Client:
                 await c.on_message(m)
 
         rd = asyncio.create_task(reader())
+        poll = None
+        if RIG:
+            base = "http" + url.split("://", 1)[0][2:] + "://" + url.split("://", 1)[1].split("/ws/", 1)[0]
+
+            async def rig_poll():
+                while c.rig_ready is None:
+                    st = await asyncio.to_thread(rig_status, base)
+                    if st.get("state") == "ready":
+                        c.rig_ready = time.perf_counter()
+                        return
+                    await asyncio.sleep(0.1)
+            poll = asyncio.create_task(rig_poll())
         silence = b"\x00\x00" * (SR * UP_MS // 1000)
 
         async def stream(x: np.ndarray | None = None, seconds: float = 0.0, until=None) -> float:
@@ -377,11 +521,15 @@ async def chat(url: str, script, *, max_s: float = 90.0) -> Client:
             return start
 
         try:
+            if RIG:          # speak only once the rig is proven (its socket opens with the chat)
+                await stream(seconds=45, until=lambda: c.rig_ready is not None)
             await asyncio.wait_for(script(c, stream), max_s)
         except TimeoutError:
             c.timed_out = True
         finally:
             rd.cancel()
+            if poll is not None:
+                poll.cancel()
             with contextlib.suppress(Exception):
                 await ws.send(json.dumps({"type": "cancel"}))
     return c
@@ -454,7 +602,11 @@ async def sc_turn(base: str, marks: Marks, clip: str, load: str) -> Row:
         await stream(seconds=25, until=lambda: c.first_reply_audio is not None)
         await stream(seconds=20, until=lambda: c.done_sent)
 
+    meter = Meter(base)
     c = await chat(ws_url(base, new_thread(base)), script)
+    meter.fill(row)
+    if c.rig_ready is not None:
+        row.rig_wait_s = round(c.rig_ready - c.t0, 2)
     t_end = mark["t"] + end_s
     rel = lambda t: None if t is None else round(t - t_end, 3)
     e = c.first("eot")
@@ -581,6 +733,71 @@ async def sc_addendum(base: str, marks: Marks, load: str) -> Row:
 # verdicts
 # --------------------------------------------------------------------------- #
 
+def _words(text: str) -> list[str]:
+    import re
+    return [w for w in re.sub(r"[^\w' ]+", " ", text.lower()).split() if w]
+
+
+async def sc_reply(base: str, marks: Marks, load: str, kind: str) -> Row:
+    """``long`` / ``drop``: one question, a fixed multi-sentence reply played to the end."""
+    x = load_clip("short")
+    row = base_row(kind, "short", load)
+    text = LONG_REPLY if kind == "long" else DROP_REPLY
+    llm = SERVER["llm"]
+    llm.configure(fixed_reply=text)
+    proxy = RIG.get("proxy") if RIG else None
+    drop_after = float(RIG.get("drop_after", 2.0)) if RIG else 0.0
+    mark: dict = {}
+
+    async def script(c: Client, stream):
+        mark["t"] = await stream(x)
+        await stream(seconds=25, until=lambda: c.first_reply_audio is not None)
+        if kind == "drop" and proxy is not None and c.first_reply_audio is not None:
+            await stream(seconds=drop_after + 1,
+                         until=lambda: time.perf_counter() - c.first_reply_audio >= drop_after)
+            proxy.cut(refuse_s=3.0)
+            mark["cut"] = time.perf_counter()
+        await stream(seconds=420, until=lambda: c.done_sent)
+
+    meter = Meter(base)
+    try:
+        c = await chat(ws_url(base, new_thread(base)), script, max_s=480)
+    finally:
+        llm.configure(fixed_reply=None)
+    meter.fill(row)
+    if c.rig_ready is not None:
+        row.rig_wait_s = round(c.rig_ready - c.t0, 2)
+    end_s = marks.end_s(x)
+    rel = (lambda t: None if t is None else round(t - (mark["t"] + end_s), 3))
+    e = c.first("eot")
+    row.eot_at = rel(e[0]) if e else None
+    row.first_audio_at = rel(c.first_reply_audio)
+    fill_metrics(row, c)
+    says = [f for _, f in c.frames if f.get("type") == "say" and f.get("kind") == "reply"]
+    row.reply_pieces = len(says)
+    row.reply_chars = len(text)
+    row.pieces_without_audio = [f.get("seq") for f in says if not c.seq_ms.get(f.get("seq"))]
+    got: dict[str, int] = {}
+    for f in says:
+        for w in _words(str(f.get("text") or "")):
+            got[w] = got.get(w, 0) + 1
+    missing = []
+    for w in _words(text):
+        if got.get(w, 0) > 0:
+            got[w] -= 1
+        else:
+            missing.append(w)
+    row.words_missing = missing
+    row.underruns = c.underruns
+    row.dry_s = round(c.dry_s, 2)
+    if "cut" in mark and c.first_reply_audio is not None:
+        row.cut_at = round(mark["cut"] - c.first_reply_audio, 2)
+        after = [t for t in c.audio_at if t > mark["cut"]]
+        row.audio_after_cut_s = round(after[0] - mark["cut"], 3) if after else None
+    row.ok = (c.done_sent and not row.pieces_without_audio and not missing and not c.timed_out)
+    return row
+
+
 def verdicts(rows: list[Row], tts: str) -> list[str]:
     out: list[str] = []
     groups: dict[tuple[str, str], list[Row]] = {}
@@ -622,6 +839,7 @@ def verdicts(rows: list[Row], tts: str) -> list[str]:
     starts = [r.speculation.get("started", 0) for r in rows if isinstance(r.speculation, dict)]
     if starts:
         out.append(f"{'PASS' if max(starts) <= 2 else 'FAIL'} speculation ≤ 2 starts per turn (max {max(starts)} over a chat)")
+    out += rig_verdicts(rows)
     for load in sorted({r.load for r in rows}):
         b = [r for r in rows if r.scenario == "barge" and r.load == load]
         if b:
@@ -642,6 +860,44 @@ def verdicts(rows: list[Row], tts: str) -> list[str]:
     return out
 
 
+def _pct(xs: list[float], q: float) -> float:
+    s = sorted(xs)
+    return s[min(len(s) - 1, max(0, round(q * (len(s) - 1))))]
+
+
+def rig_verdicts(rows: list[Row]) -> list[str]:
+    """First audio / eot p50+p90, CPU, and the rig's own checks (``--rig``)."""
+    out: list[str] = []
+    eng = "rig" if RIG else "cpu"
+    turns = [r for r in rows if r.scenario == "turn" and r.first_audio_at is not None and r.load != "warmup"]
+    if turns:
+        fa = [r.first_audio_at for r in turns]
+        eo = [r.eot_at for r in turns if r.eot_at is not None]
+        cpu = [r.cpu_pct for r in turns if r.cpu_pct is not None]
+        line = (f"INFO [{eng}] {len(turns)} turns: first audio p50 {_pct(fa, .5):.2f} s, p90 {_pct(fa, .9):.2f} s; "
+                f"eot p50 {_pct(eo, .5):.2f} s, p90 {_pct(eo, .9):.2f} s" if eo else "")
+        if cpu:
+            line += f"; server CPU median {statistics.median(cpu):.0f} % of a core (max {max(cpu):.0f})"
+        if RIG:
+            line += (f"; on the rig: STT {sum(1 for r in turns if r.rig_stt)}/{len(turns)}, "
+                     f"TTS {sum(1 for r in turns if r.rig_tts)}/{len(turns)}, "
+                     f"fallbacks {[r.rig_reason for r in turns if r.rig_fell_back]}")
+        out.append(line)
+    for r in rows:
+        if r.scenario == "long":
+            ok = r.ok and (not RIG or (r.rig_tts == 1 and not r.rig_fell_back))
+            out.append(f"{'PASS' if ok else 'FAIL'} [{eng}] long reply ({r.reply_chars} chars, {r.reply_pieces} pieces) "
+                       f"spoken whole{' on the rig' if RIG else ''}: rig tts {r.rig_tts}, fallbacks {r.rig_fell_back} "
+                       f"({r.rig_reason}), pieces without audio {r.pieces_without_audio}, words missing "
+                       f"{len(r.words_missing or [])}, underruns {r.underruns} ({r.dry_s} s dry), server CPU {r.cpu_pct} %")
+        elif r.scenario == "drop":
+            ok = r.ok and (not RIG or bool(r.rig_fell_back)) and (r.audio_after_cut_s is None or r.audio_after_cut_s <= 1.5)
+            out.append(f"{'PASS' if ok else 'FAIL'} [{eng}] rig cut {r.cut_at} s into the reply: reply finished "
+                       f"(pieces without audio {r.pieces_without_audio}, words missing {len(r.words_missing or [])}), "
+                       f"fallback {r.rig_reason}, next audio {r.audio_after_cut_s} s after the cut, underruns {r.underruns} ({r.dry_s} s dry), server CPU {r.cpu_pct} %")
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
@@ -658,6 +914,12 @@ async def one_pass(base: str, marks: Marks, load: str, clips: list[str], runs: i
         for name, fn in (("barge", sc_barge), ("false", sc_false), ("addendum", sc_addendum)):
             if name in scenarios:
                 r = await fn(base, marks, load)
+                print(json.dumps(asdict(r)), flush=True)
+                rows.append(r)
+                await asyncio.sleep(1.0)
+        for name in ("long", "drop"):
+            if name in scenarios:
+                r = await sc_reply(base, marks, load, name)
                 print(json.dumps(asdict(r)), flush=True)
                 rows.append(r)
                 await asyncio.sleep(1.0)
@@ -685,8 +947,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--embed-delays", default="",
                     help="e.g. 0,1.7,2.5: the stub's /embeddings delay for extra advisor turns (the 0.3 s voice "
                          "retrieval budget, feasibility C1): each must stay within +0.3 s of the idle turns")
+    ap.add_argument("--rig", default=None, metavar="WS_URL",
+                    help="use a SpeechForge rig (ws://<rig>:1236/v1/realtime); the token is SPEECHFORGE_TOKEN "
+                         "in the environment")
+    ap.add_argument("--drop-after", type=float, default=2.0, help="drop: seconds into the reply's audio")
+    ap.add_argument("--voice", default="stock", choices=("stock", "clone"),
+                    help="stock: the stock voice; clone: a profile cloned from a synthetic fixture clip, "
+                         "made the default (the rig gets it by HEAD/PUT)")
     ap.add_argument("--assert", dest="do_assert", action="store_true")
     a = ap.parse_args(argv)
+    global RIG
 
     from stub_llm import StubLLM
     a.out.mkdir(parents=True, exist_ok=True)
@@ -698,7 +968,22 @@ def main(argv: list[str] | None = None) -> int:
         hold = PowerHold(profile=a.hold)
         hold_state = f"{a.hold}:{hold.acquire()}"
         time.sleep(2.0)
+    proxy = None
+    rig_url = None
+    if a.rig:
+        if not os.environ.get("SPEECHFORGE_TOKEN"):
+            raise SystemExit("--rig needs SPEECHFORGE_TOKEN in the environment")
+        rig_url = a.rig
+        if "drop" in a.scenarios.split(","):
+            from urllib.parse import urlsplit
+
+            from rig_proxy import RigProxy
+            u = urlsplit(a.rig)
+            proxy = RigProxy(u.hostname, u.port or 80).__enter__()
+            rig_url = f"ws://127.0.0.1:{proxy.port}{u.path}"
+        RIG = {"url": a.rig, "proxy": proxy, "drop_after": a.drop_after}
     report: dict = {"header": {"tts": tts, "power_hold_server": a.power_hold, "hold": hold_state,
+                               "rig": bool(a.rig), "voice": a.voice,
                                "platform_profile": platform_profile(), "max_mhz": max_mhz(), "load1": load1(),
                                "llm_delay_s": a.llm_delay, "at": time.strftime("%Y-%m-%dT%H:%M:%S")}}
     print(json.dumps(report["header"]), flush=True)
@@ -706,11 +991,18 @@ def main(argv: list[str] | None = None) -> int:
     proc = None
     try:
         with StubLLM(a.llm_port, delay_s=a.llm_delay, reply="normal") as llm:
+            SERVER["llm"] = llm
             proc = start_scratch(a.port, a.out / "data", a.backend.expanduser(), llm.base_url,
-                                 kokoro=a.kokoro.expanduser() if a.kokoro else None, power_hold=a.power_hold)
+                                 kokoro=a.kokoro.expanduser() if a.kokoro else None, power_hold=a.power_hold,
+                                 rig_url=rig_url)
             base = f"http://127.0.0.1:{a.port}"
             st = wait_warm(base)
+            if a.voice == "clone":
+                report["clone"] = make_clone(base)
+                print(json.dumps({"clone": report["clone"]}), flush=True)
             report["status"] = {k: st.get(k) for k in ("warm", "ready", "default_voice", "proto", "rt", "power_hold")}
+            if RIG:
+                report["status"]["rig"] = {k: (st.get("rig") or {}).get(k) for k in ("state", "configured", "enabled", "token")}
             print(json.dumps({"status": report["status"]}), flush=True)
             marks = Marks()
             clips = [c for c in a.clips.split(",") if c]
@@ -742,6 +1034,8 @@ def main(argv: list[str] | None = None) -> int:
                 proc.kill()
         if hold is not None:
             hold.release_all()
+        if proxy is not None:
+            proxy.__exit__(None, None, None)
     vs = verdicts(rows, tts)
     print("\n".join(vs))
     report["rows"] = [asdict(r) for r in rows]

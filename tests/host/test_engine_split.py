@@ -30,6 +30,9 @@ FAKE_VOICES = [{"id": "builtin:af_heart", "name": "Heart (US, female)", "lang": 
                {"id": "builtin:am_michael", "name": "Michael (US, male)", "lang": "en-us"}]
 _n = itertools.count()
 
+#: The settings view of `rig:` with nothing configured (host/rig.py defaults).
+RIG_OUT = {"enabled": False, "url": "", "stt_final_deadline_ms": 350, "tts_start_deadline_ms": 800,
+           "ahead_ms": 3000, "first_chunk_tokens": 15}
 
 
 def rt_settings_out(**over):
@@ -140,7 +143,8 @@ def test_no_provider_rejects_builtin_voices_without_crashing(tmp_path, monkeypat
                      "gateway_trailer": "full", "opus": "auto", "opus_down_kbps": 24, "opus_up_kbps": 16,
                      "bots": {"nova": {"backchannel": False, "follow_up": True},
                               "sage": {"backchannel": False, "follow_up": False},
-                              "swift": {"backchannel": False, "follow_up": True}}}
+                              "swift": {"backchannel": False, "follow_up": True}},
+                     "rig": RIG_OUT}
 
 
 def test_no_provider_bot_builtin_voice_resolves_to_the_default(host_env):

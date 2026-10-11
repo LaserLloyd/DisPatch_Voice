@@ -576,6 +576,8 @@ def build_router() -> APIRouter:
                 update["narrator_voice"] = v
         if "bots" in body:
             update["bots"] = _validate_bots(body["bots"])
+        if "rig" in body:
+            update["rig"] = _validate_rig(body["rig"])
         reset: list[str] = []
         if "reset" in body:
             v = body["reset"]
@@ -741,6 +743,33 @@ def _validate_rt(raw) -> dict:
     return _vc.clean_rt(raw)
 
 
+def _validate_rig(raw) -> dict:
+    """The ``rig`` tree of a settings PATCH (host/rig.py): ``enabled``, ``url`` (a
+    ws:// or wss:// address, or "" to clear it) and the deadlines, each named with
+    its range. The token is never a setting: it stays in the server's environment."""
+    from . import rig as _rig
+    keys = ("enabled", "url", *_rig.RIG_RANGES)
+    if not isinstance(raw, dict):
+        raise HTTPException(422, "rig takes an object with: " + ", ".join(keys))
+    unknown = set(raw) - set(keys)
+    if unknown:
+        raise HTTPException(422, f"Unknown setting: rig.{sorted(unknown)[0]}")
+    if "enabled" in raw and not isinstance(raw["enabled"], bool):
+        raise HTTPException(422, "rig.enabled must be true or false")
+    if "url" in raw:
+        v = raw["url"]
+        if not isinstance(v, str) or (v.strip() and not _rig.valid_url(v.strip())):
+            raise HTTPException(422, "rig.url must be a ws:// or wss:// address with no "
+                                     "credentials or query (the token stays in the environment)")
+    for k, (lo, hi) in _rig.RIG_RANGES.items():
+        if k in raw:
+            v = raw[k]
+            if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+                raise HTTPException(422, f"rig.{k} must be a whole number between {lo} and {hi}")
+    out = _rig.clean_rig({**raw, **({"url": raw["url"].strip()} if isinstance(raw.get("url"), str) else {})})
+    return out
+
+
 def effective_bots(settings: VoiceSettings) -> dict:
     """``{bot id: {backchannel, follow_up}}`` for every non-Safe bot the context
     lists (the per-bot defaults the Bots-tab popover shows)."""
@@ -783,6 +812,8 @@ async def status_payload(settings: VoiceSettings) -> dict:
     from . import acks
     st["acks"] = await asyncio.to_thread(acks.status)
     st["bots"] = effective_bots(settings)
+    from . import rig as _rig
+    st["rig"] = await asyncio.to_thread(_rig.status, settings)
     return st
 
 
@@ -803,7 +834,7 @@ def _sessions_count(settings: VoiceSettings) -> dict:
 SETTING_KEYS = frozenset({"enabled", "default_voice", "speed", "voice_turn_thinking",
                           "merge_window_s", "hard_silence_s", "reset", "max_sessions", "rt",
                           "rp_speech", "narrator_voice", "expressive_tags", "gateway_trailer", "bots",
-                          "opus", "opus_down_kbps", "opus_up_kbps"})
+                          "opus", "opus_down_kbps", "opus_up_kbps", "rig"})
 #: Keys ``reset`` may put back to the server's default (the Voice lab's).
 RESETTABLE = frozenset({"voice_turn_thinking", "merge_window_s", "hard_silence_s"})
 
@@ -841,7 +872,8 @@ def _settings_out(settings: VoiceSettings, ch: dict) -> dict:
             "gateway_trailer": settings.gateway_trailer,
             "opus": settings.opus, "opus_down_kbps": settings.opus_down_kbps,
             "opus_up_kbps": settings.opus_up_kbps,
-            "bots": effective_bots(settings)}
+            "bots": effective_bots(settings),
+            "rig": settings.rig.to_dict()}
 
 
 def _stock_id() -> str | None:
@@ -961,7 +993,19 @@ def _lab_info(settings: VoiceSettings) -> dict:
         "power_hold": power.state(settings),
         "platform": power.platform_facts(),
         "acks": __import__("dispatch_voice.host.acks", fromlist=["status"]).status(),
+        "rig": _rig_lab(settings),
     }
+
+
+def _rig_lab(settings: VoiceSettings) -> dict:
+    """The Voice lab's GPU rig fields: the status plus the deadlines (no token, the
+    address reduced to its host)."""
+    from . import rig as _rig
+    out = _rig.status(settings)
+    rs = settings.rig
+    out["deadlines"] = {"stt_final_ms": rs.stt_final_deadline_ms, "tts_start_ms": rs.tts_start_deadline_ms,
+                        "ahead_ms": rs.ahead_ms, "first_chunk_tokens": rs.first_chunk_tokens}
+    return out
 
 
 async def _lab_test(settings: VoiceSettings, raw: bytes) -> dict:

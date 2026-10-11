@@ -44,6 +44,14 @@ What it does:
    while the chat was open and ``power_hold: off`` after it (``--allow-no-power-hold``
    for a box without power-profiles-daemon).
 
+5. ``--rig ws://<rig-tailnet-ip>:1236/v1/realtime`` (``--host dispatch``; the token is
+   ``SPEECHFORGE_TOKEN`` in the environment, never on the command line): the scratch
+   ``voice.yaml`` turns the GPU rig on, the wire test waits until the rig is proven before
+   it speaks, and the checks add: the rig was proven, the first utterance was recognised
+   and the reply spoken on the rig (``/api/voice/status`` rig counters), no reply fell back
+   for being late, and the power hold was NOT taken while the rig served. With
+   ``--voice-clip`` the clone reaches the rig by HEAD 404 → PUT; without it the stock voice.
+
 Prints a JSON summary (latencies in ms) and exits non-zero on any failure.
 Needs the models (``dispatch-voice fetch-models``) and, for ``--host dispatch``,
 a DisPatch checkout with ``app/extensions.py``.
@@ -73,6 +81,8 @@ REPLY = ("You have two things this afternoon. A dentist appointment at three, an
          "with the school at four thirty. Want me to remind you before each one?")
 CLIP_1 = TESTS / "fixtures" / "clips" / "driver1b.wav"     # "What's on my calendar for this afternoon?"
 CLIP_2 = TESTS / "fixtures" / "clips" / "driver2.wav"      # "Actually, wait, stop. Just tell me the first one."
+#: ``--rig``: the rig URL when the GPU rig is in play (set by main()).
+RIG_URL: str | None = None
 
 
 def free_port() -> int:
@@ -140,7 +150,7 @@ UNIT_UVICORN_FLAGS = ("--no-access-log", "--ws-ping-timeout", "60", "--ws-max-si
 
 def start_dispatch(port: int, data: Path, backend: Path, llm_base_url: str, *, online: bool,
                    kokoro: Path | None = None, power_hold: str | None = None,
-                   bot_kind: str = "api") -> subprocess.Popen:
+                   bot_kind: str = "api", rig_url: str | None = None) -> subprocess.Popen:
     """The real DisPatch, started as the live unit starts it. With ``kokoro`` (the plugin
     checkout) it is the planned SPEC §11 step 2 unit exactly: both overlays
     ``--with-editable``, ``DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup``, the add-on
@@ -185,6 +195,8 @@ def start_dispatch(port: int, data: Path, backend: Path, llm_base_url: str, *, o
         env.update(DISPATCH_VOICE="1", DISPATCH_EXTENSIONS="dispatch_voice:EXTENSION")
     if power_hold is not None:
         voice_yaml["rt"] = {"power_hold": power_hold}
+    if rig_url:
+        voice_yaml["rig"] = {"enabled": True, "url": rig_url}   # the token stays in the environment
     if voice_yaml:
         (data / "voice.yaml").write_text(json.dumps(voice_yaml) + "\n")     # JSON is YAML
         os.chmod(data / "voice.yaml", 0o600)
@@ -280,6 +292,21 @@ async def wire_test(base: str, tid: str, speech1: np.ndarray, speech2: np.ndarra
         await ws.send(json.dumps({"type": "start", "patience": "normal"}))
         pending_hdr = None
         marks: dict = {}
+        if RIG_URL:
+            # The rig's socket opens with the chat; speak once it is proven (silence meanwhile).
+            t_rig = time.monotonic()
+            mic0 = Uplink(ws, v3)
+            rig_st: dict = {}
+            while time.monotonic() - t_rig < 45:
+                await mic0.stream(np.zeros(1600, np.float32), 0)
+                rig_st = (await asyncio.to_thread(httpx.get, base + "/api/voice/status", timeout=5)).json().get("rig") or {}
+                if rig_st.get("state") == "ready":
+                    break
+            res["rig_wait_ms"] = round((time.monotonic() - t_rig) * 1000)
+            res["rig_at_start"] = {k: rig_st.get(k) for k in ("state", "lease", "version", "reason")}
+            await asyncio.sleep(0.3)                  # the power gate releases off the loop
+            st_on = (await asyncio.to_thread(httpx.get, base + "/api/voice/status", timeout=5)).json()
+            res["power_hold_on_rig"] = st_on.get("power_hold")
 
         async def reader():
             nonlocal pending_hdr
@@ -341,6 +368,8 @@ async def wire_test(base: str, tid: str, speech1: np.ndarray, speech2: np.ndarra
         audio_seqs: dict = {}
         rt = asyncio.create_task(reader())
         mic = Uplink(ws, v3)
+        if RIG_URL:
+            mic.off = mic0.off                        # one sample clock for the socket
         stream = mic.stream
 
         t_start = time.monotonic()
@@ -371,6 +400,11 @@ async def wire_test(base: str, tid: str, speech1: np.ndarray, speech2: np.ndarra
         res["resume"] = {"after": frames[1].get("message_id") if len(frames) >= 2 else None,
                          "message_id": r2[0].get("message_id") if r2 else None,
                          "complete_before": [x["text"] for x in r2[:-1]]}
+
+    if RIG_URL:
+        # The first socket waited for a proven rig: its turns and replies are the rig's.
+        res["rig_metrics_main"] = ((await asyncio.to_thread(httpx.get, base + "/api/voice/status", timeout=5))
+                                   .json().get("rig") or {}).get("metrics") or {}
 
     # Late joiner / resume (T3 acceptance): a NEW socket, as after a drop mid-reply. The
     # client names the reply it was in (`after_partial`: the sentences whose audio was
@@ -660,8 +694,15 @@ def main() -> int:
                     help="the wire test speaks protocol v3 (binary frames, offsets, `say`/`audio_end`, the "
                          "stream id) like the real client, and adds the \"Tap to continue\" and "
                          "reconnect-replaces phases (review-T3s4 #11: v2 alone left them uncovered)")
+    ap.add_argument("--rig", default=None, metavar="WS_URL",
+                    help="use a SpeechForge rig (ws://<rig>:1236/v1/realtime; --host dispatch); the token is "
+                         "SPEECHFORGE_TOKEN in the environment")
     args = ap.parse_args()
     host = args.host or ("dispatch" if args.backend else "fake")
+    global RIG_URL
+    RIG_URL = args.rig
+    if args.rig and (host != "dispatch" or not os.environ.get("SPEECHFORGE_TOKEN")):
+        raise SystemExit("--rig needs --host dispatch and SPEECHFORGE_TOKEN in the environment")
     if host == "dispatch" and not args.backend:
         raise SystemExit("--host dispatch needs --backend DIR (or DISPATCH_BACKEND)")
 
@@ -676,7 +717,7 @@ def main() -> int:
         from stub_llm import StubLLM
         llm = StubLLM(args.llm_port, delay_s=args.llm_delay, fixed_reply=REPLY).start()
         proc = start_dispatch(args.port, data, args.backend, llm.base_url, online=args.online,
-                              kokoro=args.kokoro, power_hold=args.power_hold)
+                              kokoro=args.kokoro, power_hold=args.power_hold, rig_url=args.rig)
     else:
         proc = start_fake_host(args.port, data, power_hold=args.power_hold)
     ok = True
@@ -700,6 +741,11 @@ def main() -> int:
         r.raise_for_status()
         tid = r.json()["id"]
         summary["wire"] = asyncio.run(wire_test(base, tid, s1, s2, work / "reply.wav", v3=args.v3))
+        if args.rig:
+            # The first socket waited for a proven rig: every turn and reply on it is the
+            # rig's. (Later sockets may start before their rig is proven, which by design
+            # runs those turns here.)
+            summary["rig_wire_metrics"] = summary["wire"].pop("rig_metrics_main", None) or {}
         summary["status_during"] = summary["wire"].pop("status_during", None) or {}
         msgs = httpx.get(base + f"/api/threads/{tid}/messages").json()
         rows = msgs["messages"] if isinstance(msgs, dict) else msgs
@@ -745,6 +791,11 @@ def main() -> int:
             # sentences it had not heard, each once (the late-joiner / after_partial rules).
             "resume_rest_spoken": resume_ok(summary["wire"].get("resume") or {}, bots),
         }
+        if args.rig:
+            # With the rig serving, the CPU power hold is not taken (ADDON-ENGINE §3).
+            checks["power_hold_held_during"] = True
+            checks["rig_proven"] = (summary["wire"].get("rig_at_start") or {}).get("state") == "ready"
+            checks["no_power_hold_while_on_rig"] = summary["wire"].get("power_hold_on_rig") in ("off", "unavailable")
         if args.v3:
             checks["proto_3"] = (summary["wire"].get("ready") or {}).get("proto") == 3
             th3 = httpx.post(base + "/api/threads", json={"bot_id": "voicetest"}).json()["id"]
@@ -768,6 +819,16 @@ def main() -> int:
             summary["browser"] = browser_test(base, th2, mic, work, args.chromium)
             checks["browser_transcript"] = "calendar" in summary["browser"].get("transcript_ui", "").lower()
             checks["browser_reply"] = len(summary["browser"].get("reply_ui", "")) > 3
+        if args.rig:
+            # The rig's counters after EVERY phase (the continue and reconnect phases too).
+            rg = httpx.get(base + "/api/voice/status").json().get("rig") or {}
+            m = rg.get("metrics") or {}
+            summary["rig"] = {"wait_ms": summary["wire"].get("rig_wait_ms"), "at_start": summary["wire"].get("rig_at_start"),
+                              "power_hold_on_rig": summary["wire"].get("power_hold_on_rig"), "metrics": m}
+            wm = summary.get("rig_wire_metrics") or {}
+            checks["rig_recognised_the_turns"] = (wm.get("stt") or 0) >= 1 and wm.get("stt") == wm.get("turns")
+            checks["rig_spoke_the_replies"] = (wm.get("tts") or 0) >= 1 and wm.get("tts") == wm.get("replies")
+            checks["rig_no_fallback"] = not m.get("fell_back")       # over the whole run
         summary["checks"] = checks
         ok = all(checks.values())
     except Exception as e:  # noqa: BLE001 - a harness reports every failure in its summary

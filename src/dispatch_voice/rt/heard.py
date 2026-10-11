@@ -26,11 +26,16 @@ tolerates; sentence-level accuracy is exact because every sentence is its own
   span, audio length) and :meth:`HeardMap.locate`, which turns the client's
   ``heard {seq, played_ms}`` into the ``note_heard`` arguments (``upto``,
   ``heard`` ≤ 160 chars, ``unheard`` ≤ 240 chars).
+* :func:`heard_prefix_words` — the same fraction from word timings when an engine
+  has them (the GPU rig's ``tts.words``, ADDON-ENGINE §4): the cut lands after
+  the last word that finished playing instead of on the linear map.
+  ``HeardMap.words_of(seq)`` supplies them; without it (or for a sentence spoken
+  on the CPU) nothing changes.
 """
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 HEARD_MAX = 160
@@ -68,6 +73,38 @@ def heard_prefix(spans: Sequence[Span], total_ms: int, played_ms: int) -> tuple[
             return i, min(1.0, max(0.0, frac))
         acc += n
     return len(spans) - 1, 1.0
+
+
+_TOKEN = re.compile(r"\S+")
+
+
+def heard_prefix_words(text: str, words: Sequence, played_ms: int) -> float | None:
+    """Fraction of ``text`` heard, cut after the last word whose END has played.
+
+    ``words`` are ``[word, start_ms, end_ms]`` from the sentence's first sample, one
+    per whitespace token of ``text`` in order (how SpeechForge estimates them). A
+    word still playing counts as unheard (the cut is at a word boundary). None when
+    the timings do not line up with the text (the linear map applies then)."""
+    toks = list(_TOKEN.finditer(text or ""))
+    if not toks or not words or len(words) != len(toks):
+        return None
+    played = max(0, int(played_ms))
+    heard = 0
+    for w in words:
+        try:
+            end = float(w[2])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if end <= played:
+            heard += 1
+        else:
+            break
+    if heard == 0:
+        return 0.0
+    if heard == len(toks):
+        return 1.0
+    # The start of the first unheard word: the word-boundary rule keeps it there.
+    return min(1.0, toks[heard].start() / max(1, len(text)))
 
 
 _EMPH = re.compile(r"\*\*|__|~~|\*|_")
@@ -233,6 +270,9 @@ class _Seq:
 class HeardMap:
     """Per-seq bookkeeping for one voice session; ``note`` on every spoken sentence."""
     _seqs: dict[int, _Seq] = field(default_factory=dict)
+    #: ``seq -> [[word, start_ms, end_ms], ...] | None``: word timings from the engine
+    #: that spoke the seq (the GPU rig); None = the linear map.
+    words_of: Callable[[int], Sequence | None] | None = field(default=None, repr=False, compare=False)
 
     def note(self, seq: int, *, message_id: str | None, span: Span, audio_ms: int,
              content: str | None = None) -> None:
@@ -284,7 +324,17 @@ class HeardMap:
             total_ms = int(len(s.span.text) / max(1.0, rate_chars_per_s) * 1000)
         else:
             total_ms = s.audio_ms
-        if total_ms <= 0:
+        frac: float | None = None
+        if source != "phone" and self.words_of is not None:
+            try:
+                words = self.words_of(int(seq))
+            except Exception:
+                words = None
+            if words:
+                frac = heard_prefix_words(s.span.text, words, played_ms)
+        if frac is not None:
+            pass
+        elif total_ms <= 0:
             frac = 0.0 if played_ms <= 0 else 1.0
         else:
             _, frac = heard_prefix([s.span], total_ms, played_ms)

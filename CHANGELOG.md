@@ -2,6 +2,60 @@
 
 All notable changes to DisPatch Voice.
 
+## [1.1.0] — 2026-10-11
+
+A feature release: the optional GPU rig. Same extension API (1); `voice.yaml` gains an
+optional `rig:` tree. Nothing changes until it is set up.
+
+### Added
+- **Optional GPU rig (SpeechForge).** A machine running SpeechForge (the `sf.1`
+  session protocol) can take the speech recognition, the end-of-turn score and the
+  reply voice, so replies start sooner and this computer does far less work during a
+  voice chat. It is **off by default** and stays off until `rig.enabled`, `rig.url`
+  (in `voice.yaml`) and `SPEECHFORGE_TOKEN` (the environment, or the 0600 file
+  `~/.config/local-chat/speechforge.env`) are all present. Without them nothing
+  changes: no socket is opened and the session is the CPU one. The token is never
+  stored in settings, logged or sent to the browser.
+- This computer stays in charge of the conversation and takes over the speech work
+  whenever the rig is slow, busy or away: a turn starts on the rig only when it
+  answered recently, a dead rig is noticed in under a second, the words in flight
+  replay into the local recogniser, and a reply sentence with no rig audio within
+  800 ms is rendered here instead. One reply is never split across engines mid-word.
+- The rig's states are all handled: a rig serving without a GPU lease is used (and
+  Settings and the Voice lab say so), a rig still loading its models leaves the turns
+  here until it is ready, a rig giving its GPU back finishes the reply it is speaking
+  and is not tried again before the time it announced, and a `503` with
+  `Retry-After` is honoured. An engine error from the rig, or two "busy" answers in a
+  row, count as a failure, so the next replies do not pay the same round trip.
+- Playback credit follows the rig's own rule: the playback position is re-sent every
+  250 ms while a reply is open, and a sentence is never counted late while the rig may
+  be holding back on purpose. A long reply stays on the rig: past the rig's per-reply
+  text limit (2000 characters) it continues in a fresh context with the same voice.
+  A reply's rig context closes as soon as its last sentence is out, so a rig asked to
+  give its GPU back is never held up by an idle chat.
+- A late final transcript moves only the recognition to this computer, not the reply
+  sentence the rig is already speaking; a fresh rig session never reuses the old
+  session's transcripts; the voice uploads ignore proxy settings.
+- Session hooks for the rig: `cancel{gen}` before the host abort on a barge-in,
+  pause/resume with the duck, and a word-accurate heard cut from the rig's word
+  timings.
+- Only voice conditionals go to the rig (never the reference clip); deleting a voice
+  also deletes it from the rig. Built-in plugin voices (Kokoro) stay on this
+  computer: a bot speaking one gets the rig's recognition and end-of-turn score, and
+  its replies are spoken here. To have the rig speak a bot's replies, give the bot a
+  cloned voice (or the stock voice).
+- Settings › Voice: *Use the GPU rig when available* with a status line (disabled,
+  "Not set up on this computer", until an address and a token exist). The Voice lab
+  shows the rig's state, card, engines, GPU lease, limits, deadlines and latencies as
+  sentences; `dispatch-voice doctor` prints a GPU rig line. Eight locales.
+- Deadlines measured on an RTX 3090 rig over a tailnet: `stt_final_deadline_ms` 350
+  (final words 115 ms median, 172 ms worst), `tts_start_deadline_ms` 800 (first audio
+  200-275 ms typical, outliers to about 520 ms).
+- Harnesses: `tests/latency_ws.py` and `tests/e2e_voice_roundtrip.py` take
+  `--rig <ws-url>` (the token from the environment); `latency_ws` adds the `long` and
+  `drop` scenarios and records the server's CPU per chat.
+- Docs: `docs/voice-chat/rig.md`.
+
 ## [1.0.1] — 2026-10-11
 
 A patch release: fixes from the review of 1.0.0. Same extension API (1) and the same

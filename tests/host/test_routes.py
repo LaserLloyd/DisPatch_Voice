@@ -24,6 +24,10 @@ BUILTINS = [{"id": "builtin:af_heart", "name": "Heart (US, female)", "lang": "en
             {"id": "builtin:am_michael", "name": "Michael (US, male)", "lang": "en-us"}]
 THREAD = "t-voice-1"
 
+#: The settings view of `rig:` with nothing configured (host/rig.py defaults).
+RIG_OUT = {"enabled": False, "url": "", "stt_final_deadline_ms": 350, "tts_start_deadline_ms": 800,
+           "ahead_ms": 3000, "first_chunk_tokens": 15}
+
 
 
 def rt_settings_out(**over):
@@ -79,7 +83,8 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
                      "gateway_trailer": "full", "opus": "auto", "opus_down_kbps": 24, "opus_up_kbps": 16,
                      "bots": {"nova": {"backchannel": False, "follow_up": True},
                               "sage": {"backchannel": False, "follow_up": False},
-                              "swift": {"backchannel": False, "follow_up": True}}}
+                              "swift": {"backchannel": False, "follow_up": True}},
+                     "rig": RIG_OUT}
     r = c.patch("/api/voice/settings", json={"speed": 1.2, "voice_turn_thinking": "low",
                                              "default_voice": "builtin:am_michael"})
     assert r.status_code == 200, r.text
@@ -91,7 +96,8 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
                      "gateway_trailer": "full", "opus": "auto", "opus_down_kbps": 24, "opus_up_kbps": 16,
                      "bots": {"nova": {"backchannel": False, "follow_up": True},
                               "sage": {"backchannel": False, "follow_up": False},
-                              "swift": {"backchannel": False, "follow_up": True}}}
+                              "swift": {"backchannel": False, "follow_up": True}},
+                     "rig": RIG_OUT}
     f = ctx.paths.voice_yaml
     assert f.exists() and (f.stat().st_mode & 0o777) == 0o600
     st = vconfig.load_settings()                       # what the next turn reads

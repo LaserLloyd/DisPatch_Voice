@@ -32,7 +32,7 @@ function routes(status = STATUS_ON(), extra = {}) {
 test('EXT: id voice, accepts extension API 1..1, carries the add-on version', () => {
   assert.equal(EXT.id, 'voice');
   assert.deepEqual(EXT.api, [1, 1]);
-  assert.match(EXT.version, /^\d+\.\d+\.\d+$/);
+  assert.match(EXT.version, /^\d+\.\d+\.\d+(\.dev\d+)?$/);
 });
 
 test('versionQuery: siblings carry the server\'s assets hash (?v=), else the entry\'s own query (A1)', () => {

@@ -227,5 +227,5 @@ def test_the_client_entry_reports_the_package_version():
     still said 0.1.0 at 1.0.0); a release bumps both, this keeps them together."""
     import re
     src = (STATIC_DIR / "index.js").read_text()
-    m = re.search(r"export const EXT = \{[^}]*version: '([0-9.]+)'", src)
+    m = re.search(r"export const EXT = \{[^}]*version: '([0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)'", src)
     assert m is not None and m.group(1) == __version__

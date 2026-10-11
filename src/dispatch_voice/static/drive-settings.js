@@ -24,7 +24,7 @@
 // settings for no visible gain. Users only ever read "voice chat".
 
 const Q = new URL(import.meta.url).search;
-const { el, railIcon, iconPaths, t, has, listFormat, language, isMobile } = await import(`./shell.js${Q}`);
+const { el, railIcon, iconPaths, t, has, listFormat, language, isMobile, sentences } = await import(`./shell.js${Q}`);
 const { pickVoice, ringCursorFrom } = await import(`./bridge.js${Q}`);
 
 export const DRIVE_KEY = 'dispatch-drive';
@@ -873,6 +873,112 @@ export function sessionLines(st) {
   return out;
 }
 
+/** Fallback reason codes (host/rig.py REASONS) → the six things an owner can act on. */
+const RIG_REASON_GROUPS = Object.freeze({
+  missed_pongs: 'no_answer', silence: 'no_answer', closed: 'no_answer', unreachable: 'no_answer',
+  lag: 'slow', final_timeout: 'slow', tts_late: 'slow',
+  busy: 'busy', rate_limited: 'busy', not_ready: 'busy', vacating: 'busy', lease_lost: 'busy',
+  token: 'token', unknown_voice: 'voice', bad_voice: 'voice',
+});
+
+/** A fallback reason in words ("the rig was too slow"), or null for none. */
+export function rigReason(code) {
+  if (!code) return null;
+  return t(`vtools.rig_reason_${RIG_REASON_GROUPS[code] || 'error'}`);
+}
+
+/** "RTX 3090 (GPU 3)" from `status.rig.gpu`, or '' when unknown. */
+function rigGpu(rg) {
+  const g = rg && (rg.gpu || (rg.last && rg.last.gpu));
+  if (!g || !g.name) return '';
+  return Number.isInteger(g.index) ? t('vtools.rig_gpu', { name: String(g.name), index: g.index }) : String(g.name);
+}
+
+/**
+ * The Settings › Voice status line under "Use the GPU rig when available"
+ * (`status.rig.state`); null when there is nothing to add to the switch.
+ */
+export function rigStatusLine(rg) {
+  if (!rg || typeof rg !== 'object') return null;
+  const st = rg.state;
+  if (st === 'not_configured') return t('drive.rig_not_setup');
+  if (st === 'off') return null;
+  if (st === 'ready') {
+    const name = rg.gpu && rg.gpu.name ? String(rg.gpu.name) : '';
+    const line = name ? t('drive.rig_state_ready_on', { gpu: name }) : t('drive.rig_state_ready');
+    // An unleased rig serves (its lease mode is off, or StudioForge was away and the card free).
+    return rg.lease === 'unleased' ? sentences([line, t('drive.rig_state_unleased')]) : line;
+  }
+  if (['idle', 'connecting', 'loading', 'busy', 'down', 'cooling', 'misconfigured'].includes(st)) return t(`drive.rig_state_${st}`);
+  return null;
+}
+
+/**
+ * The Voice lab's rig line (ADDON-ENGINE §5), as sentences: "GPU rig: ready on RTX
+ * 3090 (GPU 3). First audio p50 140 ms. Partial lag p90 190 ms. 92 % of turns on the
+ * rig. Last fallback: none." / "GPU rig: busy, using this computer." / "…
+ * misconfigured (token)." / "… off."
+ */
+export function rigLabLine(rg, fmt = (ms) => `${Math.round(ms)} ms`) {
+  if (!rg || typeof rg !== 'object') return t('vtools.rig_prefix', { status: t('vtools.rig_not_setup') });
+  const st = rg.state;
+  const named = {
+    not_configured: 'vtools.rig_not_setup', off: 'vtools.rig_off', idle: 'vtools.rig_idle',
+    connecting: 'vtools.rig_connecting', loading: 'vtools.rig_loading', busy: 'vtools.rig_busy', down: 'vtools.rig_down',
+    cooling: 'vtools.rig_cooling', misconfigured: 'vtools.rig_misconfigured',
+  };
+  let head;
+  if (st === 'ready') {
+    const gpu = rigGpu(rg);
+    head = gpu ? t('vtools.rig_ready_on', { gpu }) : t('vtools.rig_ready');
+  } else head = t(named[st] || 'vtools.rig_not_setup');
+  const parts = [t('vtools.rig_prefix', { status: head })];
+  if (st === 'ready' && rg.lease === 'unleased') parts.push(t('vtools.rig_unleased'));
+  const m = rg.metrics || {};
+  if (st !== 'not_configured' && st !== 'off' && st !== 'misconfigured') {
+    if (Number.isFinite(m.ttfa_p50)) parts.push(t('vtools.rig_ttfa', { ms: fmt(m.ttfa_p50) }));
+    if (Number.isFinite(m.partial_lag_p90)) parts.push(t('vtools.rig_lag', { ms: fmt(m.partial_lag_p90) }));
+    if (Number.isFinite(m.share)) parts.push(t('vtools.rig_share', { pct: m.share }));
+    if (Number(m.turns) > 0 || m.last_fallback_reason) {
+      parts.push(t('vtools.rig_last_fallback', { reason: rigReason(m.last_fallback_reason) || t('vtools.rig_none') }));
+    }
+  }
+  return sentences(parts);
+}
+
+/**
+ * Settings › Voice: "Use the GPU rig when available" (server, voice.yaml
+ * `rig.enabled`) with its status line. Disabled, with "Not set up on this
+ * computer", until the server has an address and a token. null without a
+ * `status.rig` (an older add-on server).
+ */
+export function rigRow(st, save) {
+  const rg = st && st.rig;
+  if (!rg || typeof rg !== 'object') return null;
+  const configured = !!rg.configured;
+  const status = el('span', { class: 'dev-row-hint drive-note drive-rig-status', id: 'drive-rig-status' });
+  const paint = () => {
+    const line = rigStatusLine(rg);
+    status.textContent = line || '';
+    status.hidden = !line;
+  };
+  const cb = switchInput(configured && !!rg.enabled, t('drive.rig'), async (v) => {
+    cb.disabled = true;
+    const ok = await save({ rig: { enabled: v } });
+    cb.disabled = false;
+    if (!ok) { cb.checked = !v; return; }
+    rg.enabled = v;
+    rg.state = v ? 'idle' : 'off';
+    paint();
+  });
+  cb.id = 'drive-rig-input';
+  cb.disabled = !configured;
+  const r = row(t('drive.rig'), t('drive.rig_hint'), [cb], { id: 'drive-rig' });
+  r.querySelector('.dev-row-text').append(status);
+  paint();
+  return r;
+}
+
 /**
  * Settings → Voice (SPEC §7.1). `host` is the pane body. Re-callable: it
  * rebuilds from scratch whenever the status changes.
@@ -998,6 +1104,8 @@ export function mountDriveSettings(host, ctx) {
   narratorRow.hidden = rpMode !== 'dialogue_narrator';
   rpSel.classList.add('drive-select-wide');   // its longest choice is a sentence
   voiceRows.push(row(t('drive.rp_speech'), t('drive.rp_speech_hint'), [rpSel], { id: 'drive-rp' }), narratorRow);
+  const rig = rigRow(st, save);
+  if (rig) voiceRows.push(rig);
 
   if (ctx.cloning) {
     const open = el('button', { type: 'button', class: 'btn-secondary', id: 'dev-voices-open' }, [

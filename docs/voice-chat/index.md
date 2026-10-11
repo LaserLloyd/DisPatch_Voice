@@ -17,6 +17,7 @@ This page is the entry point. One file per area; each has one owner:
 | [client.md](client.md) | the voice chat screen and settings, user-facing behaviour |
 | [audio-modules.md](audio-modules.md) | the browser audio worklets, codecs, link monitor and phone voice |
 | [protocol.md](protocol.md) | the WebSocket protocol v3 (normative) |
+| [rig.md](rig.md) | the optional GPU rig (SpeechForge): setup, how it falls back, voices |
 
 ## Install and set up
 
@@ -34,7 +35,7 @@ discovers through an entry point; nothing in DisPatch names it.
    ```
 
    On a server, make `<dispatch-voice>` a release checkout that nobody develops in
-   (`git worktree add --detach <dir> v1.0.1`): what is in the overlay's folder goes
+   (`git worktree add --detach <dir> v1.1.0`): what is in the overlay's folder goes
    live at the next restart. DisPatch's `scripts/local-chat-launch` is the
    recommended service command: it checks the overlay in a throwaway process and
    starts DisPatch without the add-on (Settings → Voice then says why) rather than
