@@ -795,7 +795,9 @@ export function openDrive(thread, ctx) {
       onActivity: () => quiet.activity(),
       onLevel: (v) => { if (replyOn() && !reducedMotion()) setLevel(Math.min(1, v * 4)); },
       onDuck: (on) => { ducked = !!on; if (!closed) paint(); },
-      onLink: (l) => { link = l; if (!closed) paintLink(); },
+      // A stopped or locked chat has no link to report: a late monitor event must not
+      // bring "Low signal" back onto that screen (audit M3).
+      onLink: (l) => { if (state === 'stopped' || state === 'locked') return; link = l; if (!closed) paintLink(); },
       onCutOff: () => showNotice(t('drive.cut_off'), { kind: 'info', ms: 6000 }),
       onSpeech: (on) => {
         if (on && (state === 'offline' || state === 'waiting') && !offlineSaid) {
@@ -846,6 +848,11 @@ export function openDrive(thread, ctx) {
     linkLine.textContent = key ? t(key) : '';
     linkLine.hidden = !key;
     syncTalk();
+  }
+  /** The chat ended (stopped, locked): nothing is being read by anything any more. */
+  function resetLink() {
+    link = { degraded: false, notice: null, path: 'server' };
+    paintLink();
   }
 
   // ---- captions: where they show, and following the speech (FR-ux H1, M2) --
@@ -981,6 +988,7 @@ export function openDrive(thread, ctx) {
     audio.stopHere();
     earcon('err');
     setState('stopped');
+    resetLink();
     showNotice(msg);
   }
 
@@ -1337,6 +1345,7 @@ export function openDrive(thread, ctx) {
       case 'locked':
         showNotice(t('drive.locked_notice'));
         setState('locked');
+        resetLink();
         setTimeout(() => close({ quiet: true }), 2000);
         break;
       case 'error': {

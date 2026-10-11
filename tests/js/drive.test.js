@@ -1212,6 +1212,39 @@ test('overlay: with Captions off Undo is still on screen, under the state word (
   }, world.globals);
 });
 
+for (const ending of ['busy', 'locked']) {
+  test(`overlay: "Low signal" does not survive the end of the chat (${ending}) (1.0.1, audit M3)`, dom, async (t) => {
+    const world = fakeAudioWorld();
+    const synth = fakeSynth([{ voiceURI: 'v-en', name: 'English', lang: 'en-US', localService: true, default: true }]);
+    await withDom(async () => {
+      localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, firstRunOpens: 3 }));
+      t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: 5_000_000 });
+      const o = await openOverlay(world);
+      try {
+        o.ws.msg({ type: 'ready', proto: 3, sid: 'aaaa', sample_rate_in: 16000, codec_in: 'pcm16', codec_out: 'pcm16' });
+        o.ws.msg({ type: 'state', state: 'speaking' });
+        o.ws.msg({ type: 'say', gen: 0, seq: 1, text: 'This sentence is late.', kind: 'reply', message_id: 'm1', t: 1 });
+        advance(t, 6500, 250);
+        const line = o.overlay.querySelector('.drive-link');
+        assert.equal(line.hidden, false, 'the slow link handed the reply to the phone voice');
+        assert.equal(line.textContent, EN.drive.link_phone);
+        if (ending === 'busy') {
+          o.ws.drop(1013, 'Voice is busy on this server (3 chats open)');
+          advance(t, 300, 100);
+          assert.equal(o.overlay.dataset.state, 'stopped');
+          assert.equal(o.overlay.querySelector('.drive-notice:not(.drive-link)').textContent, EN.drive.err_busy);
+        } else {
+          o.ws.msg({ type: 'locked' });
+          advance(t, 300, 100);
+          assert.equal(o.overlay.dataset.state, 'locked');
+        }
+        assert.equal(line.hidden, true, 'the stopped screen says one thing, not two');
+        assert.equal(line.textContent, '');
+      } finally { t.mock.timers.reset(); o.d.close({ quiet: true }); o.restore(); }
+    }, { ...world.globals, speechSynthesis: synth, SpeechSynthesisUtterance: FakeUtterance, performance: mockPerf() });
+  });
+}
+
 test('overlay: replies shown as text appear even with Captions off; no "Low signal" for a pinned phone voice (FR-ux M2, L3)', dom, async () => {
   const world = fakeAudioWorld();
   await withDom(async () => {
