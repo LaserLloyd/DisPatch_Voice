@@ -309,6 +309,23 @@ body.drive-open { overflow: hidden; }
 [dir="rtl"] .dev-row > input.dev-switch { background-position: calc(100% - 1px) center; }
 [dir="rtl"] .dev-row > input.dev-switch:checked { background-position: 1px center; }
 .dev-row > input.dev-switch:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 2px; }
+/* Forced colours (Windows High Contrast) drop the fill and the gradient knob, so
+   on and off looked the same (1.0.1). Draw both states in system colours: off =
+   an outlined track with a CanvasText knob on the start side, on = a Highlight
+   track with a HighlightText knob on the end side. DisPatch's own switches in
+   #spane-voice are styled by DisPatch's app.css, not here. */
+@media (forced-colors: active) {
+  .dev-row > input.dev-switch {
+    forced-color-adjust: none;
+    border-color: CanvasText; background-color: Canvas;
+    background-image: radial-gradient(circle closest-side, CanvasText 0 82%, transparent 90%);
+  }
+  .dev-row > input.dev-switch:checked {
+    border-color: Highlight; background-color: Highlight;
+    background-image: radial-gradient(circle closest-side, HighlightText 0 82%, transparent 90%);
+  }
+  .dev-row > input.dev-switch:focus-visible { outline-color: CanvasText; }
+}
 
 /* "All settings" row in the sheet: a .dev-row that is a button. */
 .dev-group-body > .drive-row-link {
