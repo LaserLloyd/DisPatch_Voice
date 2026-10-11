@@ -117,7 +117,7 @@ An acknowledgement is the short reaction a bot says while it works out the reply
 such as "Let me see." or "On it.". The old version played one of six lines on
 every turn, picked at random, so "Hmm, good question" followed statements. Now:
 
-- **Pools.** The default pool has 77 lines (69 distinct) across 8 intents:
+- **Pools.** The default pool has 76 lines (68 distinct) across 8 intents:
   question, request, statement, emotional, upbeat (good news), a follow-up
   after an interruption, a wait line at 5 s and a wait line at 15 s. Four style pools add character:
   `wry` (dry, measured), `bright` (quick, playful), `trainer` (calm, action

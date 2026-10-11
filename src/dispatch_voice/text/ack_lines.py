@@ -92,15 +92,15 @@ DEFAULT: dict[str, tuple[str, ...]] = {
         "Oh no.",
         "Ugh, that's rough.",
     ),
-    # after good news said with a "!" ("We got the house!") — surprise, not a verdict
+    # after good news said with a "!" ("We got the house!") — surprise only, so a misread
+    # piece of bad news never gets a glad answer
     "upbeat": (
         "Oh wow.",
         "Whoa.",
         "Oh, wow!",
         "No way!",
-        "Wow, okay!",
-        "Oh, hey!",
-        "Ooh!",
+        "Wow.",
+        "Oh!",
     ),
     # after a barge-in: the person stopped the reply and said something new
     "followup": (

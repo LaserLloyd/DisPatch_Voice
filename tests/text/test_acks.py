@@ -91,6 +91,11 @@ def test_word_only_voices_get_word_lines_only():
 # ---- intent ---------------------------------------------------------------------- #
 
 INTENT_TABLE = [
+    # 1.0.1 review: bad news and "understood" said with a "!" are not good news
+    ("I got it!", "statement"),
+    ("Our flight got cancelled!", "statement"),
+    ("I got in an accident!", "statement"),
+    ("My dad got arrested!", "statement"),
     ("What's on my calendar?", "question"),
     ("How does this work?", "question"),
     ("Why does Rae sound like Nova?", "question"),
@@ -849,9 +854,9 @@ def test_the_upbeat_pool_is_surprise_not_a_verdict_and_never_flat():
     assert not flat & set(lines)
     for line in lines:
         assert not any(bad in line.lower() for bad in ack_lines.FORBIDDEN)
-    # a word-only voice (Kokoro) still has upbeat lines once "Ooh!" is filtered out
+    # a word-only voice (Kokoro) still has upbeat lines (all of its lines are words)
     _, base = default_pools().lines("upbeat", bot_id="x", voice="builtin:af_heart")
-    assert base and "Ooh!" not in base
+    assert base
 
 
 def test_upbeat_is_picked_after_good_news_and_does_not_repeat():

@@ -516,7 +516,12 @@ _ACHIEVEMENT = re.compile(
 # ... unless it is negated or bad news: "I didn't get it!", "I made a mistake!".
 _SETBACK = re.compile(
     r"\b(?:not|never|no|n't|nothing|mistake|wrong|lost|missed|forgot|failed|crashed|broke|"
-    r"flat|ticket|fine|late|stuck|bill|bug|error|cold|flu|covid)\b|n't\b", re.IGNORECASE)
+    r"flat|ticket|fine|late|stuck|bill|bug|error|cold|flu|covid|accident|arrest\w*|evict\w*|"
+    r"cancel\w*|reject\w*|scam\w*|hack\w*|cancer|divorce\w*|injur\w*|suspend\w*|run over|"
+    r"robbed|stolen|hospital|surgery|dead|died|denied|towed|demoted|banned|sued|expelled|"
+    r"deported|fined|hurt|sick|ill|fired|laid off|dumped)\b|n't\b"
+    # "I got it!" means "understood", not good news
+    r"|\bgot\s+(?:it|that|this|you|him|her|them)\b", re.IGNORECASE)
 _CLAUSE_SPLIT = re.compile(r"[,;:.!?—–]|\s-\s|\bbut\b", re.IGNORECASE)
 
 

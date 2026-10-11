@@ -43,9 +43,9 @@ settings; no model or dependency changes.
 
 ### Acknowledgements
 - Good news about yourself said with a "!" ("We got the house!", "I passed my
-  exam!") gets a new `upbeat` pool ("Oh wow.", "No way!", "Whoa.") instead of
-  "Noted." or "Okay."; a negated or bad-news line ("I didn't pass!", "I made a
-  mistake!") does not. `voice-acks.yaml` accepts `upbeat` like the other intents.
+  exam!") gets a new `upbeat` pool of surprise lines ("Oh wow.", "No way!",
+  "Whoa.") instead of "Noted." or "Okay."; a negated or bad-news line ("I didn't
+  pass!", "Our flight got cancelled!") and "I got it!" do not. `voice-acks.yaml` accepts `upbeat` like the other intents.
 - Any "can you believe …?" / "can you imagine …?" is treated as rhetorical and gets
   no thinking line, whatever its length (only short ones did).
 - The `trainer` style no longer answers bad news with "Okay.".

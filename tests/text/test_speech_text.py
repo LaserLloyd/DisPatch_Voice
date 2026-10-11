@@ -364,6 +364,9 @@ def test_numeric_slash_dates(src, want):
     ("Between 500-1000 people.", "Between 500 to one thousand people."),
     ("Pages 10-20.", "Pages 10 to 20."),
     ("Call 555-123-4567.", "Call five five five, one two three, four five six seven."),
+    # "extra", "tell" and "line" are not phone words
+    ("An extra 500-1000 dollars.", "An extra 500 to one thousand dollars."),
+    ("I'll tell you, 500-1000 people came.", "I'll tell you, 500 to one thousand people came."),
 ])
 def test_a_two_group_phone_number_is_read_digit_by_digit_not_as_a_range(raw, spoken):
     assert normalise(raw, tags_ok=False) == spoken
@@ -380,6 +383,7 @@ def test_a_two_group_phone_number_is_read_digit_by_digit_not_as_a_range(raw, spo
     ("Time is 10:30.", "Time is ten thirty."),
     ("Ratio 8:3 is fine.", "Ratio 8:3 is fine."),
     ("Note:D is next.", "Note:D is next."),
+    ("So x =3 here.", "So x equals 3 here."),
 ])
 def test_ascii_emoticons_are_not_spoken(raw, spoken):
     assert normalise(raw, tags_ok=False) == spoken
@@ -392,6 +396,10 @@ def test_ascii_emoticons_are_not_spoken(raw, spoken):
     ("Go. And *she walks off slowly*.", "Go."),
     ("Wait, *she sighs heavily*!", "Wait!"),
     ("He waits, *tilting his head*.", "He waits."),
+    # words that end a clause stay
+    ("I think so, *nodding*.", "I think so."),
+    ("Okay then, *she turns away*.", "Okay then."),
+    ("It's been a while, *she sighs*.", "It's been a while."),
 ])
 def test_skipping_an_action_leaves_no_dangling_conjunction(src, want):
     assert rp_render(normalise(src, tags_ok=False), "skip_actions") == [("character", want)]

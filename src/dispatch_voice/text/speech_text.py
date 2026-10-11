@@ -475,7 +475,7 @@ _DROP_FORMAT = {"\u200d", "\ufe0e", "\ufe0f", "\u20e3", "\u00ad", "\u2060"}
 
 # ASCII emoticons at a word's edge (":)", ";-)", ":D", "=P", "<3"): the eyes need
 # a space or the start before them, so "http://", "10:30" and "Note:D" are untouched.
-_EMOTICON = re.compile(r"(?:(?<=\s)|^)(?:[:;=][-^']?[)(\]\[DPpOo3/\\|]+|<3+)(?=\s|$|[.,!?;:])")
+_EMOTICON = re.compile(r"(?:(?<=\s)|^)(?:[:;][-^']?[)(\]\[DPpOo3/\\|]+|=[-^']?[)(DP]+|<3+)(?=\s|$|[.,!?;:])")
 
 
 def strip_symbols(t: str) -> str:
@@ -601,7 +601,9 @@ _PHONE = re.compile(r"(?<![\w.])(?:\+\d{1,3}[-\s])?(?:\(\d{2,4}\)\s?|\d{2,4}[-\s
 # looks like a range: ascending, no leading zero, a round right side, no phone word
 # just before it ("500-1000 people" stays a range).
 _PHONE_LOCAL = re.compile(r"(?<![\w.,-])(\d{3})-(\d{4})(?![\w-]|[.,]\d)")
-_PHONE_WORDS = re.compile(r"\b(?:call|phone|dial|text|number|tel|fax|ring|reach|contact|line|ext)\w*"
+_PHONE_WORDS = re.compile(r"\b(?:call(?:ed|ing|s)?|phone[sd]?|dial(?:ed|ing|s)?|text(?:ed|ing|s)?|"
+                          r"numbers?|tel|fax(?:ed|es)?|ring(?:ing)?|reach(?:ed|ing)?|"
+                          r"contact(?:ed|ing|s)?|ext(?:ension)?|hotline)\b"
                           r"(?:\W+\w+){0,2}\W*\Z",
                           re.IGNORECASE)
 _ORDINAL = re.compile(r"\b(\d+)(st|nd|rd|th)\b")
@@ -1007,7 +1009,10 @@ def _canonical_mode(mode: str | None) -> str:
 
 
 # A word that only joins prose to the action that followed it.
-_DANGLING = re.compile(r"(?:\s+(?:and|but|or|so|then|while|as|with))+\s*$", re.IGNORECASE)
+# "and/but/or/nor" always; "so/then/while/as/with" only right after a comma, so
+# "I think so, *nods*." and "It's been a while, *sighs*." keep their last word.
+_DANGLING = re.compile(r"(?:\s+(?:and|but|or|nor)|[,;]\s*(?:so|then|while|as|with))+"
+                       r"[\s,;:\u2014\u2013-]*$", re.IGNORECASE)
 
 
 def rp_render(text: str, mode: str = "all", *, has_dialogue: bool | None = None
@@ -1055,14 +1060,14 @@ def rp_render(text: str, mode: str = "all", *, has_dialogue: bool | None = None
         elif pieces and pieces[-1][2] == idx - 1 and (s[-1:] in ".!?…" or idx == len(segs) - 1):
             # "she asks, *tilting her head*." without the action: keep the full stop;
             # "she says hi and *waves*." without it: drop the "and" it leaves behind
-            r0, s0, i0, k0 = pieces[-1]
-            s0 = re.sub(r"[\s,;:\u2014\u2013-]+$", "", s0)
+            r0, s0_raw, i0, k0 = pieces[-1]
+            s0 = re.sub(r"[\s,;:\u2014\u2013-]+$", "", s0_raw)
             if s0 and s0[-1] not in ".!?…":
                 end = s[-1] if s[-1:] in ".!?…" else ""
-                trimmed = re.sub(r"[\s,;:\u2014\u2013-]+$", "", _DANGLING.sub("", " " + s0)).strip()
+                trimmed = re.sub(r"[\s,;:\u2014\u2013-]+$", "", _DANGLING.sub("", " " + s0_raw)).strip()
                 if _speakable(trimmed):
                     pieces[-1] = (r0, trimmed + ("" if trimmed[-1] in ".!?…" else end), i0, k0)
-                elif _DANGLING.fullmatch(" " + s0) and len(pieces) > 1:
+                elif _DANGLING.fullmatch(" " + s0_raw) and len(pieces) > 1:
                     # '… "let's go" and *smiles*.': the bare "and" goes, the stop stays
                     pieces.pop()
                     r1, s1, i1, k1 = pieces[-1]
