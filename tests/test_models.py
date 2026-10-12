@@ -18,7 +18,7 @@ def real():
     return ChatterboxOnnx(watermark=False)
 
 
-def test_clone_and_speak(real, tmp_path):
+def test_clone_and_speak(real, tmp_path, idle_cpu):
     from dispatch_voice.profiles import ProfileStore
     store = ProfileStore(tmp_path / "voices", real)
     p = store.create("Synthetic host", FIXTURE.read_bytes(), FIXTURE.name, "synthetic")

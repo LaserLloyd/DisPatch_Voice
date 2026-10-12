@@ -385,7 +385,7 @@ def play_model(frames_at: list[tuple[float, int]], first_at: float, slack_s: flo
 
 
 @need_tts
-def test_first_audio_within_two_seconds_and_no_underrun(tts):
+def test_first_audio_within_two_seconds_and_no_underrun(tts, idle_cpu):
     t0 = time.perf_counter()
     frames_at: list[tuple[float, int]] = []
     for fr in tts.stream(SENTENCE_25, "stock"):

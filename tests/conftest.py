@@ -2,6 +2,7 @@ import io
 import os
 import sys
 import threading
+import time
 
 import numpy as np
 import pytest
@@ -145,3 +146,33 @@ def pytest_unconfigure(config):
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(getattr(config, "_voice_exitstatus", 0))
+
+
+#: A wall-clock budget on the CPU only means something on an idle box. More than this many
+#: cores' worth of other work (1-min load, or a 0.5 s /proc/stat sample, since the load
+#: average lags a just-started job by a minute) skips the budget test instead of failing it.
+BUSY_CORES_MAX = 2.0
+
+
+def _busy_cores(window_s: float = 0.5) -> float:
+    def sample():
+        with open("/proc/stat") as f:
+            v = [int(x) for x in f.readline().split()[1:]]
+        idle = v[3] + v[4]                       # idle + iowait
+        return sum(v) - idle, sum(v)
+    try:
+        b0, t0 = sample()
+        time.sleep(window_s)
+        b1, t1 = sample()
+    except (OSError, ValueError, IndexError):
+        return 0.0
+    return (b1 - b0) / max(1, t1 - t0) * (os.cpu_count() or 1)
+
+
+@pytest.fixture
+def idle_cpu():
+    """Skip a CPU timing-budget test when the box is busy with other work."""
+    load = os.getloadavg()[0]
+    now = _busy_cores()
+    if max(load, now) > BUSY_CORES_MAX:
+        pytest.skip(f"CPU timing budget: box busy (load {load:.1f}, {now:.1f} cores now)")
