@@ -280,7 +280,7 @@ function rowsOf(host, groupSel = 'section.dev-group') {
   }));
 }
 
-test('Settings → Voice: 19 rows in 6 groups + a collapsed Status (SPEC §7.1)', dom, () => withDom(async () => {
+test('Settings → Voice: 20 rows in 6 groups + a collapsed Status (SPEC §7.1, 1.2.0: + Type instead of talking)', dom, () => withDom(async () => {
   const { shell } = fakeShell();
   const prev = bindShell(shell);
   try {
@@ -294,7 +294,7 @@ test('Settings → Voice: 19 rows in 6 groups + a collapsed Status (SPEC §7.1)'
     assert.deepEqual(groups.map((g) => g.id), ['drive-group-switch', 'drive-group-voices', 'drive-group-listening',
       'drive-group-replies', 'drive-group-connection', 'drive-group-device']);
     const total = groups.reduce((n, g) => n + g.rows.length, 0);
-    assert.equal(total, 19, JSON.stringify(groups));
+    assert.equal(total, 20, JSON.stringify(groups));
     assert.deepEqual(groups[1].rows, ['drive-default-voice', 'drive-speed', 'drive-rp', 'drive-narrator', 'drive-manage-voices']);
     assert.deepEqual(groups[3].rows, ['drive-reply-length', 'drive-follow-up', 'drive-reactions', 'drive-tones']);
     assert.deepEqual(groups[4].rows, ['drive-slow', 'drive-phone-voice']);
@@ -439,8 +439,9 @@ test('quick sheet: "{bot}\'s voice" PUTs this bot in the full roster (order kept
       assert.deepEqual(put.body, { bots: [{ id: 'a', order: 0 }, { id: 'nova', order: 1, voice: 'p1' }, { id: 'c', order: 2 }] });
       assert.equal(fetch.calls.some((c) => c.path === '/api/voice/settings'), false, 'the server default is untouched');
       assert.equal(bot.voice, 'p1');
-      // Five road rows + the voice row + All settings.
-      assert.equal(sheet.querySelectorAll('.dev-group-body > .dev-row').length, 7);
+      // Six road rows (Type instead of talking since 1.2.0) + the voice row + All settings.
+      assert.equal(sheet.querySelectorAll('.dev-group-body > .dev-row').length, 8);
+      assert.ok(sheet.querySelector('#drive-sheet-typed input.dev-switch'));
       assert.ok(sheet.querySelector('#drive-sheet-all'));
     } finally { bindShell(prev); }
   }, { fetch });

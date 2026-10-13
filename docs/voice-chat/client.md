@@ -14,7 +14,7 @@ switch.
 - Open a chat and tap the **microphone** in the chat header. The first time,
   the browser asks for the microphone. DisPatch must be opened from its
   `https://` address (the address bar shows a lock), or the browser refuses.
-- Voice chat fills the screen. **Hang up** (the wide button) closes it, as do
+- Voice chat fills the screen. **Hang up** (the red button) closes it, as do
   Esc and the phone's Back gesture. A toast says "Voice chat ended."
 - Voice chat runs **with the screen on**. Locking the phone mutes the
   microphone, and it says so when you come back ("Muted while the screen was
@@ -59,9 +59,19 @@ the state, and the line under that says what a tap on the picture does.
   captions area, which takes the room the picture does not need once there are
   captions; scroll back by hand and following pauses for a few seconds (the top
   edge fades while the area is scrolled).
-- **The buttons never leave the screen.** The picture shrinks and the captions
-  scroll instead; with the phone on its side (a landscape mount) the picture is
-  on one side, the captions on the other and Mute / Hang up across the bottom.
+- **The buttons never leave the screen.** Three round buttons with a word under
+  each — **Mute**, **Type**, **Hang up** — centred at the bottom (1.2.0; they
+  were two wide bars). The picture shrinks and the captions scroll instead; with
+  the phone on its side (a landscape mount) the picture is on one side, the
+  captions on the other and the three buttons across the bottom, smaller.
+- **Type** (1.2.0, for a headset or a quiet room): mutes the microphone and shows
+  a text box above the buttons. What you type is sent as your turn — the reply
+  is **spoken** as usual, with captions and Undo — Enter sends, Shift+Enter is a
+  new line, Esc closes the box. **Unmute** puts the box away. With the keyboard
+  up the picture goes small so the box and the buttons stay in view (the overlay
+  follows the visual viewport on iOS, where the keyboard does not shrink the
+  page). The quick sheet's **Type instead of talking** opens every chat this way:
+  muted, the box out, and it stays out when you unmute.
 - **Talking over a reply.** The reply drops to a murmur and pauses the moment
   you start talking (the ring says "Hearing you"). If it was a cough or a
   quick "mm-hm", the reply picks up again — from the start of the sentence
@@ -135,6 +145,8 @@ What people change mid-conversation, in large rows, applied at once:
   The server-wide default voice stays in Settings › Voice.
 - **Pause before replying** — Quick / Normal / Patient.
 - **Interrupt by talking**.
+- **Type instead of talking** (1.2.0) — replies are still spoken; the chat opens
+  muted with the text box out.
 - **Reply length** — Short / Normal / Longer.
 - **When the connection is slow** — Phone voice (only when this device has
   one) / Wait / Text only. Without a phone voice it highlights what will really
@@ -145,7 +157,7 @@ What people change mid-conversation, in large rows, applied at once:
 
 ## Settings › Voice
 
-Six groups, nineteen rows at most, plus a collapsed **Advanced** group.
+Six groups, twenty rows at most, plus a collapsed **Advanced** group.
 "Server" rows are shared by everyone on this DisPatch (their groups, and the two
 server rows under Advanced, say "Shared by everyone on this server"); "device"
 rows apply to this browser only. Every control is described by its hint for a
@@ -162,6 +174,7 @@ screen reader, and every select shows the app's focus ring.
 | Listening | Pause before replying (Quick / Normal / Patient — it adjusts itself to how you pause) | device |
 | | Interrupt by talking | device |
 | | Keep listening after a reply (off = push to talk) | device |
+| | Type instead of talking (replies spoken, the chat opens muted with the text box out) | device |
 | | Microphone | device |
 | Replies | Reply length | device |
 | | Ask a follow-up question: Bot's default / On / Off ("Bot's default" uses each bot's own setting from the Bots tab) | device |

@@ -54,6 +54,7 @@ export const DRIVE_DEFAULTS = Object.freeze({
   micId: '',               // '' = system default
   sinkId: '',              // '' = system default (setSinkId browsers only)
   captions: true,          // words while you speak + the reply, on the voice chat screen
+  typedInput: false,       // 1.2.0: replies spoken, you type — the chat opens muted with the text box out
   showTimings: false,      // Voice lab: latency numbers on the voice chat screen
   reactions: 'sometimes',  // acks (sometimes) + mm-hm for opted-in bots (often)
   slowLink: 'phone',       // when the connection is slow: phone | wait | text | always_phone
@@ -66,7 +67,7 @@ export const DRIVE_DEFAULTS = Object.freeze({
 });
 
 const BOOL_KEYS = ['bargeIn', 'autoListen', 'sounds', 'screenOn', 'captions', 'showTimings', 'optimisticDuck',
-  'learnedReset'];
+  'learnedReset', 'typedInput'];
 
 function clampInt(v, lo, hi) {
   const n = Math.round(Number(v));
@@ -613,6 +614,16 @@ export function canPickSpeaker() {
 
 function storage() { return globalThis.localStorage; }
 
+/**
+ * "Type instead of talking" (1.2.0): replies are still spoken; the voice chat opens
+ * with the microphone muted and the text box out (a headset, a quiet room). The
+ * quick sheet and Settings › Listening show the same row.
+ */
+function typedInputRow(s, set, { id = 'drive-typed-input' } = {}) {
+  return row(t('drive.typed_input'), t('drive.typed_input_hint'),
+    [switchInput(s.typedInput, t('drive.typed_input'), (v) => set({ typedInput: v }))], { id });
+}
+
 function micRow(s, set) {
   const micSel = selectInput(t('drive.mic'), [{ value: '', label: t('drive.device_default') }], s.micId, (v) => set({ micId: v }));
   deviceOptions('audioinput').then((o) => fillSelect(micSel, o, o.some((x) => x.value === s.micId) ? s.micId : ''));
@@ -661,6 +672,7 @@ export function buildQuickSheet({
       [segmented(t('drive.patience'), patienceOptions(), s.patience, (v) => set({ patience: v }))], { block: true }),
     row(t('drive.barge_in'), t('drive.barge_in_hint'),
       [switchInput(s.bargeIn, t('drive.barge_in'), (v) => set({ bargeIn: v }))]),
+    typedInputRow(s, set, { id: 'drive-sheet-typed' }),
     row(t('drive.reply_length'), t('drive.reply_length_hint'),
       [segmented(t('drive.reply_length'), replyOptions(), s.replyStyle, (v) => set({ replyStyle: v }))], { block: true }),
   );
@@ -1126,6 +1138,7 @@ export function mountDriveSettings(host, ctx) {
       [switchInput(s.bargeIn, t('drive.barge_in'), (v) => set({ bargeIn: v }))], { id: 'drive-barge-in' }),
     row(t('drive.auto_listen'), t('drive.auto_listen_hint'),
       [switchInput(s.autoListen, t('drive.auto_listen'), (v) => set({ autoListen: v }))], { id: 'drive-auto-listen' }),
+    typedInputRow(s, set),
     micRow(s, set),
   ], { id: 'drive-group-listening' }));
 

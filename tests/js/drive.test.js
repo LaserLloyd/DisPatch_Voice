@@ -1409,3 +1409,112 @@ test('overlay: the captions follow the sentence being spoken and pause after a m
     }
   }, world.globals);
 });
+
+// ------------------------------------------------ the Type button (1.2.0) ---
+
+test('overlay: Type mutes the microphone, shows the box; Enter sends `typed`; the transcript shows it; Esc closes only the box', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      const typeBtn = o.overlay.querySelector('.drive-type');
+      const compose = o.overlay.querySelector('.drive-compose');
+      assert.ok(typeBtn && compose.hidden, 'the box is hidden until asked for');
+      assert.equal(o.overlay.querySelector('.drive-end').textContent, EN.drive.end);
+      assert.equal(typeBtn.getAttribute('aria-pressed'), 'false');
+      typeBtn.click();
+      assert.equal(compose.hidden, false);
+      assert.equal(o.d.active.composing, true);
+      assert.equal(o.ws.sent.at(-1).type, 'pause', 'the microphone is muted first');
+      assert.equal(o.overlay.dataset.state, 'paused');
+      assert.equal(o.overlay.querySelector('.drive-hint').textContent, EN.drive.hint_type);
+      assert.equal(typeBtn.getAttribute('aria-pressed'), 'true');
+      assert.equal(o.overlay.querySelector('.drive-pause').dataset.muted, '1');
+      const input = o.overlay.querySelector('.drive-compose-input');
+      assert.equal(document.activeElement, input, 'the box takes the focus');
+      input.value = '  what time is it?  ';
+      // Shift+Enter is a new line, an IME Enter commits text: neither sends.
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true, cancelable: true }));
+      assert.equal(o.ws.frames('typed').length, 0);
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.deepEqual(o.ws.frames('typed'), [{ type: 'typed', text: 'what time is it?' }]);
+      assert.equal(input.value, '', 'the box is cleared for the next message');
+      assert.equal(document.activeElement, input, 'and keeps the focus (a headset: keep typing)');
+      // An empty box sends nothing.
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.equal(o.ws.frames('typed').length, 1);
+      // The server echoes the typed text as a transcript: the caption shows it, Undo opens.
+      o.ws.msg({ type: 'transcript', text: 'what time is it?', typed: true, message_id: 'u-1', merged: false });
+      o.ws.msg({ type: 'state', state: 'thinking' });
+      assert.match(o.overlay.querySelector('.drive-you').textContent, /what time is it\?/);
+      assert.equal(o.overlay.querySelector('.drive-undo').hidden, false);
+      assert.equal(o.overlay.dataset.state, 'paused', 'the mic is still muted: every live state reads paused');
+      // Esc in the box closes the box, not the chat.
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      assert.equal(compose.hidden, true);
+      assert.ok(document.querySelector('.drive-overlay'), 'the chat is still open');
+      assert.equal(document.activeElement, o.overlay.querySelector('.drive-ring'));
+      // Unmute: the microphone is back, the box stays away.
+      o.overlay.querySelector('.drive-pause').click();
+      assert.equal(o.ws.sent.at(-1).type, 'start');
+      assert.equal(compose.hidden, true);
+      // Type again while listening: muted + box; Unmute then closes the box it opened.
+      typeBtn.click();
+      assert.equal(compose.hidden, false);
+      o.overlay.querySelector('.drive-pause').click();
+      assert.equal(compose.hidden, true);
+    } finally { o.d.close(); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: "Type instead of talking" opens the chat muted with the box out; Unmute keeps the box; the sheet switch works mid-chat', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    saveDriveSettings(globalThis.localStorage, { typedInput: true, firstRunOpens: 3 });
+    const o = await openOverlay(world);
+    try {
+      const compose = o.overlay.querySelector('.drive-compose');
+      assert.equal(compose.hidden, false);
+      assert.equal(o.overlay.dataset.state, 'paused');
+      assert.deepEqual(o.ws.sent.filter((f) => f.type === 'start' || f.type === 'pause').map((f) => f.type), ['start', 'pause']);
+      assert.equal(document.activeElement, o.overlay.querySelector('.drive-ring'), 'no keyboard pops up on open');
+      assert.equal(world.mic.port.posted.some((m) => m && m.enabled === false), true, 'the mic worklet is told it is off');
+      o.overlay.querySelector('.drive-pause').click();          // Unmute
+      assert.equal(o.overlay.dataset.state, 'listening');
+      assert.equal(compose.hidden, false, 'both ways of asking stay available');
+      // Esc in the box only drops the focus here.
+      const input = o.overlay.querySelector('.drive-compose-input');
+      input.focus();
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      assert.equal(compose.hidden, false);
+      assert.ok(document.querySelector('.drive-overlay'));
+      // The switch off (from the sheet, say): the box goes away; on again: muted + box.
+      saveDriveSettings(globalThis.localStorage, { typedInput: false });
+      assert.equal(compose.hidden, true);
+      saveDriveSettings(globalThis.localStorage, { typedInput: true });
+      assert.equal(compose.hidden, false);
+      assert.equal(o.overlay.dataset.state, 'paused');
+    } finally { o.d.close(); o.restore(); saveDriveSettings(globalThis.localStorage, { typedInput: false }); }
+  }, world.globals);
+});
+
+test('overlay: a stopped chat shows Try again / Back to chat and no Type button; a typed message before `ready` is kept with a notice', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      o.overlay.querySelector('.drive-type').click();
+      o.ws.drop(1013, 'busy');
+      assert.equal(o.overlay.dataset.state, 'stopped');
+      assert.equal(o.overlay.querySelector('.drive-type').hidden, true);
+      assert.equal(o.overlay.querySelector('.drive-pause').textContent, EN.drive.try_again);
+      assert.equal(o.overlay.querySelector('.drive-end').textContent, EN.drive.back_to_chat);
+      const input = o.overlay.querySelector('.drive-compose-input');
+      input.value = 'hello';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.equal(input.value, 'hello', 'not sent, not lost');
+      assert.equal(o.overlay.querySelector('.drive-notice').textContent, EN.drive.compose_offline);
+    } finally { o.d.close(); o.restore(); }
+  }, world.globals);
+});

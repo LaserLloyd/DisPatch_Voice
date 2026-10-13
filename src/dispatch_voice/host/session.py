@@ -255,6 +255,8 @@ ID_MAX_CHARS = 64
 #: A JSON control frame longer than this is not parsed (a `start` is < 2 KB): it is a
 #: rate-limited `bad_frame`, so a flood of big frames never costs parse time.
 CONTROL_MAX_CHARS = 16_384
+#: A `typed` frame's text (C.3, 1.2.0): the same bound as a spoken utterance.
+TYPED_MAX_CHARS = MAX_UTTERANCE_CHARS
 #: After a `barge_in` the client sends one exact `heard` for the new gen at
 #: once; the session waits at most this long for it before `note_heard`
 #: (SPEC §4.8, hardening L7); past that the last periodic `heard` is used.
@@ -3451,16 +3453,20 @@ class VoiceSession:
             self._pending_note = None            # one turn only (SPEC §4.8)
         return {"reply_style": self.reply_style, "follow_up": self.follow_up, "interrupted": note}
 
-    async def _submit(self, text: str, prefetched=None) -> str | None:
+    async def _submit(self, text: str, prefetched=None, *, typed: bool = False) -> str | None:
         await self._settle_cut_note()        # a cut's note belongs to THIS turn's instructions
         opts = self._turn_opts(consume=True)
         if prefetched is not None:
             opts["prefetched"] = prefetched
+        if typed:
+            opts["typed"] = True
         # The commit cursor moves BEFORE the host call (C.5 #8): if the socket or the
         # process dies between the submit and the client's next `pong`, the replayed
         # audio can never become a second user row; it records the transcript so a
         # reconnecting client that missed it gets it again (`replayed: true`).
-        self._cursor_commit(text, None)
+        # A typed message has no uplink audio behind it: the cursor is not its business.
+        if not typed:
+            self._cursor_commit(text, None)
         self._submit_at = self.clock()
         if self._submit_opts:
             call = self.host.submit(self.thread_id, text, opts)
@@ -3477,9 +3483,59 @@ class VoiceSession:
             if not task.done():
                 task.add_done_callback(_log_task_failure)    # finishing alone: log a failure
             raise
-        if msg_id:
+        if msg_id and not typed:
             self._cursor_commit(text, msg_id)
         return msg_id
+
+    async def _typed_turn(self, raw) -> None:
+        """A message typed on the voice chat screen (C.3 `typed`, 1.2.0): the turn a
+        transcript makes — submitted through the host with the voice persona, its
+        reply spoken, Undo and the acks as usual — without audio, STT, a hold or a
+        speculative start. For a headset or a quiet room: the microphone is usually
+        muted, and its state is left alone either way. A message typed over a
+        playing reply cuts it, as spoken words would (SPEC §4.6); one typed while
+        the last answer is still pending replaces that question (review M4)."""
+        text = raw.strip() if isinstance(raw, str) else ""
+        if not text or len(text) > TYPED_MAX_CHARS:
+            await self._limited("bad_frame", "That message wasn't understood.")
+            return
+        if not self._check_live():
+            return
+        prev = self._current
+        if self._talking():
+            await self._interrupt(prev if (prev is not None and not prev.closed) else None,
+                                  by_user_voice=False, abort=self.settings.barge_abort_turn,
+                                  background=True)
+        elif prev is not None and not prev.closed:
+            await self._abandon(prev, abort=True)
+        self._hold = False
+        self._merge_until = 0.0
+        if self._duck:
+            await self._set_duck(False)
+        if self.spec is not None:
+            await self._spec_drop()
+        self._eot_at = self.clock()
+        try:
+            msg_id = await self._submit(text, typed=True)
+        except Exception:
+            log.exception("voice: typed submit failed")
+            await self.send({"type": "transcript", "text": text, "merged": False, "typed": True})
+            await self._turn_failed(None, "agent_failed", "Could not send that message.")
+            return
+        turn = _Turn(msg_id=msg_id, text=text, at=self.clock(),
+                     echoed=bool(msg_id) and msg_id in self._echoed_ids)
+        self._current = turn
+        if msg_id:
+            self._turns.append(turn)
+        if prev is not None and prev.abandoned and not turn.echoed:
+            self._await_user_id = msg_id
+        await self.send({"type": "transcript", "text": text, "merged": False, "typed": True,
+                         "message_id": msg_id})
+        self._last_submit = (text, msg_id)
+        self._first_audio_logged = False
+        self._awaiting_reply = True
+        await self.state("thinking")
+        self._start_turn_acks(text, self._eot_at)
 
     # ----------------------------------------------------- heard tracking #
     def _note_heard_frame(self, msg: dict, *, gen_default: int | None = None) -> None:
@@ -4287,6 +4343,8 @@ class VoiceSession:
                 self._queue_replay("continue")
         elif t == "quiet_check":
             await self._quiet_check()
+        elif t == "typed":
+            await self._typed_turn(msg.get("text"))
         elif t == "ping":
             self._pinged = True
             # `pong {t, rx_off, srv_t}` (C.4): `t` echoed only when it is a finite number.

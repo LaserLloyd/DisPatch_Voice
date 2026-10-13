@@ -261,7 +261,15 @@
     "rig_state_cooling": "由这台电脑说话；稍后会再次尝试 GPU 主机。",
     "rig_state_misconfigured": "GPU 主机拒绝了令牌。请检查服务器上的 SPEECHFORGE_TOKEN。",
     "rig_state_loading": "GPU 主机正在加载模型，所以由这台电脑说话。",
-    "rig_state_unleased": "它在没有 GPU 租约的情况下运行。"
+    "rig_state_unleased": "它在没有 GPU 租约的情况下运行。",
+    "type_input": "输入",
+    "type_input_aria": "用文字代替说话",
+    "compose_placeholder": "输入消息…",
+    "send": "发送",
+    "hint_type": "在下方输入，或点按头像取消静音",
+    "typed_input": "用文字代替说话",
+    "typed_input_hint": "回复仍会朗读。麦克风保持静音，屏幕上保留一个输入框——适合戴耳机或安静的场合。",
+    "compose_offline": "尚未连接，请稍后再试。"
   },
   "voices": {
     "title": "声音",

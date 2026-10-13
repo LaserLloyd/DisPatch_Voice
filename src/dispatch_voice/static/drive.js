@@ -6,9 +6,13 @@
 // the ring's colour, shape and motion say what is happening, a word under it
 // names the state, and a hint line says what a tap on the picture will do.
 // Errors are written ON the overlay (a notice strip) and played as a tone,
-// never only as a toast. Two 56 px buttons at the bottom: Mute/Unmute (the
-// microphone) and Hang up. The gear opens a quick sheet of the settings people
-// change mid-conversation (drive-settings.js).
+// never only as a toast. A call screen's row at the bottom (1.2.0): round
+// icon buttons with a word under each — Mute/Unmute (the microphone), Type
+// (a text box for a headset or a quiet room: the message goes over the voice
+// socket as `typed`, the reply is spoken as usual) and Hang up. The gear opens
+// a quick sheet of the settings people change mid-conversation
+// (drive-settings.js); "Type instead of talking" there opens every chat muted
+// with the text box out.
 //
 // v3 additions (SPEC §7.4): Mute mutes only the microphone — a reply that
 // is playing finishes ("Muted — still speaking"), the picture tap is the
@@ -593,7 +597,32 @@ const MIC_OFF_ICON = [
   'M9 9v3a3 3 0 0 0 5.12 2.12',
   'M12 19v3',
 ];
+/** A keyboard (the Type button). */
+const KEYBOARD_ICON = [
+  'M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z',
+  'M6 10h.01', 'M10 10h.01', 'M14 10h.01', 'M18 10h.01', 'M6 14h.01', 'M18 14h.01', 'M9 14h6',
+];
+/** A handset; voice.css turns it face down for Hang up. */
+const HANDSET_ICON = [
+  'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92Z',
+];
+/** Try again (a stopped chat). */
+const RETRY_ICON = ['M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8', 'M21 3v5h-5'];
+/** Send (the text box). */
+const SEND_ICON = ['M22 2 11 13', 'M22 2 15 22l-4-9-9-4Z'];
 const reducedMotion = () => !!(globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+/** A round call-screen button: an icon in a circle with a word under it. */
+function roadButton(cls) {
+  return el('button', { type: 'button', class: `drive-road ${cls}` }, [
+    el('span', { class: 'drive-road-icon', 'aria-hidden': 'true' }),
+    el('span', { class: 'drive-road-label' }),
+  ]);
+}
+function setRoad(btn, paths, label) {
+  btn.firstChild.replaceChildren(railIcon(paths));
+  btn.lastChild.textContent = label;
+}
 
 /**
  * Open the voice chat. MUST be called from inside the tap's click handler:
@@ -678,9 +707,21 @@ export function openDrive(thread, ctx) {
   const them = el('p', { class: 'drive-them', dir: 'auto' });
   const talk = el('section', { class: 'drive-talk', 'aria-label': t('drive.transcript') }, [you, them]);
 
-  const pauseBtn = el('button', { type: 'button', class: 'btn-secondary drive-road drive-pause' });
-  const endBtn = el('button', { type: 'button', class: 'btn-primary drive-road drive-end' });
-  const bar = el('div', { class: 'drive-bar' }, [pauseBtn, endBtn]);
+  const pauseBtn = roadButton('drive-pause');
+  const typeBtn = roadButton('drive-type');
+  const endBtn = roadButton('drive-end');
+  // The text box (1.2.0): shown by the Type button, or from the start with "Type
+  // instead of talking". A message goes over the voice socket as `typed` and is
+  // answered like a spoken one (the reply is spoken, Undo works). Enter sends,
+  // Shift+Enter is a new line; an IME's Enter (Japanese) only commits the text.
+  const composeInput = el('textarea', {
+    class: 'drive-compose-input', rows: '1', placeholder: t('drive.compose_placeholder'),
+    'aria-label': t('drive.compose_placeholder'), enterkeyhint: 'send', autocomplete: 'off',
+  });
+  const composeSend = el('button', { type: 'submit', class: 'btn-primary drive-compose-send', 'aria-label': t('drive.send') },
+    [railIcon(SEND_ICON)]);
+  const compose = el('form', { class: 'drive-compose', hidden: '' }, [composeInput, composeSend]);
+  const bar = el('div', { class: 'drive-bar' }, [compose, el('div', { class: 'drive-buttons' }, [pauseBtn, typeBtn, endBtn])]);
   const status = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
 
   const col = el('div', { class: 'drive-col' }, [head, hero, talk, bar]);
@@ -709,7 +750,7 @@ export function openDrive(thread, ctx) {
   let offlineSince = 0;
   let offlineTicker = null;
   let closed = false;
-  let listening = true;          // the listener wants the mic on
+  let listening = !settings.typedInput;   // the listener wants the mic on ("Type instead of talking" opens muted)
   let pausedByHide = false;
   let wakeLock = null;
   let state = 'connecting';
@@ -922,6 +963,8 @@ export function openDrive(thread, ctx) {
       const left = reconnectTimer ? Math.max(1, Math.ceil(backoffLeft() / 1000)) : 0;
       hintText = left ? t('drive.hint_offline', { s: left }) : t('drive.hint_reconnecting');
     }
+    // The text box is out and nothing plays: say so, instead of "tap to unmute".
+    if (composeOpen && s === 'paused' && !replyOn()) hintText = t('drive.hint_type');
     hint.textContent = hintText;
     tip.hidden = !tipOn || TIPLESS.has(s);
     ring.setAttribute('aria-label', hintText ? `${word}. ${hintText}` : word);
@@ -935,18 +978,27 @@ export function openDrive(thread, ctx) {
 
   function paintBar() {
     if (state === 'stopped') {
-      pauseBtn.replaceChildren(document.createTextNode(t('drive.try_again')));
+      setRoad(pauseBtn, RETRY_ICON, t('drive.try_again'));
       pauseBtn.hidden = stopReason === 'refused';
-      endBtn.replaceChildren(document.createTextNode(t('drive.back_to_chat')));
+      pauseBtn.dataset.muted = '0';
+      typeBtn.hidden = true;
+      setRoad(endBtn, iconPaths('back'), t('drive.back_to_chat'));
+      endBtn.classList.add('drive-end-plain');
       return;
     }
+    endBtn.classList.remove('drive-end-plain');
     pauseBtn.hidden = false;
     // The label says what a tap does ("Mute" / "Unmute"), so no aria-pressed: a
     // swapped label plus a pressed state read "Unmute, toggle button, pressed" (FR-ux M5).
-    pauseBtn.replaceChildren(listening ? railIcon(MIC_OFF_ICON) : railIcon(MIC_ICON),
-      document.createTextNode(` ${listening ? t('drive.pause') : t('drive.resume')}`));
+    // `data-muted` only lights the circle while the microphone is off.
+    setRoad(pauseBtn, listening ? MIC_OFF_ICON : MIC_ICON, listening ? t('drive.pause') : t('drive.resume'));
+    pauseBtn.dataset.muted = listening ? '0' : '1';
     pauseBtn.removeAttribute('aria-pressed');
-    endBtn.replaceChildren(document.createTextNode(t('drive.end')));
+    typeBtn.hidden = false;
+    setRoad(typeBtn, KEYBOARD_ICON, t('drive.type_input'));
+    typeBtn.setAttribute('aria-label', t('drive.type_input_aria'));
+    typeBtn.setAttribute('aria-pressed', String(composeOpen));
+    setRoad(endBtn, HANDSET_ICON, t('drive.end'));
   }
 
   const ANNOUNCE = new Set(['listening', 'paused', 'offline', 'waiting', 'stopped', 'locked']);
@@ -1448,6 +1500,9 @@ export function openDrive(thread, ctx) {
       send({ type: 'pause' });
       paint();
     } else {
+      // Back to talking: a text box opened by the Type button goes away; with
+      // "Type instead of talking" on it stays (both ways of asking are wanted).
+      if (composeOpen && !settings.typedInput) closeCompose();
       sendStart();
       if (ready && state === 'paused') setState('listening'); else paint();
     }
@@ -1496,6 +1551,75 @@ export function openDrive(thread, ctx) {
       try { await startMic(); } catch (err) { stop(micError(err)); return; }
     }
     connect();
+  }
+
+  // ---- the text box (Type) ---------------------------------------------------
+  let composeOpen = false;
+  /**
+   * The on-screen keyboard: Android (with DisPatch's `interactive-widget=
+   * resizes-content`) shrinks the layout viewport, iOS keeps it at full height and
+   * moves only the visual viewport, which would leave the box under the keys.
+   * While the text box is out the fixed overlay is sized to the visual viewport.
+   */
+  const fitViewport = (() => {
+    const vv = globalThis.visualViewport;
+    let on = false;
+    const apply = () => {
+      if (!on || !vv) return;
+      root.style.height = `${Math.round(vv.height)}px`;
+      root.style.top = `${Math.round(vv.offsetTop)}px`;
+      root.style.bottom = 'auto';
+    };
+    return {
+      start() { if (!vv || on) return; on = true; vv.addEventListener('resize', apply); vv.addEventListener('scroll', apply); apply(); },
+      stop() {
+        if (!on) return;
+        on = false;
+        if (vv) { vv.removeEventListener('resize', apply); vv.removeEventListener('scroll', apply); }
+        root.style.height = ''; root.style.top = ''; root.style.bottom = '';
+      },
+    };
+  })();
+  function autoGrow() {
+    composeInput.style.height = 'auto';
+    composeInput.style.height = `${Math.min(composeInput.scrollHeight || 0, 120)}px`;
+  }
+  function openCompose({ focus = true } = {}) {
+    if (!composeOpen) {
+      composeOpen = true;
+      compose.hidden = false;
+      col.classList.add('drive-composing');
+      fitViewport.start();
+      paint();
+    }
+    if (focus) { try { composeInput.focus({ preventScroll: true }); } catch { composeInput.focus(); } }
+  }
+  function closeCompose() {
+    if (!composeOpen) return;
+    composeOpen = false;
+    compose.hidden = true;
+    col.classList.remove('drive-composing');
+    fitViewport.stop();
+    if (document.activeElement === composeInput) ring.focus();
+    paint();
+  }
+  /** The Type button: mute the microphone if it is on, and show the box (again: hide it). */
+  function toggleCompose() {
+    quiet.heard();
+    if (composeOpen && !settings.typedInput) { closeCompose(); return; }
+    if (listening) setListening(false);
+    openCompose();
+  }
+  function sendTyped() {
+    const text = composeInput.value.trim();
+    if (!text) return;
+    if (!(ws && ws.readyState === 1 && ready)) { showNotice(t('drive.compose_offline'), { kind: 'info', ms: 4000 }); return; }
+    quiet.heard();
+    tipOn = false; tip.hidden = true;
+    send({ type: 'typed', text });
+    composeInput.value = '';
+    autoGrow();
+    composeInput.focus();
   }
 
   // ---- quick sheet ----------------------------------------------------------
@@ -1595,6 +1719,11 @@ export function openDrive(thread, ctx) {
     syncTalk();
     if (!settings.showTimings) timings.hidden = true;
     if (prev.hangupQuietMin !== next.hangupQuietMin) quiet.setMinutes(next.hangupQuietMin);
+    if (prev.typedInput !== next.typedInput) {
+      // Switched from the quick sheet, which is still open: the box comes out
+      // without taking the focus from under it.
+      if (next.typedInput) { if (listening) setListening(false); openCompose({ focus: false }); } else closeCompose();
+    }
     if (prev.screenOn !== next.screenOn) {
       if (next.screenOn) holdWakeLock(); else { try { wakeLock && wakeLock.release(); } catch { /* gone */ } wakeLock = null; }
     }
@@ -1611,7 +1740,11 @@ export function openDrive(thread, ctx) {
   function onKey(e) {
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (sheet) closeSheet(); else close();
+      if (sheet) closeSheet();
+      // Esc in the text box leaves the box, never the chat: it closes a box the
+      // Type button opened, and just drops the focus with "Type instead of talking".
+      else if (composeOpen && e.target === composeInput) { if (settings.typedInput) composeInput.blur(); else closeCompose(); }
+      else close();
       return;
     }
     if (e.key === 'Tab') { trapFocus(e); return; }
@@ -1630,7 +1763,7 @@ export function openDrive(thread, ctx) {
   }
   function trapFocus(e) {
     const scope = sheet ? sheet.panel : root;
-    const items = [...scope.querySelectorAll('button, select, input, [tabindex]:not([tabindex="-1"])')]
+    const items = [...scope.querySelectorAll('button, select, input, textarea, [tabindex]:not([tabindex="-1"])')]
       .filter((n) => !n.disabled && !n.hidden && n.offsetParent !== null);
     if (!items.length) return;
     const first = items[0];
@@ -1651,6 +1784,7 @@ export function openDrive(thread, ctx) {
     clearInterval(thinkingTicker); clearInterval(undoTicker); clearInterval(offlineTicker);
     clearTimeout(noticeTimer);
     clearInterval(audioTicker);
+    fitViewport.stop();
     unsubscribe();
     try { if (ws) { ws.onclose = null; ws.close(); } } catch { /* gone */ }
     stopMic();
@@ -1676,7 +1810,13 @@ export function openDrive(thread, ctx) {
 
   ring.addEventListener('click', tap);
   pauseBtn.addEventListener('click', () => { quiet.heard(); if (state === 'stopped') retry(); else setListening(!listening); });
+  typeBtn.addEventListener('click', toggleCompose);
   endBtn.addEventListener('click', () => close());
+  compose.addEventListener('submit', (e) => { e.preventDefault(); sendTyped(); });
+  composeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); sendTyped(); }
+  });
+  composeInput.addEventListener('input', autoGrow);
   undoBtn.addEventListener('click', doUndo);
   gear.addEventListener('click', openSheet);
   root.addEventListener('keydown', onKey);
@@ -1699,9 +1839,12 @@ export function openDrive(thread, ctx) {
     setLink(l) { linkForced = l ? { degraded: !!l.degraded } : null; paintLink(); },
     /** The audio engine (tests, the Voice lab). */
     get audio() { return audio; },
+    /** The text box is out (the Type button, or "Type instead of talking"). */
+    get composing() { return composeOpen; },
     /** Test/automation hook: feed one server frame. */
     _frame: (m) => onFrame(m),
   };
+  if (settings.typedInput) openCompose({ focus: false });
   opening = false;
   setupMediaSession();
   ring.focus();

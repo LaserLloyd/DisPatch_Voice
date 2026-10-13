@@ -2,6 +2,31 @@
 
 All notable changes to DisPatch Voice.
 
+## [1.2.0] — 2026-10-14
+
+A small feature release: typing on the voice chat screen, and a call-screen row of
+buttons. Same extension API (1); the wire gains one client frame (`typed`).
+
+### Added
+- **Type on the voice chat screen.** A **Type** button next to Mute mutes the
+  microphone and shows a text box above the buttons: what you type is your turn, the
+  reply is spoken as usual (captions, Undo, the acks). For a headset or a quiet room.
+  Enter sends, Shift+Enter is a new line, Esc closes the box; Unmute puts it away.
+  The quick sheet and Settings › Listening gain **Type instead of talking**: every
+  chat opens muted with the box out, and the box stays when you unmute.
+- Wire: the `typed {text}` client frame (C.3). The server submits it through the host
+  with the voice persona (`metadata.typed: true` on the row), echoes a `transcript
+  {typed: true}`, and treats it as a spoken turn would be: typed over a playing reply
+  it cuts the reply first, typed while an answer is pending it replaces the question.
+  Nothing touches the uplink cursor (no audio is behind it).
+
+### Changed
+- **The buttons are a call screen's row:** three round icon buttons with a word under
+  each — Mute (its circle lights while muted), Type, Hang up (red, the handset face
+  down) — centred, the same upright and on a phone's side (smaller there), and sized
+  down with the picture when the on-screen keyboard takes the lower half. A stopped
+  chat shows Try again / Back to chat in the same circles.
+
 ## [1.1.0] — 2026-10-11
 
 A feature release: the optional GPU rig. Same extension API (1); `voice.yaml` gains an

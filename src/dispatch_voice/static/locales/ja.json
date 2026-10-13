@@ -261,7 +261,15 @@
     "rig_state_cooling": "このコンピューターが話しています。GPUマシンはまもなく再試行します。",
     "rig_state_misconfigured": "GPUマシンがトークンを拒否しました。サーバーのSPEECHFORGE_TOKENを確認してください。",
     "rig_state_loading": "GPUマシンがモデルを読み込み中のため、このコンピューターが話しています。",
-    "rig_state_unleased": "GPUを確保せずに動いています。"
+    "rig_state_unleased": "GPUを確保せずに動いています。",
+    "type_input": "入力",
+    "type_input_aria": "話す代わりにメッセージを入力",
+    "compose_placeholder": "メッセージを入力…",
+    "send": "送信",
+    "hint_type": "下に入力するか、画像をタップでミュート解除",
+    "typed_input": "話す代わりに入力する",
+    "typed_input_hint": "返事は引き続き読み上げられます。マイクはミュートのまま、画面に入力欄が表示されます。ヘッドセットや静かな場所向けです。",
+    "compose_offline": "まだ接続されていません。少し待ってからもう一度お試しください。"
   },
   "voices": {
     "title": "声",

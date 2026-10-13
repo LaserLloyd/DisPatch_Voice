@@ -559,6 +559,8 @@ def build_host(ctx, sock, *, bot_id: str | None, profile_id: str | None = None, 
         opts = opts or {}
         instructions, thinking = await _instructions(opts)
         kw = {"instructions": instructions, "thinking": thinking, "metadata": {"voice": True}}
+        if opts.get("typed"):
+            kw["metadata"]["typed"] = True          # typed on the voice chat screen, not heard
         if opts.get("prefetched") is not None:
             kw["prefetched"] = opts["prefetched"]       # adopt the speculative run (B.1 rule 4)
         return await ctx.submit_turn(tid, text, **kw)

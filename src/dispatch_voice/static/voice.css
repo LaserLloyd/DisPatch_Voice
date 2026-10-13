@@ -187,19 +187,66 @@ body.drive-open { overflow: hidden; }
 .drive-undo[hidden] { display: none; }
 
 /* ---------------------------------------------------------------- buttons */
-.drive-bar { display: flex; gap: 12px; flex: none; }
+/* A call screen's row (1.2.0): round icon buttons with a word under each —
+   Mute, Type, Hang up — centred, so the row reads the same with the phone
+   upright or on its side. Hang up is the one filled in red; a muted microphone
+   lights its circle. The text box (Type) sits above the row: it pushes the
+   picture up, never the buttons off. */
+.drive-bar { display: flex; flex-direction: column; gap: 10px; flex: none; }
+.drive-buttons { display: flex; justify-content: center; align-items: flex-start; gap: clamp(20px, 8vw, 44px); }
 .drive-road {
-  min-height: 56px; font-size: 16px; white-space: nowrap;
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  display: inline-flex; flex-direction: column; align-items: center; gap: 6px;
+  min-width: 64px; margin: 0; padding: 0; border: 0; background: none; color: var(--text-secondary);
+  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 .drive-road[hidden] { display: none; }
-.drive-road .rail-icon { width: 20px; height: 20px; flex: none; }
-/* Mute sizes to its word (German and Arabic run long), Hang up takes the
-   rest: the wide one is the one a hand finds without looking. */
-.drive-pause { flex: 0 1 auto; min-width: 34%; padding-inline: 18px; }
-.drive-end { flex: 1 1 0; }
+.drive-road-icon {
+  display: grid; place-items: center; width: 60px; height: 60px; border-radius: 50%;
+  background: var(--bg-tertiary); color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  transition: background-color .15s ease, color .15s ease, transform .1s ease;
+}
+.drive-road-icon .rail-icon { width: 26px; height: 26px; }
+.drive-road:hover .drive-road-icon { background: var(--bg-hover); }
+.drive-road:active .drive-road-icon { transform: scale(.94); }
+.drive-pause[data-muted="1"] .drive-road-icon { background: var(--text-primary); color: var(--bg-primary); border-color: transparent; }
+.drive-type[aria-pressed="true"] .drive-road-icon {
+  background: var(--accent-subtle); color: var(--accent-text);
+  border-color: color-mix(in oklab, var(--accent-text) 45%, transparent);
+}
+.drive-end .drive-road-icon { background: var(--danger); color: var(--on-danger); border-color: transparent; }
+.drive-end:hover .drive-road-icon { background: var(--danger-hover, var(--danger)); }
+.drive-end .drive-road-icon .rail-icon { transform: rotate(135deg); }   /* the handset face down */
+/* Stopped: Try again / Back to chat in plain circles. */
+.drive-end.drive-end-plain .drive-road-icon { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-strong); }
+.drive-end.drive-end-plain .drive-road-icon .rail-icon { transform: none; }
+.drive-road-label { white-space: nowrap; }
 
-.drive-overlay :is(.drive-ring, .drive-road, .drive-gear, .drive-undo, .drive-seg-btn):focus-visible {
+/* The text box (Type): a textarea that grows to four lines, a round Send. 16 px
+   text, so iOS does not zoom the page when it is focused. */
+.drive-compose { display: flex; align-items: flex-end; gap: 8px; margin: 0; }
+.drive-compose[hidden] { display: none; }
+.drive-compose-input {
+  flex: 1 1 auto; min-width: 0; min-height: 46px; max-height: 120px; box-sizing: border-box;
+  padding: 12px 16px; resize: none; overflow-y: auto;
+  background: var(--bg-input, var(--bg-secondary)); color: var(--text-primary);
+  border: 1px solid var(--border-strong); border-radius: 23px;
+  font: inherit; font-size: 16px; line-height: 1.35;
+}
+.drive-compose-input::placeholder { color: var(--text-muted, var(--text-secondary)); }
+.drive-compose-input:focus { outline: none; border-color: var(--accent); }
+.drive-compose-send {
+  width: 46px; height: 46px; min-height: 46px; flex: none; padding: 0;
+  border-radius: 50%; display: grid; place-items: center;
+}
+.drive-compose-send .rail-icon { width: 22px; height: 22px; }
+/* With the box out (the keyboard may take half the screen): the picture gives
+   way first — the hero shrinks and scrolls, the captions keep less room. */
+.drive-col.drive-composing > .drive-hero { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.drive-col.drive-composing > .drive-talk { max-height: 30vh; }
+
+.drive-overlay :is(.drive-ring, .drive-road, .drive-gear, .drive-undo, .drive-seg-btn, .drive-compose-send):focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
 }
@@ -214,6 +261,9 @@ body.drive-open { overflow: hidden; }
    keeps a system-colour outline (FR-ux L8). */
 @media (forced-colors: active) {
   .drive-seg-btn[aria-checked="true"] { outline: 2px solid CanvasText; outline-offset: -2px; }
+  .drive-road-icon { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .drive-pause[data-muted="1"] .drive-road-icon, .drive-type[aria-pressed="true"] .drive-road-icon,
+  .drive-end .drive-road-icon { background: Highlight; color: HighlightText; border-color: Highlight; }
 }
 
 /* ---------------------------------------------------- quick settings sheet */
@@ -488,6 +538,20 @@ body.drive-open .modal-backdrop { z-index: 1050; }
   .drive-letter { font-size: 40px; }
   .drive-state { font-size: 22px; }
   .drive-col { gap: 10px; }
+  .drive-road-icon { width: 52px; height: 52px; }
+  .drive-road-icon .rail-icon { width: 23px; height: 23px; }
+}
+/* The keyboard up on a phone held upright (the text box out): the picture goes
+   small and the tip is dropped, so the box and the buttons stay in view. */
+@media (max-height: 460px) {
+  .drive-ring { width: 88px; height: 88px; margin-bottom: 0; }
+  .drive-face { width: 70px; height: 70px; }
+  .drive-letter { font-size: 28px; }
+  .drive-state { font-size: 18px; }
+  .drive-hint { display: none; }
+  .drive-tip { display: none; }
+  .drive-col { gap: 6px; }
+  .drive-hero { padding-block: 0; }
 }
 /* A phone on its side (a landscape mount): the picture and its words on the
    start side, the captions on the end side, the buttons across the bottom —
@@ -502,7 +566,14 @@ body.drive-open .modal-backdrop { z-index: 1050; }
   .drive-hero { grid-column: 1; grid-row: 2; min-height: 0; overflow-y: auto; padding-block: 0; }
   .drive-talk { grid-column: 2; grid-row: 2; align-self: stretch; min-height: 0; max-height: none; }
   .drive-col:has(> .drive-talk[hidden]) > .drive-hero { grid-column: 1 / -1; }
-  .drive-bar { grid-column: 1 / -1; grid-row: 3; }
+  .drive-bar { grid-column: 1 / -1; grid-row: 3; gap: 6px; }
+  .drive-buttons { gap: 36px; }
+  .drive-road { gap: 3px; font-size: 11.5px; }
+  .drive-road-icon { width: 46px; height: 46px; }
+  .drive-road-icon .rail-icon { width: 21px; height: 21px; }
+  .drive-compose-input { min-height: 40px; padding: 9px 14px; border-radius: 20px; }
+  .drive-compose-send { width: 40px; height: 40px; min-height: 40px; }
+  .drive-col.drive-composing > .drive-talk { max-height: none; }
   .drive-tip { display: none; }
   .drive-ring { width: 112px; height: 112px; margin-bottom: 2px; }
   .drive-face { width: 88px; height: 88px; }
@@ -513,7 +584,7 @@ body.drive-open .modal-backdrop { z-index: 1050; }
 /* Motion is decoration here: colour + dash pattern + the word carry every
    state, so reduced motion keeps all of them and drops only the movement. */
 @media (prefers-reduced-motion: reduce) {
-  .drive-ring::before, .drive-ring::after, .drive-dot, .drive-face, .drive-sentence,
+  .drive-ring::before, .drive-ring::after, .drive-dot, .drive-face, .drive-sentence, .drive-road-icon,
   .dev-row > input.dev-switch { animation: none !important; transition: none !important; }
   .drive-ring::before { transform: none !important; }
   .drive-overlay[data-state="thinking"] .drive-ring::after { transform: rotate(20deg); }

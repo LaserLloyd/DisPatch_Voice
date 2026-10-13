@@ -263,7 +263,15 @@
     "rig_state_cooling": "Este computador está falando; a máquina com GPU será tentada de novo em breve.",
     "rig_state_misconfigured": "A máquina com GPU recusou o token. Verifique SPEECHFORGE_TOKEN no servidor.",
     "rig_state_loading": "A máquina com GPU está carregando os modelos, então este computador está falando.",
-    "rig_state_unleased": "Ela funciona sem reserva da GPU."
+    "rig_state_unleased": "Ela funciona sem reserva da GPU.",
+    "type_input": "Escrever",
+    "type_input_aria": "Escrever uma mensagem em vez de falar",
+    "compose_placeholder": "Escreve uma mensagem…",
+    "send": "Enviar",
+    "hint_type": "Escreve abaixo, ou toca na imagem para ativar o microfone",
+    "typed_input": "Escrever em vez de falar",
+    "typed_input_hint": "As respostas continuam a ser lidas em voz alta. O microfone fica silenciado e uma caixa de texto fica no ecrã: para auscultadores ou um sítio silencioso.",
+    "compose_offline": "Ainda sem ligação: tenta de novo daqui a instantes."
   },
   "voices": {
     "title": "Vozes",

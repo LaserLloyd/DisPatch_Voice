@@ -262,7 +262,15 @@
     "rig_state_cooling": "This computer is speaking; the rig gets another try shortly.",
     "rig_state_misconfigured": "The rig refused the token. Check SPEECHFORGE_TOKEN on the server.",
     "rig_state_loading": "The rig is loading its models, so this computer is speaking.",
-    "rig_state_unleased": "It runs without a GPU lease."
+    "rig_state_unleased": "It runs without a GPU lease.",
+    "type_input": "Type",
+    "type_input_aria": "Type a message instead of talking",
+    "compose_placeholder": "Type a message…",
+    "send": "Send",
+    "hint_type": "Type below, or tap the picture to unmute",
+    "typed_input": "Type instead of talking",
+    "typed_input_hint": "Replies are still spoken. The microphone stays muted and a text box stays on the screen — for a headset or a quiet room.",
+    "compose_offline": "No connection yet — try again in a moment."
   },
   "voices": {
     "title": "Voices",
