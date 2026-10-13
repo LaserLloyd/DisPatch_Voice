@@ -2,6 +2,19 @@
 
 All notable changes to DisPatch Voice.
 
+## [1.3.0] — 2026-10-14
+
+### Added
+- **Output, on the voice chat screen.** A fourth round button, like a phone's
+  call-screen route: it lists where replies can play (the system default, a
+  headset, a Bluetooth device, the speakers, by the OS's own names), the
+  button's word says which is on ("Speaker", "Headset", "Bluetooth"), and a
+  pick applies at once and is remembered (the same `sinkId` Settings › Voice ›
+  Advanced › Speaker uses). Only browsers whose `AudioContext` has `setSinkId`
+  can do this — desktop Chrome and Edge; on Android and iOS the browser has no
+  way to move audio between the earpiece, the speaker and Bluetooth (the OS
+  routes it), so the button is not shown there. A native app could.
+
 ## [1.2.0] — 2026-10-14
 
 A small feature release: typing on the voice chat screen, and a call-screen row of

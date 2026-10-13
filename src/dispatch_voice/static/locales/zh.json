@@ -269,7 +269,14 @@
     "hint_type": "在下方输入，或点按头像取消静音",
     "typed_input": "用文字代替说话",
     "typed_input_hint": "回复仍会朗读。麦克风保持静音，屏幕上保留一个输入框——适合戴耳机或安静的场合。",
-    "compose_offline": "尚未连接，请稍后再试。"
+    "compose_offline": "尚未连接，请稍后再试。",
+    "output": "输出",
+    "output_speaker": "扬声器",
+    "output_headset": "耳机",
+    "output_bluetooth": "蓝牙",
+    "output_aria": "回复的播放设备",
+    "output_aria_now": "回复的播放设备：{name}",
+    "output_now": "回复现在通过 {name} 播放。"
   },
   "voices": {
     "title": "声音",

@@ -47,7 +47,7 @@ const Q = new URL(import.meta.url).search;
 const { el, railIcon, iconPaths, t, language, sentences, acquireInert, releaseInert, activity: shellActivity } = await import(`./shell.js${Q}`);
 const {
   PATIENCE_PRESETS, loadDriveSettings, saveDriveSettings, onDriveSettings, startPayload,
-  buildQuickSheet, MIC_ICON, phoneVoices, isAndroid,
+  buildQuickSheet, MIC_ICON, phoneVoices, isAndroid, canPickSpeaker, deviceOptions,
 } = await import(`./drive-settings.js${Q}`);
 const { assetUrl, isBluetoothOutput } = await import(`./bridge.js${Q}`);
 const { createDriveAudio, createBufferPlayerClient } = await import(`./drive-audio.js${Q}`);
@@ -610,6 +610,39 @@ const HANDSET_ICON = [
 const RETRY_ICON = ['M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8', 'M21 3v5h-5'];
 /** Send (the text box). */
 const SEND_ICON = ['M22 2 11 13', 'M22 2 15 22l-4-9-9-4Z'];
+/** Output (where replies play): a speaker, a headset, Bluetooth — by route. */
+const SPEAKER_ICON = ['M11 5 6 9H2v6h4l5 4V5Z', 'M15.5 8.5a5 5 0 0 1 0 7', 'M19 5a9 9 0 0 1 0 14'];
+const HEADSET_ICON = ['M3 14v-3a9 9 0 0 1 18 0v3', 'M21 15v2a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z', 'M3 15v2a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z'];
+const BLUETOOTH_ICON = ['m7 7 10 10-5 5V2l5 5L7 17'];
+const ROUTE_ICONS = { speaker: SPEAKER_ICON, headset: HEADSET_ICON, bluetooth: BLUETOOTH_ICON, default: SPEAKER_ICON };
+
+/**
+ * The kind of output a device label names: 'bluetooth', 'headset' or 'speaker'
+ * (the fallback). Labels are the OS's own words ("AirPods Pro", "Headphones
+ * (Bluetooth)", "Speakers (Realtek)"), so this is a word hunt, kept short.
+ */
+export function outputRoute(label) {
+  const l = String(label || '').toLowerCase();
+  if (/bluetooth|\bbt\b|airpods|buds|wh-|wf-/.test(l)) return 'bluetooth';
+  if (/headset|headphone|earphone|earbud|wired|jack/.test(l)) return 'headset';
+  return 'speaker';
+}
+
+/**
+ * The Output button on the call screen (1.3.0): where replies play, picked like
+ * a phone's call-screen route — a speaker, a headset, a Bluetooth device. Only
+ * browsers whose AudioContext has setSinkId can do this (desktop Chrome and
+ * Edge); on a phone the OS routes audio itself and the button stays hidden.
+ * `options` are deviceOptions('audiooutput') rows; `sinkId` is the saved one.
+ */
+export function outputMenuModel(options, sinkId) {
+  const rows = (options || []).map((o) => ({
+    value: o.value, label: o.label, route: o.value ? outputRoute(o.label) : 'default',
+    current: (sinkId || '') === (o.value || ''),
+  }));
+  if (rows.length && !rows.some((r) => r.current)) rows[0].current = true;   // a remembered device that is gone
+  return rows;
+}
 const reducedMotion = () => !!(globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 /** A round call-screen button: an icon in a circle with a word under it. */
@@ -710,6 +743,7 @@ export function openDrive(thread, ctx) {
   const pauseBtn = roadButton('drive-pause');
   const typeBtn = roadButton('drive-type');
   const endBtn = roadButton('drive-end');
+  const outputBtn = roadButton('drive-output');
   // The text box (1.2.0): shown by the Type button, or from the start with "Type
   // instead of talking". A message goes over the voice socket as `typed` and is
   // answered like a spoken one (the reply is spoken, Undo works). Enter sends,
@@ -721,7 +755,7 @@ export function openDrive(thread, ctx) {
   const composeSend = el('button', { type: 'submit', class: 'btn-primary drive-compose-send', 'aria-label': t('drive.send') },
     [railIcon(SEND_ICON)]);
   const compose = el('form', { class: 'drive-compose', hidden: '' }, [composeInput, composeSend]);
-  const bar = el('div', { class: 'drive-bar' }, [compose, el('div', { class: 'drive-buttons' }, [pauseBtn, typeBtn, endBtn])]);
+  const bar = el('div', { class: 'drive-bar' }, [compose, el('div', { class: 'drive-buttons' }, [pauseBtn, typeBtn, outputBtn, endBtn])]);
   const status = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite' });
 
   const col = el('div', { class: 'drive-col' }, [head, hero, talk, bar]);
@@ -982,6 +1016,7 @@ export function openDrive(thread, ctx) {
       pauseBtn.hidden = stopReason === 'refused';
       pauseBtn.dataset.muted = '0';
       typeBtn.hidden = true;
+      outputBtn.hidden = true;
       setRoad(endBtn, iconPaths('back'), t('drive.back_to_chat'));
       endBtn.classList.add('drive-end-plain');
       return;
@@ -999,6 +1034,7 @@ export function openDrive(thread, ctx) {
     typeBtn.setAttribute('aria-label', t('drive.type_input_aria'));
     typeBtn.setAttribute('aria-pressed', String(composeOpen));
     setRoad(endBtn, HANDSET_ICON, t('drive.end'));
+    paintOutput();
   }
 
   const ANNOUNCE = new Set(['listening', 'paused', 'offline', 'waiting', 'stopped', 'locked']);
@@ -1622,6 +1658,68 @@ export function openDrive(thread, ctx) {
     composeInput.focus();
   }
 
+  // ---- output route (1.3.0) ---------------------------------------------------
+  const outputPossible = canPickSpeaker();
+  let outputRows = [];                    // the last device list, for the label
+  let outputMenu = null;
+  function currentOutput() {
+    const rows = outputMenuModel(outputRows, settings.sinkId);
+    return rows.find((r) => r.current) || { route: 'default', label: '' };
+  }
+  function paintOutput() {
+    outputBtn.hidden = !outputPossible || state === 'stopped';
+    if (outputBtn.hidden) return;
+    const cur = currentOutput();
+    const word = cur.route === 'default' ? t('drive.output') : t(`drive.output_${cur.route}`);
+    setRoad(outputBtn, ROUTE_ICONS[cur.route] || SPEAKER_ICON, word);
+    outputBtn.setAttribute('aria-label', cur.label ? t('drive.output_aria_now', { name: cur.label }) : t('drive.output_aria'));
+    outputBtn.setAttribute('aria-haspopup', 'menu');
+    outputBtn.setAttribute('aria-expanded', String(!!outputMenu));
+  }
+  async function openOutputMenu() {
+    if (outputMenu || !outputPossible) return;
+    try { outputRows = await deviceOptions('audiooutput'); } catch { outputRows = []; }
+    if (closed || outputMenu) return;
+    const rows = outputMenuModel(outputRows, settings.sinkId);
+    const items = rows.map((r) => {
+      const b = el('button', { type: 'button', role: 'menuitemradio', class: 'drive-output-item', 'aria-checked': String(r.current), dataset: { value: r.value } }, [
+        railIcon(ROUTE_ICONS[r.route] || SPEAKER_ICON),
+        el('span', { class: 'drive-output-label', text: r.label }),
+        el('span', { class: 'drive-output-check', 'aria-hidden': 'true', text: r.current ? '✓' : '' }),
+      ]);
+      b.addEventListener('click', () => {
+        settings = saveDriveSettings(globalThis.localStorage, { sinkId: r.value });   // onDriveSettings applies setSinkId
+        closeOutputMenu();
+        announce(t('drive.output_now', { name: r.label }));
+      });
+      return b;
+    });
+    outputMenu = el('div', { class: 'drive-output-menu', role: 'menu', 'aria-label': t('drive.output_aria') }, [
+      el('div', { class: 'drive-output-head', text: t('drive.output_aria') }), ...items,
+    ]);
+    outputMenu.addEventListener('keydown', (e) => {
+      const list = [...outputMenu.querySelectorAll('[role="menuitemradio"]')];
+      const i = list.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeOutputMenu(); }
+    });
+    bar.append(outputMenu);
+    paintOutput();
+    (items.find((b) => b.getAttribute('aria-checked') === 'true') || items[0])?.focus();
+  }
+  function closeOutputMenu() {
+    if (!outputMenu) return;
+    outputMenu.remove();
+    outputMenu = null;
+    paintOutput();
+    outputBtn.focus();
+  }
+  function toggleOutputMenu() { quiet.heard(); if (outputMenu) closeOutputMenu(); else openOutputMenu(); }
+  root.addEventListener('click', (e) => {
+    if (outputMenu && !e.target.closest('.drive-output-menu, .drive-output')) closeOutputMenu();
+  });
+
   // ---- quick sheet ----------------------------------------------------------
   async function openSheet() {
     if (sheet) return;
@@ -1732,6 +1830,7 @@ export function openDrive(thread, ctx) {
       startMic().catch((err) => stop(micError(err)));
     }
     if (prev.sinkId !== next.sinkId && typeof ac.setSinkId === 'function') ac.setSinkId(next.sinkId || '').catch(() => {});
+    if (prev.sinkId !== next.sinkId) paintOutput();
     if (prev.slowLink !== next.slowLink || prev.phoneVoice !== next.phoneVoice) audio.settingsChanged();
     paintLink();
     paint();
@@ -1741,6 +1840,7 @@ export function openDrive(thread, ctx) {
     if (e.key === 'Escape') {
       e.preventDefault();
       if (sheet) closeSheet();
+      else if (outputMenu) closeOutputMenu();
       // Esc in the text box leaves the box, never the chat: it closes a box the
       // Type button opened, and just drops the focus with "Type instead of talking".
       else if (composeOpen && e.target === composeInput) { if (settings.typedInput) composeInput.blur(); else closeCompose(); }
@@ -1811,6 +1911,7 @@ export function openDrive(thread, ctx) {
   ring.addEventListener('click', tap);
   pauseBtn.addEventListener('click', () => { quiet.heard(); if (state === 'stopped') retry(); else setListening(!listening); });
   typeBtn.addEventListener('click', toggleCompose);
+  outputBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleOutputMenu(); });
   endBtn.addEventListener('click', () => close());
   compose.addEventListener('submit', (e) => { e.preventDefault(); sendTyped(); });
   composeInput.addEventListener('keydown', (e) => {

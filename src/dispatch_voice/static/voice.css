@@ -222,6 +222,27 @@ body.drive-open { overflow: hidden; }
 .drive-end.drive-end-plain .drive-road-icon { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-strong); }
 .drive-end.drive-end-plain .drive-road-icon .rail-icon { transform: none; }
 .drive-road-label { white-space: nowrap; }
+/* Output (1.3.0): a route picker over the buttons, desktop browsers only
+   (AudioContext.setSinkId); phones route audio themselves. */
+.drive-bar { position: relative; }
+.drive-output-menu {
+  position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+  min-width: 240px; max-width: min(360px, calc(100vw - 32px)); z-index: 2;
+  padding: 6px; background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--text-primary) 18%, transparent);
+}
+.drive-output-head { padding: 6px 10px 8px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.drive-output-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 10px;
+  border: 0; border-radius: calc(var(--radius-md) - 4px); background: none; color: var(--text-primary);
+  font: inherit; font-size: 14.5px; text-align: start; cursor: pointer;
+}
+.drive-output-item:hover, .drive-output-item:focus-visible { background: var(--bg-hover); outline: none; }
+.drive-output-item[aria-checked="true"] { color: var(--accent-text); }
+.drive-output-item .rail-icon { width: 20px; height: 20px; flex: none; }
+.drive-output-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drive-output-check { flex: none; width: 1.2em; text-align: end; }
 
 /* The text box (Type): a textarea that grows to four lines, a round Send. 16 px
    text, so iOS does not zoom the page when it is focused. */

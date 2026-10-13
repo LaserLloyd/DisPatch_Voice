@@ -17,7 +17,7 @@ import {
   reconnectDecision, tapAction, thinkingPhase, hintKey, createUndoWindow,
   createHeartbeat, createHeardTracker, turnErrorKey, errorFrameKey, EARCONS, timingsLine,
   displayState, firstRunTipKey, linkNoticeKey, createEotTone, createQuietTimer,
-  pushHistory, noteMetrics, getLastMetrics, initDrive,
+  pushHistory, noteMetrics, getLastMetrics, initDrive, outputRoute, outputMenuModel,
   GIVE_UP_MS, WAITING_AFTER_MS, WAITING_RETRY_MS, UNDO_MS, PING_EVERY_MS, PONG_TIMEOUT_MS,
   EOT_TONE_HOLD_MS, GOTIT_MIN_HOLD_MS, FIRST_RUN_OPENS, QUIET_GRACE_MS, PRE_READY_MS,
   ACTIVITY_EVERY_MS, FOLLOW_PAUSE_MS,
@@ -1516,5 +1516,65 @@ test('overlay: a stopped chat shows Try again / Back to chat and no Type button;
       assert.equal(input.value, 'hello', 'not sent, not lost');
       assert.equal(o.overlay.querySelector('.drive-notice').textContent, EN.drive.compose_offline);
     } finally { o.d.close(); o.restore(); }
+  }, world.globals);
+});
+
+// ------------------------------------------------ the Output button (1.3.0) ---
+
+test('outputRoute / outputMenuModel: labels become routes; the saved sink is current, a gone one falls back to the first', () => {
+  assert.equal(outputRoute('Headphones (Bluetooth)'), 'bluetooth');
+  assert.equal(outputRoute('AirPods Pro'), 'bluetooth');
+  assert.equal(outputRoute('USB Headset'), 'headset');
+  assert.equal(outputRoute('Speakers (Realtek)'), 'speaker');
+  const opts = [{ value: '', label: 'System default' }, { value: 'bt1', label: 'Buds' }, { value: 'sp', label: 'Speakers' }];
+  const rows = outputMenuModel(opts, 'bt1');
+  assert.deepEqual(rows.map((r) => [r.route, r.current]), [['default', false], ['bluetooth', true], ['speaker', false]]);
+  assert.equal(outputMenuModel(opts, 'gone')[0].current, true);
+});
+
+test('overlay: no Output button where AudioContext has no setSinkId (a phone: the OS routes audio)', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      assert.equal(o.overlay.querySelector('.drive-output').hidden, true);
+    } finally { o.d.close(); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: with setSinkId the Output button lists the outputs; picking one saves sinkId, applies it and relabels the button', dom, async () => {
+  const world = fakeAudioWorld();
+  const sinks = [];
+  world.globals.AudioContext.prototype.setSinkId = async function (id) { sinks.push(id); };
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    // openOverlay installs its own mediaDevices; the menu enumerates on the tap.
+    navigator.mediaDevices.enumerateDevices = async () => [
+      { kind: 'audiooutput', deviceId: 'default', label: 'Default' },
+      { kind: 'audiooutput', deviceId: 'bt1', label: 'Headphones (Bluetooth)' },
+      { kind: 'audiooutput', deviceId: 'sp1', label: 'Speakers (Realtek)' },
+      { kind: 'audioinput', deviceId: 'm1', label: 'Mic' },
+    ];
+    try {
+      const btn = o.overlay.querySelector('.drive-output');
+      assert.equal(btn.hidden, false);
+      assert.equal(btn.textContent, EN.drive.output, 'the system default: the plain word');
+      btn.click();
+      await settle();
+      const items = [...o.overlay.querySelectorAll('.drive-output-item')];
+      assert.deepEqual(items.map((b) => b.textContent.replace('✓', '').trim()), [EN.drive.device_default, 'Headphones (Bluetooth)', 'Speakers (Realtek)']);
+      assert.equal(items[0].getAttribute('aria-checked'), 'true');
+      items[1].click();
+      await settle();
+      assert.equal(JSON.parse(globalThis.localStorage.getItem('dispatch-drive')).sinkId, 'bt1');
+      assert.deepEqual(sinks, ['bt1'], 'applied to the AudioContext through the settings listener');
+      assert.equal(o.overlay.querySelector('.drive-output-menu'), null, 'the menu closed');
+      assert.equal(btn.textContent, EN.drive.output_bluetooth);
+      // Esc closes an open menu without hanging up.
+      btn.click(); await settle();
+      o.overlay.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      assert.equal(o.overlay.querySelector('.drive-output-menu'), null);
+      assert.ok(document.querySelector('.drive-overlay'));
+    } finally { o.d.close(); o.restore(); saveDriveSettings(globalThis.localStorage, { sinkId: '' }); }
   }, world.globals);
 });

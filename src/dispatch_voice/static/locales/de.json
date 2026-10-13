@@ -270,7 +270,14 @@
     "hint_type": "Unten tippen oder auf das Bild, um den Ton einzuschalten",
     "typed_input": "Tippen statt sprechen",
     "typed_input_hint": "Antworten werden weiter vorgelesen. Das Mikrofon bleibt stumm und ein Textfeld bleibt auf dem Bildschirm – für Headset oder leise Umgebung.",
-    "compose_offline": "Noch keine Verbindung – gleich noch einmal versuchen."
+    "compose_offline": "Noch keine Verbindung – gleich noch einmal versuchen.",
+    "output": "Ausgabe",
+    "output_speaker": "Lautsprecher",
+    "output_headset": "Headset",
+    "output_bluetooth": "Bluetooth",
+    "output_aria": "Wo Antworten abgespielt werden",
+    "output_aria_now": "Wo Antworten abgespielt werden: {name}",
+    "output_now": "Antworten kommen jetzt über {name}."
   },
   "voices": {
     "title": "Stimmen",

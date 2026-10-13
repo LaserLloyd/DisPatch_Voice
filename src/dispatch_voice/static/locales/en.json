@@ -270,7 +270,14 @@
     "hint_type": "Type below, or tap the picture to unmute",
     "typed_input": "Type instead of talking",
     "typed_input_hint": "Replies are still spoken. The microphone stays muted and a text box stays on the screen — for a headset or a quiet room.",
-    "compose_offline": "No connection yet — try again in a moment."
+    "compose_offline": "No connection yet — try again in a moment.",
+    "output": "Output",
+    "output_speaker": "Speaker",
+    "output_headset": "Headset",
+    "output_bluetooth": "Bluetooth",
+    "output_aria": "Where replies play",
+    "output_aria_now": "Where replies play: {name}",
+    "output_now": "Replies now play on {name}."
   },
   "voices": {
     "title": "Voices",

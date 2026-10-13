@@ -64,6 +64,12 @@ the state, and the line under that says what a tap on the picture does.
   were two wide bars). The picture shrinks and the captions scroll instead; with
   the phone on its side (a landscape mount) the picture is on one side, the
   captions on the other and the three buttons across the bottom, smaller.
+- **Output** (1.3.0, desktop browsers): where replies play — the system default,
+  a headset, a Bluetooth device or the speakers, by the OS's own names; the
+  button says which is on and a pick applies at once (it is the Speaker setting
+  under Settings › Voice › Advanced). Android and iOS browsers cannot move
+  audio between the earpiece, the speaker and Bluetooth, so the button is not
+  shown on a phone; the OS routes it.
 - **Type** (1.2.0, for a headset or a quiet room): mutes the microphone and shows
   a text box above the buttons. What you type is sent as your turn — the reply
   is **spoken** as usual, with captions and Undo — Enter sends, Shift+Enter is a

@@ -271,7 +271,14 @@
     "hint_type": "Escribe abajo, o toca la imagen para activar el micrófono",
     "typed_input": "Escribir en vez de hablar",
     "typed_input_hint": "Las respuestas se siguen leyendo en voz alta. El micrófono queda silenciado y un cuadro de texto queda en pantalla: para auriculares o un sitio silencioso.",
-    "compose_offline": "Aún sin conexión: inténtalo de nuevo en un momento."
+    "compose_offline": "Aún sin conexión: inténtalo de nuevo en un momento.",
+    "output": "Salida",
+    "output_speaker": "Altavoz",
+    "output_headset": "Auriculares",
+    "output_bluetooth": "Bluetooth",
+    "output_aria": "Dónde suenan las respuestas",
+    "output_aria_now": "Dónde suenan las respuestas: {name}",
+    "output_now": "Las respuestas suenan ahora en {name}."
   },
   "voices": {
     "title": "Voces",

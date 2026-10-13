@@ -269,7 +269,14 @@
     "hint_type": "下に入力するか、画像をタップでミュート解除",
     "typed_input": "話す代わりに入力する",
     "typed_input_hint": "返事は引き続き読み上げられます。マイクはミュートのまま、画面に入力欄が表示されます。ヘッドセットや静かな場所向けです。",
-    "compose_offline": "まだ接続されていません。少し待ってからもう一度お試しください。"
+    "compose_offline": "まだ接続されていません。少し待ってからもう一度お試しください。",
+    "output": "出力",
+    "output_speaker": "スピーカー",
+    "output_headset": "ヘッドセット",
+    "output_bluetooth": "Bluetooth",
+    "output_aria": "返事の再生先",
+    "output_aria_now": "返事の再生先：{name}",
+    "output_now": "返事は {name} で再生します。"
   },
   "voices": {
     "title": "声",
