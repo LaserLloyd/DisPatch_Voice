@@ -68,17 +68,19 @@ test('mount wires every slot: header button before the thread menu, Settings →
       assert.ok(fs.paneHost.querySelector('#drive-group-switch'));
       assert.ok(fs.paneHost.querySelector('#drive-group-voices'));
       assert.ok(fs.paneHost.querySelector('#drive-manage-voices'), 'cloning installed + tool on → Manage voices');
-      // Bots: a pill for a normal bot, nothing for a Safe-Mode bot.
+      // Bots: a pill for every bot, the Safe-Mode one included (1.3.1).
       const extra = fs.log.rowExtras[0].fn;
       assert.ok(extra(BOTS[0], () => {}).querySelector('.bm-voice-pill'));
-      assert.equal(extra(BOTS[1], () => {}), null);
+      assert.ok(extra(BOTS[1], () => {}).querySelector('.bm-voice-pill'), 'a safe bot gets the Voice pill too');
       // Tools: three tiles.
       assert.deepEqual(fs.log.tools[0].tiles.map((x) => x.id), ['voice-cloning', 'voice-builtin', 'voice-lab']);
       assert.ok(fs.log.tools[0].tiles.every((x) => typeof x.open === 'function'));
       assert.equal(fs.lockedListeners, 1);
-      // A safe bot's thread hides the button (shell.onThread, Amendment T7a-2).
+      // A safe bot's thread keeps the button (1.3.1: the tier is the device's,
+      // not the bot's); shell.onThread still repaints it (Amendment T7a-2).
       fs.setThread({ id: 't2', bot_id: 'alpha', title: 'Kids' });
-      assert.equal(btn.hidden, true);
+      assert.equal(btn.hidden, false);
+      assert.equal(btn.dataset.ready, '1');
     } finally { h.unmount(); }
   }, { fetch: routes() });
 });

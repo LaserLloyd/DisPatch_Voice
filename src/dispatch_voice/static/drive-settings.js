@@ -1067,7 +1067,7 @@ export function mountDriveSettings(host, ctx) {
     // ONE hint line, written from the roster when it is known: who uses the
     // default, or that nobody does right now.
     const hintEl = r.querySelector('.dev-row-hint');
-    const bots = (ctx.bots ? ctx.bots() : []).filter((b) => b && !b.safe && b.visible !== false);
+    const bots = (ctx.bots ? ctx.bots() : []).filter((b) => b && b.visible !== false);
     if (bots.length && bots.every((b) => typeof b.voice === 'string')) {
       const uses = bots.filter((b) => !b.voice).map((b) => b.name);
       hintEl.textContent = uses.length ? t('drive.voice_users', { names: listFormat(uses) }) : t('drive.voice_users_none');

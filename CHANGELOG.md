@@ -2,6 +2,17 @@
 
 All notable changes to DisPatch Voice.
 
+## [1.3.1] — 2026-10-14
+
+### Changed
+- **Voice for Safe-Mode bots.** A bot marked `safe` (one that locked family
+  devices may also talk to) now gets the voice chat button and the Bots-tab
+  voice pill like any other bot, and its per-bot voice settings are accepted.
+  Voice chat itself is still unlocked-only: the device must hold the PIN, and a
+  Safe-Mode device never reaches it. Needs DisPatch 2.3.1, whose gate stopped
+  refusing a safe bot's thread; on an older DisPatch the button shows and the
+  socket is refused.
+
 ## [1.3.0] — 2026-10-14
 
 ### Added

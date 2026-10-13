@@ -143,7 +143,8 @@ def test_no_provider_rejects_builtin_voices_without_crashing(tmp_path, monkeypat
                      "gateway_trailer": "full", "opus": "auto", "opus_down_kbps": 24, "opus_up_kbps": 16,
                      "bots": {"nova": {"backchannel": False, "follow_up": True},
                               "sage": {"backchannel": False, "follow_up": False},
-                              "swift": {"backchannel": False, "follow_up": True}},
+                              "swift": {"backchannel": False, "follow_up": True},
+                          "alpha": {"backchannel": False, "follow_up": True}},
                      "rig": RIG_OUT}
 
 

@@ -83,7 +83,8 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
                      "gateway_trailer": "full", "opus": "auto", "opus_down_kbps": 24, "opus_up_kbps": 16,
                      "bots": {"nova": {"backchannel": False, "follow_up": True},
                               "sage": {"backchannel": False, "follow_up": False},
-                              "swift": {"backchannel": False, "follow_up": True}},
+                              "swift": {"backchannel": False, "follow_up": True},
+                              "alpha": {"backchannel": False, "follow_up": True}},
                      "rig": RIG_OUT}
     r = c.patch("/api/voice/settings", json={"speed": 1.2, "voice_turn_thinking": "low",
                                              "default_voice": "builtin:am_michael"})
@@ -96,7 +97,8 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
                      "gateway_trailer": "full", "opus": "auto", "opus_down_kbps": 24, "opus_up_kbps": 16,
                      "bots": {"nova": {"backchannel": False, "follow_up": True},
                               "sage": {"backchannel": False, "follow_up": False},
-                              "swift": {"backchannel": False, "follow_up": True}},
+                              "swift": {"backchannel": False, "follow_up": True},
+                              "alpha": {"backchannel": False, "follow_up": True}},
                      "rig": RIG_OUT}
     f = ctx.paths.voice_yaml
     assert f.exists() and (f.stat().st_mode & 0o777) == 0o600
@@ -345,11 +347,11 @@ def test_prewarm_loads_engines_and_runs_a_warm_synthesis(host_env, monkeypatch):
 
 
 def test_profile_to_warm_reads_the_bots_through_the_context(host_env, monkeypatch):
-    """The bot roster comes from ctx.bots (never app.config); safe bots are skipped."""
-    host_env.bots._bots["alpha"] = BotView("alpha", "Alpha", safe=True, voice="secret-voice", backend="gateway")
+    """The bot roster comes from ctx.bots (never app.config); a safe bot counts too (1.3.1)."""
+    host_env.bots._bots["alpha"] = BotView("alpha", "Alpha", safe=True, voice="", backend="gateway")
     host_env.bots._bots["nova"] = BotView("nova", "Nova", voice="nova-voice", backend="gateway")
     monkeypatch.setattr(registry, "_profile_resolver",
-                        lambda bot_id: {"nova": "nova-voice", "alpha": "secret-voice"}.get(bot_id))
+                        lambda bot_id: {"nova": "nova-voice"}.get(bot_id))
     assert routes._profile_to_warm(registry, vtts) == "nova-voice"
 
 
@@ -382,13 +384,13 @@ def test_slice2_settings_round_trip_and_validation(app_voice):
     status = c.get("/api/voice/status").json()
     assert status["rp_speech"] == "dialogue_narrator" and status["narrator_voice"] == ""
     assert status["expressive_tags"] is False and status["bots"]["nova"]["backchannel"] is True
-    assert "alpha" not in status["bots"] and isinstance(status["acks"], dict)
+    assert "alpha" in status["bots"] and isinstance(status["acks"], dict)   # a safe bot has voice settings too (1.3.1)
 
 
 @pytest.mark.parametrize("body", [
     {"rp_speech": "quotes"}, {"rp_speech": 3}, {"narrator_voice": "builtin:nope"}, {"narrator_voice": "no such"},
     {"expressive_tags": "yes"}, {"gateway_trailer": "short"}, {"bots": []}, {"bots": {"ghost": {"follow_up": True}}},
-    {"bots": {"alpha": {"backchannel": True}}}, {"bots": {"nova": {"flavour": "wry"}}},
+    {"bots": {"nova": {"flavour": "wry"}}},
     {"bots": {"nova": {"follow_up": "on"}}}, {"bots": {"": {"follow_up": True}}},
 ])
 def test_slice2_settings_reject_bad_values(app_voice, body):

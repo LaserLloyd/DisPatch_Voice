@@ -191,8 +191,6 @@ def _profile_to_warm(registry, tts) -> str | None:
         return pid
     try:
         for bot in context.bots_all():
-            if getattr(bot, "safe", False):
-                continue
             pid = registry.resolve_profile(bot.id)
             if pid and not tts.builtin_id(pid):
                 return pid
@@ -699,8 +697,6 @@ def _validate_bots(raw) -> dict:
             raise HTTPException(422, "bots takes an object of {bot id: {backchannel, follow_up}}")
         if known and bot_id not in known:
             raise HTTPException(422, f"Unknown bot: {bot_id[:40]}")
-        if known and getattr(known[bot_id], "safe", False):
-            raise HTTPException(422, f"{bot_id[:40]} is a Safe Mode bot: no voice settings")
         if not isinstance(conf, dict):
             raise HTTPException(422, f"bots.{bot_id[:40]} takes an object")
         extra = set(conf) - set(BOT_KEYS)
@@ -771,12 +767,14 @@ def _validate_rig(raw) -> dict:
 
 
 def effective_bots(settings: VoiceSettings) -> dict:
-    """``{bot id: {backchannel, follow_up}}`` for every non-Safe bot the context
-    lists (the per-bot defaults the Bots-tab popover shows)."""
+    """``{bot id: {backchannel, follow_up}}`` for every bot the context lists
+    (the per-bot defaults the Bots-tab popover shows). Since 1.3.1 a ``safe``
+    bot is one of them: voice is unlocked-only, but which bots it serves is not
+    narrowed by the Safe-Mode flag any more."""
     out = {}
     for b in context.bots_all():
         bid = getattr(b, "id", None)
-        if not bid or getattr(b, "safe", False):
+        if not bid:
             continue
         out[bid] = settings.bot(bid, backend=context.bot_backend(bid))
     for bid in settings.bots:            # a bot the file names but the context does not (yet)

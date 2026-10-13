@@ -202,7 +202,8 @@ export function driveAllowed({ locked, thread, bot, secure, voiceOff = false }) 
   if (locked) return no('drive.err_locked_device');
   if (voiceOff) return no('drive.button_voice_off');
   if (!thread) return no('drive.err_no_chat');
-  if (bot && bot.safe) return no('drive.err_safe_bot');
+  // 1.3.1: a `safe` bot (one locked devices may also talk to) gets voice like
+  // any other — voice itself stays unlocked-only (the device must hold the PIN).
   if (!secure) return no('drive.err_https');
   return { ok: true, whyKey: '', why: '' };
 }
@@ -548,9 +549,8 @@ export function initDrive(button, ctx) {
   };
   const refresh = () => {
     const { thread, v } = verdict();
-    // Hidden when locked or for a safe bot; shown-but-explaining on http.
-    button.hidden = ctx.isLocked() || !!(ctx.isVoiceOff && ctx.isVoiceOff()) || !thread
-      || !!(thread && ctx.getBot(thread.bot_id)?.safe);
+    // Hidden when locked (or voice is off); shown-but-explaining on http.
+    button.hidden = ctx.isLocked() || !!(ctx.isVoiceOff && ctx.isVoiceOff()) || !thread;
     const label = v.ok ? t('drive.button_aria') : v.why;
     button.title = label;
     button.setAttribute('aria-label', v.ok ? t('drive.button_aria') : `${t('drive.button')}: ${v.why}`);

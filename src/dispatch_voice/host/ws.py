@@ -2,7 +2,8 @@
 gate (contracts §B.4; SPEC §3.3).
 
 DisPatch owns the gate and the slots: Origin == Host, a live unlocked
-session, the thread exists and its bot is not ``safe`` (all 1008 pre-accept),
+session, the thread exists (all 1008 pre-accept; since DisPatch 2.3.1 a ``safe``
+bot's thread is allowed — voice is unlocked-only, never Safe Mode),
 the per-session slot (4001 "replaced") and the global ``max_total`` (1013
 "busy"). What reaches this module is a GATED but NOT yet accepted socket and
 a :class:`ThreadSocket` carrying the thread, the bot view, the session token

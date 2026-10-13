@@ -4,7 +4,7 @@
 
 Voice chat lets you talk with a bot hands-free: you speak, the bot answers in
 its own voice, and you can talk over it to interrupt. It works in any chat
-whose bot is not a Safe-Mode bot, on a device that is unlocked. The engines
+on a device that is unlocked (since 1.3.1 with DisPatch 2.3.1 a Safe-Mode bot's thread too: the tier is the device's). The engines
 understand and speak **English only for now**; the screen says so the first
 time it opens in another UI language, and Settings › Voice says so under the
 switch.
@@ -203,7 +203,7 @@ language pack is installed; the page cannot verify which engine is used.
 
 ## Bots tab
 
-Each bot card (except Safe-Mode bots) has a **Voice** pill. It opens a
+Each bot card has a **Voice** pill (Safe-Mode bots included since 1.3.1). It opens a
 small panel:
 
 - **Voice** and **Role-play text** (Server default or one of the four) —

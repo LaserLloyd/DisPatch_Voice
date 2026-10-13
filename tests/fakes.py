@@ -420,7 +420,7 @@ class FakeContext:
         """Run the gate's last steps and the registered handler (Origin/PIN are DisPatch's tests)."""
         thread = self._db.get_thread(thread_id)
         bot = self.bots.get(thread.bot_id) if thread else None
-        if thread is None or bot is None or bot.safe:
+        if thread is None or bot is None:
             await ws.close(1008)                        # pre-accept refusal
             return
         reg = self.websockets[name]

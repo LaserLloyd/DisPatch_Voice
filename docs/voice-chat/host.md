@@ -47,7 +47,9 @@ and whether the `--with-editable` overlay resolves offline.
    Chatterbox models are fetched.
 3. `ctx.thread_websocket("voice", ws.serve, max_total=max_sessions)` —
    `/ws/voice/{thread_id}`. DisPatch owns the gate (Origin == Host, a live
-   unlocked session, the thread's bot is not `safe`: 1008 before accept; the
+   unlocked session, the thread exists: 1008 before accept (a `safe` bot's
+   thread is allowed since DisPatch 2.3.1 — voice is unlocked-only, never Safe
+   Mode, and that is decided by the device's session, not the bot's flag); the
    per-session slot: 4001 "replaced"; `max_total`: accept-then-1013 "busy").
    `ws.serve` only ever sees a gated socket.
 4. `ctx.set_bot_field_validator("voice", …)` and `("voice_rp", …)` — the Bots

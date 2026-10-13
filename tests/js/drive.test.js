@@ -49,11 +49,11 @@ test('voiceUrl: page scheme, escaped thread id; the v3 negotiation only when ask
     'wss://h/ws/voice/t?d=dev-12345&s=str-0001&v=3&up=opus,pcm16&down=pcm16');
 });
 
-test('driveAllowed: locked, no thread, safe bot and insecure origin all refuse, each with its own reason', () => {
+test('driveAllowed: locked, no thread and insecure origin refuse, each with its own reason; a safe bot is allowed (1.3.1)', () => {
   const thread = { id: 't', bot_id: 'b' };
   assert.equal(driveAllowed({ locked: true, thread, bot: {}, secure: true }).whyKey, 'drive.err_locked_device');
   assert.equal(driveAllowed({ locked: false, thread: null, bot: {}, secure: true }).whyKey, 'drive.err_no_chat');
-  assert.equal(driveAllowed({ locked: false, thread, bot: { safe: true }, secure: true }).whyKey, 'drive.err_safe_bot');
+  assert.equal(driveAllowed({ locked: false, thread, bot: { safe: true }, secure: true }).ok, true, 'a safe bot gets voice on an unlocked device');
   assert.equal(driveAllowed({ locked: false, thread, bot: {}, secure: false }).whyKey, 'drive.err_https');
   assert.equal(driveAllowed({ locked: false, thread, bot: { safe: false }, secure: true }).ok, true);
 });

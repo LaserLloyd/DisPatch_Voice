@@ -199,11 +199,13 @@ def test_ws_refusal_names_the_server_when_forced_off(voice_app, no_models, monke
     assert e.code == 1013 and "on this server" in e.reason
 
 
-def test_ws_refuses_a_safe_bot_pre_accept(voice_app, no_models):
-    """The gate is DisPatch's; the FakeContext mirrors it: 1008 before accept."""
+def test_ws_serves_a_safe_bot_since_1_3_1(voice_app, no_models):
+    """The gate is DisPatch's; the FakeContext mirrors it. A `safe` bot is no
+    longer refused (voice is unlocked-only, decided by the session): with the
+    models missing the add-on's own refusal (1013) is what this socket gets."""
     c, ctx = voice_app
     ctx.add_thread("t-safe", "alpha")
-    assert _close(c, "/ws/voice/t-safe").code == 1008
+    assert _close(c, "/ws/voice/t-safe").code == 1013
 
 
 def test_ws_works_after_switching_on(live_app, monkeypatch):
