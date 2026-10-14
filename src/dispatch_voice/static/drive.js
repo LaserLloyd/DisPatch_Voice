@@ -92,6 +92,8 @@ export const GOTIT_MIN_HOLD_MS = 600;
 export const FIRST_RUN_OPENS = 3;
 /** After "Still there?", this much more silence hangs up (A9). */
 export const QUIET_GRACE_MS = 20000;
+/** A `typed` message (1.2.0): the server's TYPED_MAX_CHARS, checked here first so an over-long one is never sent — and never lost. */
+export const TYPED_MAX_CHARS = 4000;
 /** A stopped reply can be continued by a tap for this long (design-realtime). */
 export const RESUME_AFTER_STOP_MS = 3000;
 /**
@@ -1193,6 +1195,9 @@ export function openDrive(thread, ctx) {
     quiet.heard();     // a fresh session: start the idle clock again
     if (listening) { if (state === 'connecting' || state === 'offline' || state === 'waiting') setState('listening'); }
     else setState('paused');
+    // The Output word names a remembered device from the start (the labels are
+    // readable now that the microphone permission is in), not only after a tap.
+    if (outputPossible && settings.sinkId) refreshOutputs().catch(() => {});
   }
   function stopMic() {
     try { stream && stream.getTracks().forEach((tr) => tr.stop()); } catch { /* gone */ }
@@ -1649,6 +1654,9 @@ export function openDrive(thread, ctx) {
   function sendTyped() {
     const text = composeInput.value.trim();
     if (!text) return;
+    // The server answers an over-long `typed` with a bad_frame and the words
+    // would already be gone from the box: refuse here, keep them, say why.
+    if (text.length > TYPED_MAX_CHARS) { showNotice(t('drive.compose_too_long', { n: TYPED_MAX_CHARS }), { kind: 'info', ms: 5000 }); return; }
     if (!(ws && ws.readyState === 1 && ready)) { showNotice(t('drive.compose_offline'), { kind: 'info', ms: 4000 }); return; }
     quiet.heard();
     tipOn = false; tip.hidden = true;
@@ -1676,9 +1684,14 @@ export function openDrive(thread, ctx) {
     outputBtn.setAttribute('aria-haspopup', 'menu');
     outputBtn.setAttribute('aria-expanded', String(!!outputMenu));
   }
+  /** The output devices as of now, and the button's word with them. */
+  async function refreshOutputs() {
+    try { outputRows = await deviceOptions('audiooutput'); } catch { outputRows = []; }
+    if (!closed) paintOutput();
+  }
   async function openOutputMenu() {
     if (outputMenu || !outputPossible) return;
-    try { outputRows = await deviceOptions('audiooutput'); } catch { outputRows = []; }
+    await refreshOutputs();
     if (closed || outputMenu) return;
     const rows = outputMenuModel(outputRows, settings.sinkId);
     const items = rows.map((r) => {
@@ -1842,8 +1855,10 @@ export function openDrive(thread, ctx) {
       if (sheet) closeSheet();
       else if (outputMenu) closeOutputMenu();
       // Esc in the text box leaves the box, never the chat: it closes a box the
-      // Type button opened, and just drops the focus with "Type instead of talking".
-      else if (composeOpen && e.target === composeInput) { if (settings.typedInput) composeInput.blur(); else closeCompose(); }
+      // Type button opened, and only moves the focus to the picture with "Type
+      // instead of talking" (the box stays; a blur would put the focus on the
+      // body, outside the overlay's key handling).
+      else if (composeOpen && e.target === composeInput) { if (settings.typedInput) ring.focus(); else closeCompose(); }
       else close();
       return;
     }

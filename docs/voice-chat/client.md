@@ -73,7 +73,8 @@ the state, and the line under that says what a tap on the picture does.
 - **Type** (1.2.0, for a headset or a quiet room): mutes the microphone and shows
   a text box above the buttons. What you type is sent as your turn — the reply
   is **spoken** as usual, with captions and Undo — Enter sends, Shift+Enter is a
-  new line, Esc closes the box. **Unmute** puts the box away. With the keyboard
+  new line, Esc closes the box. A message longer than 4,000 characters is not
+  sent: a notice says so and the text stays in the box. **Unmute** puts the box away. With the keyboard
   up the picture goes small so the box and the buttons stay in view (the overlay
   follows the visual viewport on iOS, where the keyboard does not shrink the
   page). The quick sheet's **Type instead of talking** opens every chat this way:

@@ -2,6 +2,19 @@
 
 All notable changes to DisPatch Voice.
 
+## [Unreleased]
+
+### Fixed
+- **Voice chat screen, Type:** a message longer than the wire's 4,000-character
+  bound is refused on the device with a notice and kept in the box; it used to
+  be sent, answered with `bad_frame`, and already cleared from the box.
+- **Type instead of talking:** Esc in the text box moves the focus to the picture
+  instead of dropping it on the page, so Esc (hang up) and Tab keep working.
+- **Output:** a remembered output device is named on the button from the start
+  of a chat, not only after the menu was opened once.
+- Removed the unused `drive.err_safe_bot` string from every locale (no code has
+  read it since 1.3.1).
+
 ## [1.3.1] — 2026-10-14
 
 ### Changed
