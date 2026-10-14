@@ -191,6 +191,45 @@ test('locking the device closes an open voice chat at once (onLocked) and hides 
   }, { fetch: routes(), WebSocket: WS, AudioContext: AC, Audio });
 });
 
+test('a locked mount (DisPatch ≥ 2.3.4): the button for a safe bot, no pane, no pills, no tools, no /api/voice reads', dom, async () => {
+  const SAFE = [{ id: 'alpha', name: 'Alpha', voice: '', safe: true, visible: true }];
+  const fetch = fakeFetch({
+    'GET /api/extensions': { extensions: [{ id: 'voice', locked_status: { enabled: true, ready: true } }], api: 1 },
+  });
+  await withDom(async () => {
+    const fs = fakeShell({ locked: true, thread: { id: 't9', bot_id: 'alpha', title: 'x' }, bots: SAFE });
+    const h = await mount(fs.shell, { locked: true });
+    await settle(10);
+    try {
+      const btn = fs.header.querySelector('#drive-btn');
+      assert.ok(btn);
+      assert.equal(btn.hidden, false, 'voice on + a safe bot on a locked device → visible');
+      assert.equal(btn.dataset.ready, '1');
+      assert.equal(fs.log.panes.length, 0, 'no Settings → Voice claim');
+      assert.equal(fs.log.rowExtras.length, 0, 'no Bots-tab pill');
+      assert.equal(fs.log.tools.length, 0, 'no voice tools');
+      const paths = fetch.calls.map((c) => c.path);
+      assert.ok(paths.includes('/api/extensions'));
+      assert.ok(!paths.some((p) => p.startsWith('/api/voice') || p === '/api/bots/all' || p === '/api/tools'), paths.join(' '));
+    } finally { h.unmount(); }
+  }, { fetch });
+});
+
+test('a locked mount with voice switched off keeps the button hidden', dom, async () => {
+  const SAFE = [{ id: 'alpha', name: 'Alpha', voice: '', safe: true, visible: true }];
+  const fetch = fakeFetch({
+    'GET /api/extensions': { extensions: [{ id: 'voice', locked_status: { enabled: false, ready: true } }], api: 1 },
+  });
+  await withDom(async () => {
+    const fs = fakeShell({ locked: true, thread: { id: 't9', bot_id: 'alpha', title: 'x' }, bots: SAFE });
+    const h = await mount(fs.shell, { locked: true });
+    await settle(10);
+    try {
+      assert.equal(fs.header.querySelector('#drive-btn').hidden, true);
+    } finally { h.unmount(); }
+  }, { fetch });
+});
+
 test('unmount gives every slot back: button, pane (absent page returns), pill, tiles, lock listener, the shell binding', dom, async () => {
   await withDom(async () => {
     const fs = fakeShell({ bots: BOTS });

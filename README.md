@@ -28,7 +28,7 @@ dispatch-voice fetch-models
 **On a server you keep running**, point the overlay at a release checkout that nobody develops in, and start DisPatch through its launcher, which falls back to DisPatch without voice (instead of a restart loop) when the overlay cannot be resolved or crashes on import:
 
 ```sh
-git -C <dispatch-voice> worktree add --detach <release-dir> v1.3.2     # later releases: git -C <release-dir> checkout --detach <tag>
+git -C <dispatch-voice> worktree add --detach <release-dir> v1.3.3     # later releases: git -C <release-dir> checkout --detach <tag>
 cd <dispatch-chat>/backend
 uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm once, online, after every release
 <dispatch-chat>/scripts/local-chat-launch --uv "$(command -v uv)" --with-editable <release-dir> \
@@ -41,7 +41,7 @@ uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm o
 
 Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro` (`DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
 
-Voice chat understands and speaks English only for now, and is offered to an unlocked device only, never in DisPatch's Safe Mode.
+Voice chat understands and speaks English only for now. It works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with; every turn from a locked device runs with DisPatch's locked rules, and the voice settings stay unlocked-only.
 
 ## Engine
 

@@ -246,6 +246,16 @@ const jsonBody = (method, body) => ({
 });
 
 export const voiceStatus = () => voiceJson('/api/voice/status');
+/** A locked device's view (1.3.3, DisPatch ≥ 2.3.4): `/api/voice/*` stays
+ *  unlocked-only, so the add-on's `locked_status` in its `/api/extensions`
+ *  row says whether voice is on. `{enabled, ready, locked: true}` or null. */
+export async function lockedVoiceStatus() {
+  const body = await voiceJson('/api/extensions');
+  const row = ((body && body.extensions) || []).find((e) => e && e.id === 'voice');
+  const st = row && row.locked_status;
+  if (!st || typeof st !== 'object') return null;
+  return { enabled: st.enabled === true, ready: st.ready !== false, locked: true };
+}
 export const voiceLab = () => voiceJson('/api/voice/lab');
 export const voiceSettings = () => voiceJson('/api/voice/settings');
 export const patchVoiceSettings = (patch) => voiceJson('/api/voice/settings', jsonBody('PATCH', patch));
@@ -643,14 +653,14 @@ function micRow(s, set) {
  */
 export function buildQuickSheet({
   status, bot, onClose, onAllSettings, notify, setBotVoice: saveBotVoice = setBotVoice,
-  voices = [], android = isAndroid(), lang = language(),
+  voices = [], android = isAndroid(), lang = language(), locked = false,
 }) {
   const s = loadDriveSettings(storage());
   const set = (patch) => saveDriveSettings(storage(), patch);
   const st = status || {};
   const body = el('div', { class: 'dev-group-body drive-sheet-body' });
 
-  if (bot && bot.id && voiceOptions(st).length) {
+  if (!locked && bot && bot.id && voiceOptions(st).length) {
     let cur = typeof bot.voice === 'string' ? bot.voice : '';
     const sel = selectInput(t('drive.voice_of', { bot: bot.name || '' }),
       voiceOptions(st, { withDefault: true, current: cur }), cur, async (v) => {
@@ -700,7 +710,7 @@ export function buildQuickSheet({
     railIcon(iconPaths('forward')),
   ]);
   all.addEventListener('click', () => onAllSettings && onAllSettings());
-  body.append(all);
+  if (!locked) body.append(all);
 
   const title = el('h2', { class: 'drive-sheet-title', id: 'drive-sheet-title', text: t('drive.sheet_title') });
   const closeBtn = el('button', {

@@ -63,6 +63,23 @@ def test_setup_wires_the_context_in_contract_order(host_env, monkeypatch):
     assert context.get_context() is host_env
 
 
+def test_setup_registers_a_locked_status_when_the_host_offers_it(host_env, monkeypatch):
+    """DisPatch ≥ 2.3.4 lets a locked device use voice on the bots it can see;
+    what that device may read is ``{enabled, ready}`` — two booleans, nothing
+    that names an engine, a path or the rig."""
+    monkeypatch.setattr(chatterbox, "available", lambda: False)
+    got = []
+    host_env.locked_status = got.append
+    setup(host_env)
+    (fn,) = got
+    st = fn()
+    assert set(st) == {"enabled", "ready"}
+    assert all(isinstance(v, bool) for v in st.values())
+    from dispatch_voice.host.config import load_settings
+    s = load_settings()
+    assert st == {"enabled": bool(s.enabled), "ready": not s.missing()}
+
+
 def test_validators_registered_by_setup(host_env, monkeypatch):
     monkeypatch.setattr(chatterbox, "available", lambda: False)
     setup(host_env)

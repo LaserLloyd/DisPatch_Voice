@@ -1,4 +1,5 @@
-// Voice chat — hands-free voice for the open thread (unlocked tier only).
+// Voice chat — hands-free voice for the open thread (unlocked devices, and
+// locked ones on the bots they can chat with since 1.3.3).
 // Owner: track T7. Contracts: C-§C (the client side of the wire protocol),
 // C-§E.2 (the modules it consumes, through bridge.js), SPEC §5.5, §7.3, §7.4.
 //
@@ -201,11 +202,11 @@ export function driveDeviceId(storage = globalThis.localStorage) {
 /** Can voice chat open for this thread at all? (The server re-checks.) */
 export function driveAllowed({ locked, thread, bot, secure, voiceOff = false }) {
   const no = (whyKey) => ({ ok: false, whyKey, why: t(whyKey) });
-  if (locked) return no('drive.err_locked_device');
+  // 1.3.3 (DisPatch ≥ 2.3.4): a locked device gets voice on the bots it can
+  // chat with — the `safe` ones; the server runs those turns locked.
+  if (locked && !(bot && bot.safe === true)) return no('drive.err_locked_device');
   if (voiceOff) return no('drive.button_voice_off');
   if (!thread) return no('drive.err_no_chat');
-  // 1.3.1: a `safe` bot (one locked devices may also talk to) gets voice like
-  // any other — voice itself stays unlocked-only (the device must hold the PIN).
   if (!secure) return no('drive.err_https');
   return { ok: true, whyKey: '', why: '' };
 }
@@ -551,8 +552,11 @@ export function initDrive(button, ctx) {
   };
   const refresh = () => {
     const { thread, v } = verdict();
-    // Hidden when locked (or voice is off); shown-but-explaining on http.
-    button.hidden = ctx.isLocked() || !!(ctx.isVoiceOff && ctx.isVoiceOff()) || !thread;
+    // Hidden when voice is off, and on a locked device for a bot it may not
+    // use; shown-but-explaining on http.
+    const bot = thread && ctx.getBot(thread.bot_id);
+    button.hidden = (ctx.isLocked() && !(bot && bot.safe === true))
+      || !!(ctx.isVoiceOff && ctx.isVoiceOff()) || !thread;
     const label = v.ok ? t('drive.button_aria') : v.why;
     button.title = label;
     button.setAttribute('aria-label', v.ok ? t('drive.button_aria') : `${t('drive.button')}: ${v.why}`);
@@ -1748,6 +1752,9 @@ export function openDrive(thread, ctx) {
       status: ctx.voiceStatus ? ctx.voiceStatus() : null,
       bot: (ctx.getBot && ctx.getBot(thread.bot_id)) || bot,
       voices, android: isAndroid(), lang: language(),
+      // A locked device (1.3.3): this device's settings only — the bot's voice
+      // and Settings › Voice change the server, which stays unlocked-only.
+      locked: !!(ctx.isLocked && ctx.isLocked()),
       setBotVoice: ctx.setBotVoice,
       onClose: () => closeSheet(),
       // Settings opens OVER this screen with the microphone paused; nothing

@@ -71,7 +71,9 @@ discovers through an entry point; nothing in DisPatch names it.
    [persona-acks-rp.md](persona-acks-rp.md).
 
 Voice chat understands and speaks English only for now. It is available to an
-unlocked device only, never in Safe Mode.
+unlocked device and, since 1.3.3 with DisPatch 2.3.4, to a locked (Safe Mode)
+device on the bots it can chat with; DisPatch runs those turns with its locked
+rules. The voice settings stay unlocked-only.
 
 ## Reading the code
 

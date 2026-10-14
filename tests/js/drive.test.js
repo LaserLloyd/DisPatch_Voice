@@ -58,6 +58,15 @@ test('driveAllowed: locked, no thread and insecure origin refuse, each with its 
   assert.equal(driveAllowed({ locked: false, thread, bot: { safe: false }, secure: true }).ok, true);
 });
 
+test('driveAllowed on a locked device (1.3.3): a safe bot yes, anything else no', () => {
+  const thread = { id: 't', bot_id: 'b' };
+  assert.equal(driveAllowed({ locked: true, thread, bot: { safe: true }, secure: true }).ok, true);
+  assert.equal(driveAllowed({ locked: true, thread, bot: { safe: false }, secure: true }).whyKey, 'drive.err_locked_device');
+  assert.equal(driveAllowed({ locked: true, thread, bot: null, secure: true }).whyKey, 'drive.err_locked_device');
+  assert.equal(driveAllowed({ locked: true, thread, bot: { safe: true }, secure: false }).whyKey, 'drive.err_https');
+  assert.equal(driveAllowed({ locked: true, voiceOff: true, thread, bot: { safe: true }, secure: true }).whyKey, 'drive.button_voice_off');
+});
+
 test('backoff: 0.5 s doubling to 8 s, then every 15 s once waiting; give up after 15 min (§5.5)', () => {
   const seq = [];
   let b = 0;

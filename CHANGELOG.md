@@ -4,6 +4,19 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+## [1.3.3] — 2026-10-14
+
+### Changed
+- **Voice chat on locked devices.** With DisPatch 2.3.4 or later, a locked
+  (Safe Mode) device gets the voice chat button on the bots it can chat with
+  (the `safe` ones), as long as voice is switched on. DisPatch runs every turn
+  from it, spoken or typed on the call screen, with the same locked rules as a
+  typed Safe-Mode message. On a locked device the quick sheet keeps this
+  device's own settings only; the bot's voice, Settings › Voice, the Bots-tab
+  pill and the voice tools stay unlocked-only, as does every `/api/voice` route.
+  A locked device learns whether voice is on from the add-on's new
+  `locked_status` (`{enabled, ready}`). On an older DisPatch nothing changes.
+
 ## [1.3.2] — 2026-10-14
 
 A review pass over 1.2.0–1.3.1.

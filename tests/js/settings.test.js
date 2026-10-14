@@ -447,6 +447,20 @@ test('quick sheet: "{bot}\'s voice" PUTs this bot in the full roster (order kept
   }, { fetch });
 });
 
+test('quick sheet on a locked device (1.3.3): device settings only — no bot voice, no All settings', dom, () => withDom(async () => {
+  const { shell } = fakeShell({ locked: true });
+  const prev = bindShell(shell);
+  try {
+    const bot = { id: 'alpha', name: 'Alpha', voice: '', safe: true };
+    const sheet = buildQuickSheet({ status: ON_STATUS(), bot, voices: [], android: false, lang: 'en',
+      locked: true, onAllSettings: () => {} });
+    assert.equal(sheet.querySelector('#drive-sheet-voice'), null, 'the bot voice writes server state');
+    assert.equal(sheet.querySelector('#drive-sheet-all'), null, 'Settings are unlocked-only');
+    assert.ok(sheet.querySelector('#drive-sheet-typed input.dev-switch'));
+    assert.equal(sheet.querySelectorAll('.dev-group-body > .dev-row').length, 6);
+  } finally { bindShell(prev); }
+}));
+
 test('quick sheet: "Phone voice" is offered only when this device has one', dom, () => withDom(async () => {
   const { shell } = fakeShell();
   const prev = bindShell(shell);

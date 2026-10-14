@@ -769,8 +769,8 @@ def _validate_rig(raw) -> dict:
 def effective_bots(settings: VoiceSettings) -> dict:
     """``{bot id: {backchannel, follow_up}}`` for every bot the context lists
     (the per-bot defaults the Bots-tab popover shows). Since 1.3.1 a ``safe``
-    bot is one of them: voice is unlocked-only, but which bots it serves is not
-    narrowed by the Safe-Mode flag any more."""
+    bot is one of them: which bots voice serves is not narrowed by the
+    Safe-Mode flag (since 1.3.3 a locked device uses it on those)."""
     out = {}
     for b in context.bots_all():
         bid = getattr(b, "id", None)
@@ -781,6 +781,17 @@ def effective_bots(settings: VoiceSettings) -> dict:
         if bid not in out and isinstance(bid, str):
             out[bid] = settings.bot(bid)
     return out
+
+
+def locked_status() -> dict:
+    """What a LOCKED device may know (DisPatch ≥ 2.3.4 serves it in this
+    add-on's ``/api/extensions`` row): is voice on, and can it run. Read fresh
+    each time, like ``/api/voice/status``; ``missing()`` is a few stats."""
+    settings = load_settings()
+    ready = not settings.missing()
+    forced = settings.forced
+    enabled = (forced == "on") if forced is not None else bool(settings.switch and ready)
+    return {"enabled": bool(enabled), "ready": bool(ready)}
 
 
 async def status_payload(settings: VoiceSettings) -> dict:

@@ -6,8 +6,9 @@
 // mount(shell, { assetsVersion }) wires the whole client side of voice chat
 // into DisPatch through the shell's slots — nothing else in DisPatch knows
 // voice exists:
-//   chatHeader   the microphone button (hidden while voice is off, for a
-//                Safe-Mode bot, and on a locked device)
+//   chatHeader   the microphone button (hidden while voice is off, and on a
+//                locked device for a bot it may not use — the `safe` ones it can
+//                chat with keep it since 1.3.3)
 //   settings     the Settings → Voice pane (replaces DisPatch's "add-on
 //                absent" page while mounted; the loader puts it back on unmount)
 //   bots         the Voice pill + popover on each Bots-tab card
@@ -21,7 +22,7 @@
 // (feasibility M7), and every file is ONE module instance: the siblings
 // import each other through their own `import.meta.url` query, which is this one.
 
-export const EXT = { id: 'voice', api: [1, 1], version: '1.3.2' };  // = dispatch_voice.__version__ (pinned by tests/host/test_setup.py)
+export const EXT = { id: 'voice', api: [1, 1], version: '1.3.3' };  // = dispatch_voice.__version__ (pinned by tests/host/test_setup.py)
 
 /** The query every sibling is imported with: the server's assets hash. */
 export function versionQuery(opts, selfUrl = import.meta.url) {
@@ -51,7 +52,7 @@ export async function mount(shell, opts = {}) {
     throw new Error(`DisPatch Voice needs extension API ${EXT.api[0]}–${EXT.api[1]}; this DisPatch offers ${shell && shell.EXT_API}.`);
   }
   const mods = await loadModules(versionQuery(opts));
-  const app = createVoiceApp(shell, mods);
+  const app = createVoiceApp(shell, mods, { locked: !!(opts && opts.locked) });
   await app.start();
   return { unmount: () => app.stop(), onLocale: () => app.onLocale() };
 }
@@ -76,7 +77,12 @@ function restoreFocus(root, p) {
   if (n && typeof n.focus === 'function') { try { n.focus({ preventScroll: true }); } catch { /* detached */ } }
 }
 
-export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools: VT }) {
+export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools: VT }, { locked: lockedMount = false } = {}) {
+  // A locked mount (1.3.3, DisPatch ≥ 2.3.4: `mount(shell, { locked: true })`):
+  // the header button for the bots this device can chat with and the call
+  // screen with this device's own settings. No Settings pane, no Bots-tab pill,
+  // no tools: those change the server, and every /api/voice route is
+  // unlocked-only. Its status is the add-on's `locked_status` row.
   const prevShell = shellMod.bindShell(shell);
   const { t, el, railIcon } = shellMod;
   const toast = (m, err) => { if (shell.toast) shell.toast(m, err); };
@@ -101,12 +107,12 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
   if (typeof removeButton === 'function') disposers.push(removeButton);
   else disposers.push(() => button.remove());
 
-  const getBot = (id) => roster.find((b) => b && b.id === id && typeof b.voice === 'string')
+  const getBot = (id) => (lockedMount ? (shell.botById ? shell.botById(id) : null) : null) || roster.find((b) => b && b.id === id && typeof b.voice === 'string')
     || (shell.botById ? shell.botById(id) : null) || null;
 
   const drive = D.initDrive(button, {
     // The quick sheet re-reads the roster when it opens (review L6).
-    reloadBots: () => loadRoster(),
+    reloadBots: lockedMount ? null : () => loadRoster(),
     getThread: () => (voiceOn && shell.activeThread ? shell.activeThread() : null),
     getBot,
     isLocked: () => !!(shell.isLocked && shell.isLocked()),
@@ -117,8 +123,8 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     // The thread's own face (or a letter when No-Image Mode is on).
     getAvatar: (thread, bot) => (shell.threadFace ? shell.threadFace(thread, bot) : { src: '', letter: '' }) || {},
     voiceStatus: () => status,
-    openDriveSettings: () => openSettings(),
-    setBotVoice: async (botId, v) => {
+    openDriveSettings: lockedMount ? null : () => openSettings(),
+    setBotVoice: lockedMount ? null : async (botId, v) => {
       const bots = await DS.setBotVoice(botId, v);
       if (bots.length) roster = bots;
       return bots;
@@ -128,7 +134,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
   disposers.push(() => drive.dispose());
 
   // ---- Settings → Voice ---------------------------------------------------
-  if (shell.settings && shell.settings.pane) {
+  if (!lockedMount && shell.settings && shell.settings.pane) {
     const dispose = shell.settings.pane('voice', {
       render(root) { paneRoot = root; renderPane(); },
       onShow() { refreshStatus(); },
@@ -204,6 +210,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
   /** Re-read /api/voice/status; rebuild what depends on it. */
   async function refreshStatus({ force = false } = {}) {
     if (stopped) return;
+    if (lockedMount) { let st = null; try { st = await DS.lockedVoiceStatus(); } catch { st = null; } if (!stopped) apply(st); return; }
     if (shell.isLocked && shell.isLocked()) { apply(null); return; }
     const mine = ++statusSeq;
     if (!status) { loading = true; renderPane(); }
@@ -226,7 +233,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
   function apply(st) {
     const was = voiceOn;
     status = st;
-    voiceOn = !!(st && st.enabled) && !(shell.isLocked && shell.isLocked());
+    voiceOn = !!(st && st.enabled) && (lockedMount || !(shell.isLocked && shell.isLocked()));
     renderPane();
     paintPills();
     if (was && !voiceOn) drive.close({ quiet: true });
@@ -266,7 +273,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
       paintPill(h);
     }
   }
-  if (shell.bots && shell.bots.rowExtra) {
+  if (!lockedMount && shell.bots && shell.bots.rowExtra) {
     const dispose = shell.bots.rowExtra((bot, onChange) => {
       if (!bot) return null;
       // Rows from an earlier render are gone: forget them.
@@ -323,7 +330,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     });
   }
 
-  if (shell.tools && shell.tools.register) {
+  if (!lockedMount && shell.tools && shell.tools.register) {
     const dispose = shell.tools.register(VT.VOICE_TOOL_TILES.map((tile) => ({
       id: tile.id, feature: tile.feature, iconPaths: tile.iconPaths, nameKey: tile.nameKey, ariaKey: tile.ariaKey,
       open: (id) => openTool(id || tile.id),

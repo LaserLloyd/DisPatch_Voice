@@ -1,4 +1,5 @@
-"""Voice chat: hands-free voice for DisPatch threads (unlocked tier only).
+"""Voice chat: hands-free voice for DisPatch threads (unlocked devices, and since
+DisPatch 2.3.4 locked ones on the bots they can chat with).
 
 This package is the host side of the DisPatch Voice add-on: what plugs into
 DisPatch's extension host (``app/extensions.py``, contracts §B.1). DisPatch
@@ -57,6 +58,10 @@ def setup(ctx) -> None:
     ctx.include_router(router, prefix="/api/voice", body_limits=routes.body_limits())
 
     ctx.thread_websocket("voice", ws.serve, max_total=settings.max_sessions)
+    if hasattr(ctx, "locked_status"):
+        # DisPatch ≥ 2.3.4: a locked device mounts the add-on too and reads this
+        # (every /api/voice route stays unlocked-only). Two booleans, no names.
+        ctx.locked_status(routes.locked_status)
     ctx.set_bot_field_validator("voice", routes.validate_bot_voice)
     ctx.set_bot_field_validator("voice_rp", routes.validate_bot_voice_rp)
     ctx.register_tools(tool_specs())
