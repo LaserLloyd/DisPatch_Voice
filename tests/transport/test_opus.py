@@ -7,7 +7,8 @@ import pytest
 
 from dispatch_voice.transport import Transport, opus, wire3
 
-needs_opus = pytest.mark.skipif(not opus.available(), reason="libopus not installed")
+_LIBOPUS_PRESENT = opus.available()
+needs_opus = pytest.mark.skipif(not _LIBOPUS_PRESENT, reason="libopus not installed")
 
 
 def lag_corr(x: np.ndarray, y: np.ndarray, lag: int) -> float:
@@ -170,4 +171,6 @@ def test_switched_off_by_env(monkeypatch):
     t = Transport.negotiate(None, {"v": "3", "up": "opus", "down": "opus"})
     assert (t.codec_in, t.codec_out) == ("pcm16", "pcm16")
     monkeypatch.setenv("DISPATCH_VOICE_OPUS", "auto")
+    if not _LIBOPUS_PRESENT:
+        pytest.skip("libopus not installed: cannot check that 'auto' re-enables it")
     assert opus.available() is True

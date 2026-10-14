@@ -40,6 +40,9 @@ jobs:
         python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - name: Install system libraries the tests exercise
+        # ffmpeg decodes uploaded clips (audio.decode); libopus0 is the Opus wire codec.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg libopus0
       - name: Install uv
         # Pinned by commit like every action here (a moving tag is a supply-chain
         # hole); setup-uv no longer publishes moving major tags anyway.
@@ -53,6 +56,9 @@ jobs:
       - name: Run the test suite
         # Model-backed tests skip themselves when the models are not downloaded;
         # tests/<area>/legacy/ (pre-split copies awaiting their port) is never collected.
+        # DISPATCH_VOICE_REQUIRE_FFMPEG=1: a missing ffmpeg fails here instead of skipping.
+        env:
+          DISPATCH_VOICE_REQUIRE_FFMPEG: "1"
         run: uv run pytest -q
 
   client:

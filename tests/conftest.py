@@ -176,3 +176,26 @@ def idle_cpu():
     now = _busy_cores()
     if max(load, now) > BUSY_CORES_MAX:
         pytest.skip(f"CPU timing budget: box busy (load {load:.1f}, {now:.1f} cores now)")
+
+
+# --------------------------------------------------------------------------- #
+# ffmpeg-backed tests: skip, never fail, on a box without ffmpeg
+# --------------------------------------------------------------------------- #
+# audio.decode() raises RuntimeError("ffmpeg is not installed") when the binary is
+# absent. A test that hits exactly that is reported as a skip with a clear reason
+# instead of a failure, so a dev box without ffmpeg is not red. Every other error
+# stays a failure. CI installs ffmpeg and sets DISPATCH_VOICE_REQUIRE_FFMPEG=1,
+# which turns the skip back into a failure (a missing binary there is a real fault).
+_NO_FFMPEG = "ffmpeg is not installed"
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+    if os.environ.get("DISPATCH_VOICE_REQUIRE_FFMPEG") == "1":
+        return
+    if rep.failed and call.excinfo is not None and call.excinfo.errisinstance(RuntimeError) \
+            and _NO_FFMPEG in str(call.excinfo.value):
+        rep.outcome = "skipped"
+        rep.longrepr = (str(item.path), item.location[1] or 0, "Skipped: needs ffmpeg (not on PATH)")
