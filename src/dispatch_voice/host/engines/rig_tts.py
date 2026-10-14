@@ -59,6 +59,7 @@ log = logging.getLogger("dispatch.voice")
 POLL_S = 0.02
 REPLIES_KEEP = 16
 SEQ_KEEP = 256
+RESYNC_WAIT_S = 1.5     # a re-PUT of the voice conditionals (~0.8 MB over the tailnet)
 
 
 class _Fallback(Exception):
@@ -78,6 +79,7 @@ class _ReplyState:
     seed: int
     ctx: _rig.TtsCtx | None = None
     reason: str | None = None
+    resynced: bool = False           # the voice was re-registered once for this reply
 
 
 class ReplyEngine:
@@ -121,6 +123,13 @@ class ReplyEngine:
             yield from self.cpu.stream(text, profile_id, stop)
             return
         st = self._state_for((rid or "", int(gen)), profile_id)
+        if st.choice == "rig" and self.rig.local_only(profile_id):
+            # A voice the rig never speaks (the role-play narrator's built-in voice):
+            # THIS piece is the CPU's, the reply stays on the rig for its cloned
+            # pieces. Moving the whole reply here is what changed the speaker mid-reply.
+            self.conn._need_cpu()
+            yield from self.cpu.stream(text, profile_id, stop)
+            return
         if st.choice == "rig":
             try:
                 yield from self._rig_sentence(st, text, profile_id, stop, int(seq))
@@ -128,10 +137,32 @@ class ReplyEngine:
             except _Stopped:
                 return
             except _Fallback as f:
+                if f.reason == "unknown_voice" and not st.resynced and self._reregister(st, profile_id):
+                    # The rig lost the voice (or it was never stored): re-registered, so
+                    # the sentence is retried once on the rig, not the CPU's other timbre.
+                    try:
+                        yield from self._rig_sentence(st, text, profile_id, stop, int(seq))
+                        return
+                    except _Stopped:
+                        return
+                    except _Fallback as f2:
+                        f = f2
                 self._to_cpu(st, f.reason)
             if stop is not None and stop.is_set():
                 return
         yield from self.cpu.stream(text, profile_id, stop)
+
+    def _reregister(self, st: _ReplyState, profile_id: str | None) -> bool:
+        """Once per reply: drop the failed context and wait (bounded) for the voice
+        to be PUT again. False = still not stored: the reply goes to the CPU."""
+        st.resynced = True
+        c, st.ctx = st.ctx, None
+        if c is not None:
+            self.conn.cancel_ctx(c)
+        # (the rig's own `unknown_voice` already started the re-PUT: _rig_sentence)
+        if not self.rig.syncing(profile_id):
+            return False                               # nothing is on its way: no pointless wait
+        return self.rig.wait_voice(profile_id, RESYNC_WAIT_S)
 
     def _state_for(self, key: tuple, profile_id: str | None) -> _ReplyState:
         with self._lock:
@@ -141,7 +172,11 @@ class ReplyEngine:
             prev = self._open
             if prev is not None and prev.ctx is not None:
                 self.conn.close_ctx(prev.ctx)          # the previous reply is complete
-            on_rig = bool(self.conn.usable()) and self.rig.voice_ref(profile_id) is not None
+            # A reply that opens with narration (a built-in voice the rig never speaks)
+            # still belongs on the rig when the session's cloned voice is stored there.
+            on_rig = bool(self.conn.usable()) and (
+                self.rig.voice_ref(profile_id) is not None
+                or (self.rig.local_only(profile_id) and self.rig.has_rig_voice()))
             st = _ReplyState(key, "rig" if on_rig else "cpu", _rig.random_seed())
             self._replies[key] = st
             while len(self._replies) > REPLIES_KEEP:

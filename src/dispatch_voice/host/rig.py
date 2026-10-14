@@ -1529,6 +1529,33 @@ class RigSession:
         elif res == "token":
             self.voices.pop(profile_id, None)
 
+    def local_only(self, profile_id: str | None) -> bool:
+        """True for a voice the rig never speaks (a built-in Kokoro voice, e.g. the
+        role-play narrator): its pieces are the CPU's by design and say nothing about
+        the rig's health or the reply's engine."""
+        from .tts import builtin_id
+        return builtin_id(profile_id) is not None
+
+    def has_rig_voice(self) -> bool:
+        """At least one cloned voice is stored on the rig for this session."""
+        return bool(self.voices)
+
+    def syncing(self, profile_id: str | None) -> bool:
+        """A (re-)registration of this voice is in flight."""
+        return bool(self._pending.get(profile_id)) or "syncing" in self.sync.state.values()
+
+    def wait_voice(self, profile_id: str | None, timeout_s: float,
+                   clock=time.monotonic, sleep=time.sleep) -> bool:
+        """From a synthesis thread: wait (bounded) for a voice's sync to land, e.g. the
+        background re-PUT after the rig said ``unknown_voice``. True when it is stored."""
+        end = clock() + max(0.0, timeout_s)
+        while True:
+            if self.voice_ref(profile_id) is not None:
+                return True
+            if clock() >= end:
+                return False
+            sleep(0.02)
+
     def resync_threadsafe(self, profile_id: str | None) -> None:
         """``unknown_voice`` on ``tts.open``: PUT again (once), in the background."""
         self.voices.pop(profile_id, None)

@@ -233,3 +233,61 @@ async def test_reply_done_closes_the_ctx_at_once_and_only_its_own(live):
     await asyncio.to_thread(say, eng, "Next.", seq=2, rid="r2")
     assert len(fake.of("tts.open")) == 2 and len(fake.of("tts.close")) == 1
     assert fake.errors == []
+
+
+async def test_a_narrator_piece_does_not_move_the_cloned_voice_off_the_rig(live):
+    """Role-play: dialogue in the cloned voice, narration in a built-in voice the rig
+    never speaks. The narration is the CPU's; the reply (its dialogue) stays on the rig,
+    so the speaker never changes mid-reply (2026-10-15: 5 replies switched engines)."""
+    fake, conn, cpu, eng = live
+    out1, v1 = await asyncio.to_thread(say, eng, "\"Two meetings today.\"", seq=1)
+    out2, v2 = await asyncio.to_thread(say, eng, "She smiles.", seq=2, voice="builtin:af_heart")
+    out3, v3 = await asyncio.to_thread(say, eng, "\"Want details?\"", seq=3)
+    assert v1 == [fake.tts_value] and v2 == [FakeCpuTTS.VALUE] and v3 == [fake.tts_value]
+    assert cpu.said == ["She smiles."]
+    assert len(fake.of("tts.open")) == 1
+    assert rig.METRICS.last_fallback_reason != "unknown_voice"
+    assert conn.usable()
+
+
+async def test_a_reply_that_opens_with_narration_still_uses_the_rig(live):
+    fake, conn, cpu, eng = live
+    out1, v1 = await asyncio.to_thread(say, eng, "She smiles.", seq=1, voice="builtin:af_heart")
+    out2, v2 = await asyncio.to_thread(say, eng, "\"Hello.\"", seq=2)
+    assert v1 == [FakeCpuTTS.VALUE] and v2 == [fake.tts_value]
+    assert len(fake.of("tts.open")) == 1
+
+
+async def test_unknown_voice_is_reregistered_and_retried_on_the_rig(live, monkeypatch):
+    """The rig forgot the voice: PUT it again (bounded) and speak the sentence on the
+    rig, rather than moving the reply to the CPU's other timbre."""
+    fake, conn, cpu, eng = live
+    fake.voices = set()
+    sess = eng.rig
+
+    def resync(pid):
+        sess.voices.pop(pid, None)
+        sess._pending[pid] = True
+
+        def landed():
+            fake.voices = {VOICE}
+            sess.voices[pid] = VOICE
+            sess._pending.pop(pid, None)
+        threading.Timer(0.15, landed).start()
+
+    monkeypatch.setattr(sess, "resync_threadsafe", resync)
+    t0 = time.monotonic()
+    out, values = await asyncio.to_thread(say, eng, "Hello.", seq=1)
+    assert values == [fake.tts_value] and cpu.said == [], values
+    assert time.monotonic() - t0 < 1.0
+    out, values = await asyncio.to_thread(say, eng, "More.", seq=2)
+    assert values == [fake.tts_value]
+
+
+async def test_unknown_voice_with_no_sync_on_its_way_goes_straight_to_the_cpu(live, monkeypatch):
+    fake, conn, cpu, eng = live
+    fake.voices = set()
+    monkeypatch.setattr(eng.rig, "resync_threadsafe", lambda pid: eng.rig.voices.pop(pid, None))
+    t0 = time.monotonic()
+    out, values = await asyncio.to_thread(say, eng, "Hello.", seq=1)
+    assert values == [FakeCpuTTS.VALUE] and time.monotonic() - t0 < 0.5
