@@ -300,8 +300,10 @@ def test_serve_static_hashes_the_real_static_dir(fake_ctx):
 
 
 async def test_thread_websocket_gate_and_unavailable(fake_ctx, fake_engines):
+    seen = []
+
     async def handler(ws, sock):
-        assert sock.bot.safe is False and sock.thread.id == "t-voice-1"
+        seen.append(sock.thread.id)
         sock.touch()
         await sock.close_unavailable("Voice isn't set up on this server")
 
@@ -309,10 +311,18 @@ async def test_thread_websocket_gate_and_unavailable(fake_ctx, fake_engines):
     ws = fake_engines.FakeWS()
     await fake_ctx.connect("voice", "t-voice-1", ws)
     assert ws.accepted and ws.closed_with == 1013 and fake_ctx.touched == ["tok-unlocked"]
+    # 1.3.1 (DisPatch 2.3.1): a `safe` bot's thread reaches the handler too — voice
+    # is unlocked-only, the tier is the device's, not the bot's — and gets the
+    # add-on's own refusal, not the gate's.
     fake_ctx.add_thread("t-safe", "alpha")
     ws2 = fake_engines.FakeWS()
     await fake_ctx.connect("voice", "t-safe", ws2)
-    assert not ws2.accepted and ws2.closed_with == 1008               # pre-accept refusal
+    assert ws2.accepted and ws2.closed_with == 1013
+    # A thread that does not exist is still refused before accept.
+    ws3 = fake_engines.FakeWS()
+    await fake_ctx.connect("voice", "t-nope", ws3)
+    assert not ws3.accepted and ws3.closed_with == 1008               # pre-accept refusal
+    assert seen == ["t-voice-1", "t-safe"]
     assert fake_ctx.socket_count("voice") == (0, 3)
 
 

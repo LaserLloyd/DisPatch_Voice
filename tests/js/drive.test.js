@@ -17,7 +17,7 @@ import {
   reconnectDecision, tapAction, thinkingPhase, hintKey, createUndoWindow,
   createHeartbeat, createHeardTracker, turnErrorKey, errorFrameKey, EARCONS, timingsLine,
   displayState, firstRunTipKey, linkNoticeKey, createEotTone, createQuietTimer,
-  pushHistory, noteMetrics, getLastMetrics, initDrive, outputRoute, outputMenuModel,
+  pushHistory, noteMetrics, getLastMetrics, initDrive, outputRoute, outputMenuModel, TYPED_MAX_CHARS,
   GIVE_UP_MS, WAITING_AFTER_MS, WAITING_RETRY_MS, UNDO_MS, PING_EVERY_MS, PONG_TIMEOUT_MS,
   EOT_TONE_HOLD_MS, GOTIT_MIN_HOLD_MS, FIRST_RUN_OPENS, QUIET_GRACE_MS, PRE_READY_MS,
   ACTIVITY_EVERY_MS, FOLLOW_PAUSE_MS,
@@ -384,10 +384,10 @@ function fakeAudioWorld() {
   return world;
 }
 
-async function openOverlay(world, { lang = 'en', toast = [], openSettings = null, ctx: extra = {} } = {}) {
+async function openOverlay(world, { lang = 'en', toast = [], openSettings = null, ctx: extra = {}, devices = [] } = {}) {
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
-    value: { getUserMedia: async () => { world.micStarted += 1; return { getTracks: () => [{ stop() {} }] }; }, enumerateDevices: async () => [] },
+    value: { getUserMedia: async () => { world.micStarted += 1; return { getTracks: () => [{ stop() {} }] }; }, enumerateDevices: async () => devices },
   });
   const fs = fakeShell({ lang });
   const prev = bindShell(fs.shell);
@@ -1489,6 +1489,7 @@ test('overlay: "Type instead of talking" opens the chat muted with the box out; 
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       assert.equal(compose.hidden, false);
       assert.ok(document.querySelector('.drive-overlay'));
+      assert.equal(document.activeElement, o.overlay.querySelector('.drive-ring'), 'the focus stays inside the overlay (Esc and Tab keep working)');
       // The switch off (from the sheet, say): the box goes away; on again: muted + box.
       saveDriveSettings(globalThis.localStorage, { typedInput: false });
       assert.equal(compose.hidden, true);
@@ -1519,6 +1520,27 @@ test('overlay: a stopped chat shows Try again / Back to chat and no Type button;
   }, world.globals);
 });
 
+test('overlay: a typed message over TYPED_MAX_CHARS is not sent and not lost — a notice says why (the server would answer bad_frame)', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      o.overlay.querySelector('.drive-type').click();
+      const input = o.overlay.querySelector('.drive-compose-input');
+      input.value = 'x'.repeat(TYPED_MAX_CHARS + 1);
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.equal(o.ws.frames('typed').length, 0);
+      assert.equal(input.value.length, TYPED_MAX_CHARS + 1, 'kept for trimming');
+      assert.equal(o.overlay.querySelector('.drive-notice').textContent, EN.drive.compose_too_long.replace('{n}', String(TYPED_MAX_CHARS)));
+      // Exactly the limit goes through.
+      input.value = 'y'.repeat(TYPED_MAX_CHARS);
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.equal(o.ws.frames('typed').length, 1);
+      assert.equal(input.value, '');
+    } finally { o.d.close(); o.restore(); }
+  }, world.globals);
+});
+
 // ------------------------------------------------ the Output button (1.3.0) ---
 
 test('outputRoute / outputMenuModel: labels become routes; the saved sink is current, a gone one falls back to the first', () => {
@@ -1539,6 +1561,25 @@ test('overlay: no Output button where AudioContext has no setSinkId (a phone: th
     try {
       assert.equal(o.overlay.querySelector('.drive-output').hidden, true);
     } finally { o.d.close(); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: a remembered output is named on the button from the start, not only after a tap', dom, async () => {
+  const world = fakeAudioWorld();
+  world.globals.AudioContext.prototype.setSinkId = async () => {};
+  await withDom(async () => {
+    saveDriveSettings(globalThis.localStorage, { sinkId: 'bt1' });
+    const o = await openOverlay(world, { devices: [
+      { kind: 'audiooutput', deviceId: 'default', label: 'Default' },
+      { kind: 'audiooutput', deviceId: 'bt1', label: 'Headphones (Bluetooth)' },
+    ] });
+    try {
+      await settle();
+      const btn = o.overlay.querySelector('.drive-output');
+      assert.equal(btn.hidden, false);
+      assert.equal(btn.textContent, EN.drive.output_bluetooth);
+      assert.equal(btn.getAttribute('aria-label'), EN.drive.output_aria_now.replace('{name}', 'Headphones (Bluetooth)'));
+    } finally { o.d.close(); o.restore(); saveDriveSettings(globalThis.localStorage, { sinkId: '' }); }
   }, world.globals);
 });
 
