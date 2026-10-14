@@ -149,14 +149,14 @@ def _render_stock_extras(pid: str) -> None:
 # Which profile speaks
 # --------------------------------------------------------------------------- #
 
-def resolve_profile(bot_id: str | None) -> str | None:
+def resolve_profile(bot_id: str | None, voice: str | None = None) -> str | None:
     """bot.voice if that profile exists (or names a built-in voice while a
     provider is installed), else the store default, else, with no built-in
     voice plugin, the stock voice once it exists, else None."""
     from . import registry
     from .tts import builtin_id
     st = store()
-    want = context.bot_voice(bot_id)
+    want = voice or context.bot_voice(bot_id)
     if builtin_id(want):
         if registry.has_builtin_voices():
             return want

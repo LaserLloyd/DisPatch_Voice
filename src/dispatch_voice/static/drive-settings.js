@@ -1355,11 +1355,25 @@ export function botVoicePill(bot, status, onChange, { saveBotSettings = (id, pat
     bc.addEventListener('change', () => saveFlag('backchannel', bc)(bc.checked));
     const fu = switchInput(per.follow_up !== false, t('drive.bot_follow_up'), () => {});
     fu.addEventListener('change', () => saveFlag('follow_up', fu)(fu.checked));
+    // "Voice on locked devices": the add-on's own per-bot setting (voice.yaml
+    // `bots.<id>.locked_voice`), saved at once. "Same as standard" (value "") is first.
+    let lockedVoice = typeof per.locked_voice === 'string' ? per.locked_voice : '';
+    const lockedOpts = [{ value: '', label: t('drive.bot_locked_voice_same') },
+      ...voiceOptions(st, { current: lockedVoice })];
+    const lockedSel = selectInput(t('drive.bot_locked_voice'), lockedOpts, lockedVoice, async (v) => {
+      lockedSel.disabled = true;
+      try { await saveBotSettings(bot.id, { locked_voice: v }); lockedVoice = v; per.locked_voice = v; }
+      catch (e) { lockedSel.value = lockedVoice; if (notify) notify(saveErrorText(e)); }
+      lockedSel.disabled = false;
+    });
     pop = el('div', {
       class: 'menu bm-voice-pop', role: 'dialog', 'aria-label': t('drive.bot_voice_aria', { name: bot.name }),
     }, [el('div', { class: 'dev-group-body' }, [
       row(t('drive.voice'), '', [voiceSel, previewButton(() => voiceSel.value || st.default_voice || '', notify)], { id: `bm-voice-${bot.id}` }),
       row(t('drive.rp_speech'), '', [rpSel], { id: `bm-rp-${bot.id}` }),
+      row(t('drive.bot_locked_voice'), t('drive.bot_locked_voice_hint'),
+        [lockedSel, previewButton(() => lockedSel.value || voiceSel.value || st.default_voice || '', notify)],
+        { id: `bm-locked-voice-${bot.id}` }),
       row(t('drive.bot_backchannel'), t('drive.bot_backchannel_hint'), [bc]),
       row(t('drive.bot_follow_up'), t('drive.bot_follow_up_hint'), [fu]),
     ]), el('p', { class: 'dev-group-hint bm-voice-note', text: t('drive.pop_save_note') })]);

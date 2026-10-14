@@ -130,6 +130,9 @@ OPUS_DOWN_KBPS = (24, 16)
 OPUS_UP_KBPS = (16, 12)
 #: Per-bot keys of ``bots.<id>`` (contracts §F.1).
 BOT_KEYS = ("backchannel", "follow_up")
+#: The per-bot voice a LOCKED (Safe-Mode) device hears instead of the bot's standard
+#: voice: a voice id, "" = the same as standard. A string, so it is not in BOT_KEYS.
+BOT_LOCKED_VOICE = "locked_voice"
 #: Values of DISPATCH_VOICE that force voice on; ``auto`` (or unset) leaves it
 #: to the switch; anything else forces it off.
 FORCE_ON = ("1", "true", "on", "yes")
@@ -329,6 +332,12 @@ class VoiceSettings:
         return {"backchannel": bool(conf.get("backchannel", False)),
                 "follow_up": bool(conf.get("follow_up", backend != "advisor"))}
 
+    def locked_voice(self, bot_id: str | None) -> str:
+        """The voice a locked device hears for this bot, or "" (same as standard)."""
+        conf = self.bots.get(bot_id or "", {}) if isinstance(self.bots, dict) else {}
+        v = conf.get(BOT_LOCKED_VOICE)
+        return v.strip() if isinstance(v, str) else ""
+
     def status(self) -> dict:
         """Safe to show an unlocked client: no paths, no keys."""
         miss = self.missing()
@@ -436,6 +445,9 @@ def clean_bots(raw) -> dict:
         if not isinstance(bot_id, str) or not _BOT_ID_RE.match(bot_id) or not isinstance(conf, dict):
             continue
         entry = {k: conf[k] for k in BOT_KEYS if isinstance(conf.get(k), bool)}
+        lv = clean_voice_id(conf.get(BOT_LOCKED_VOICE)) if BOT_LOCKED_VOICE in conf else None
+        if lv is not None:
+            entry[BOT_LOCKED_VOICE] = lv        # "" is kept: it is how a PATCH clears the override
         if entry:
             out[bot_id] = entry
     return out

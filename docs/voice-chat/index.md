@@ -73,7 +73,10 @@ discovers through an entry point; nothing in DisPatch names it.
 Voice chat understands and speaks English only for now. It is available to an
 unlocked device and, since 1.3.3 with DisPatch 2.3.4, to a locked (Safe Mode)
 device on the bots it can chat with; DisPatch runs those turns with its locked
-rules. The voice settings stay unlocked-only.
+rules. The voice settings stay unlocked-only. Since 1.3.4 a bot can speak with a
+different voice on locked devices (`bots.<id>.locked_voice` in `voice.yaml`, the
+"Voice on locked devices" picker in the Bots-tab Voice popover; empty = the standard
+voice). The server picks it from the socket's locked flag; a locked device cannot read it.
 
 ## Reading the code
 

@@ -516,6 +516,7 @@ test('Bots popover: voice and role-play text wait for Save (onChange); the two s
 // ------------------------------------------------------ review fixes ---
 
 const EN = loadBundle('en');
+const EN_LOCKED_SAME = 'Same as standard';
 
 test('Settings → Voice: Follow-up is three-state — the bot\'s default, On, Off (review L4)', dom, () => withDom(async () => {
   const { shell } = fakeShell();
@@ -683,5 +684,47 @@ test('quick sheet: without a phone voice the slow-link row shows what will reall
     }
     localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, slowLink: 'wait' }));
     assert.equal(chosen(buildQuickSheet({ status: ON_STATUS(), bot: null, voices: [], android: false, lang: 'en' })), 'wait');
+  } finally { bindShell(prev); }
+}));
+
+test('Bots popover: "Voice on locked devices" starts on Same as standard, saves at once to voice.yaml, and clears with ""', dom, async () => {
+  const fetch = fakeFetch({ 'PATCH /api/voice/settings': (req) => req.body });
+  await withDom(async () => {
+    const { shell } = fakeShell();
+    const prev = bindShell(shell);
+    try {
+      const changes = [];
+      const st = { ...ON_STATUS(), bots: { atlas: { backchannel: false, follow_up: true } } };
+      const pill = botVoicePill({ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '' }, st, (p) => changes.push(p));
+      document.body.append(pill);
+      pill.querySelector('.bm-voice-pill').click();
+      const pop = pill.querySelector('.bm-voice-pop');
+      const sel = pop.querySelector('#bm-locked-voice-atlas select');
+      assert.ok(sel, 'the picker is in the popover');
+      assert.equal(sel.value, '', 'default: Same as standard');
+      assert.equal(sel.options[0].value, '');
+      assert.equal(sel.options[0].textContent, EN_LOCKED_SAME);
+      assert.ok(sel.options.length > 2, 'then the normal voice list');
+      assert.ok(pop.querySelector('#bm-locked-voice-atlas .drive-preview'), 'with a preview button');
+      sel.value = 'p1'; sel.dispatchEvent(new Event('change'));
+      await settle();
+      assert.deepEqual(fetch.calls[0].body, { bots: { atlas: { locked_voice: 'p1' } } });
+      assert.deepEqual(changes, [], 'not a DisPatch bot field: it never waits for the Bots Save');
+      sel.value = ''; sel.dispatchEvent(new Event('change'));
+      await settle();
+      assert.deepEqual(fetch.calls[1].body, { bots: { atlas: { locked_voice: '' } } });
+    } finally { bindShell(prev); }
+  }, { fetch });
+});
+
+test('Bots popover: a saved locked voice is shown selected', dom, () => withDom(async () => {
+  const { shell } = fakeShell();
+  const prev = bindShell(shell);
+  try {
+    const st = { ...ON_STATUS(), bots: { atlas: { locked_voice: 'p1' } } };
+    const pill = botVoicePill({ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '' }, st, () => {});
+    document.body.append(pill);
+    pill.querySelector('.bm-voice-pill').click();
+    assert.equal(pill.querySelector('#bm-locked-voice-atlas select').value, 'p1');
   } finally { bindShell(prev); }
 }));

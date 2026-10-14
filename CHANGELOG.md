@@ -4,6 +4,17 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+## [1.3.4] — 2026-10-14
+
+### Added
+- **Voice on locked devices.** Each bot can have its own voice for locked
+  (Safe Mode) devices, set in the Bots-tab Voice popover (or `locked_voice` under
+  `bots.<id>` in `voice.yaml`). Empty, the default, means the same as the bot's
+  standard voice. A voice chat from a locked device speaks with it; every other
+  device keeps the standard voice. The host decides from the socket's locked
+  flag, never from anything the client sends. The setting is unlocked-only to
+  read or change, and is not part of the `locked_status` a locked device sees.
+
 ## [1.3.3] — 2026-10-14
 
 ### Changed

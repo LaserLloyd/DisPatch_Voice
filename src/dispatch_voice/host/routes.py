@@ -144,12 +144,20 @@ def _render_cached(settings, tts_engine, profile_id, text: str, *, wait_idle: bo
     return pcm
 
 
-def voice_for_bot(settings: VoiceSettings, tts_engine, bot_id: str | None) -> str | None:
+def voice_for_bot(settings: VoiceSettings, tts_engine, bot_id: str | None,
+                  locked: bool = False) -> str | None:
     """The profile id the TTS engine speaks with for this bot (None = the
     engine's default voice). The acknowledgement lines of that voice are the
     render queue's (``host/acks.py``): the old per-profile fillers and the
     per-process ack list are gone (SPEC §6.2)."""
     from . import registry
+    if locked:
+        # A locked (Safe-Mode) device hears the bot's "voice on locked devices" when one
+        # is set and still exists; otherwise the standard voice. Decided by the caller
+        # from the socket's locked state, never from anything the client sent.
+        want = settings.locked_voice(bot_id)
+        if want and classify_voice(settings, want) in ("profile", "builtin"):
+            return registry.resolve_profile(bot_id, voice=want)
     return registry.resolve_profile(bot_id)
 
 
@@ -686,8 +694,10 @@ def _vc_mod():
 
 
 def _validate_bots(raw) -> dict:
-    """``bots: {<id>: {backchannel?, follow_up?}}`` for PATCH: a known, non-Safe
-    bot (when the context lists bots), boolean flags only, nothing else."""
+    """``bots: {<id>: {backchannel?, follow_up?, locked_voice?}}`` for PATCH: a known
+    bot (when the context lists bots), boolean flags, and ``locked_voice`` (a voice
+    id that exists, or "" for the same as standard), nothing else."""
+    from . import config as _vc
     from .config import clean_bots
     if not isinstance(raw, dict):
         raise HTTPException(422, "bots takes an object of {bot id: {backchannel, follow_up}}")
@@ -699,10 +709,19 @@ def _validate_bots(raw) -> dict:
             raise HTTPException(422, f"Unknown bot: {bot_id[:40]}")
         if not isinstance(conf, dict):
             raise HTTPException(422, f"bots.{bot_id[:40]} takes an object")
-        extra = set(conf) - set(BOT_KEYS)
+        extra = set(conf) - set(BOT_KEYS) - {"locked_voice"}
         if extra:
             raise HTTPException(422, f"Unknown setting: bots.{bot_id[:40]}.{min(extra)}")
+        if "locked_voice" in conf:
+            lv = conf["locked_voice"]
+            if lv is None or lv == "":
+                conf["locked_voice"] = ""
+            elif (not isinstance(lv, str) or _vc.clean_voice_id(lv) is None
+                  or classify_voice(load_settings(), lv) not in ("profile", "builtin")):
+                raise HTTPException(422, f"Unknown voice: {str(lv)[:80]}")
         for k, v in conf.items():
+            if k == "locked_voice":
+                continue
             if not isinstance(v, bool):
                 raise HTTPException(422, f"bots.{bot_id[:40]}.{k} must be true or false")
     return clean_bots(raw)
@@ -780,6 +799,10 @@ def effective_bots(settings: VoiceSettings) -> dict:
     for bid in settings.bots:            # a bot the file names but the context does not (yet)
         if bid not in out and isinstance(bid, str):
             out[bid] = settings.bot(bid)
+    for bid, row in out.items():         # only when set, so an untouched bot's row is unchanged
+        lv = settings.locked_voice(bid)
+        if lv:
+            row["locked_voice"] = lv
     return out
 
 

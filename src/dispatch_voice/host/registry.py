@@ -217,7 +217,9 @@ def set_persona_provider(fn) -> None:
     _persona_provider = fn
 
 
-def resolve_profile(bot_id: str | None) -> str | None:
+def resolve_profile(bot_id: str | None, voice: str | None = None) -> str | None:
+    """The profile that speaks for ``bot_id``. ``voice`` (a locked device's
+    override, already checked to exist) takes the place of the bot's saved voice."""
     if _profile_resolver is None:
         # No profile store (Chatterbox models not fetched): a bot can still
         # pick a built-in voice. The bot's saved voice comes from DisPatch
@@ -225,13 +227,18 @@ def resolve_profile(bot_id: str | None) -> str | None:
         try:
             from . import context
             from .tts import builtin_id
-            want = context.bot_voice(bot_id)
+            want = voice or context.bot_voice(bot_id)
             # A saved built-in voice only means something while a provider
             # is installed; without one the engine's default voice speaks.
             return want if builtin_id(want) and has_builtin_voices() else None
         except Exception:
             return None
     try:
+        if voice:
+            try:
+                return _profile_resolver(bot_id, voice=voice) or None
+            except TypeError:                      # a resolver that predates the override
+                pass
         return _profile_resolver(bot_id) or None
     except Exception:
         log.exception("voice: profile resolver failed; using the default voice")

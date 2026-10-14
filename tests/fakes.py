@@ -96,6 +96,8 @@ class ThreadSocket:
     #: Amendment T1-1: callbacks the host runs before it closes this socket
     #: 4001 "replaced" (a newer socket of the same session took the slot).
     on_replaced: Callable[[Callable[[], Any]], None] = field(default_factory=lambda: (lambda fn: None))
+    #: DisPatch 2.3.4: the socket came from a locked (Safe-Mode) device.
+    locked: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -383,7 +385,7 @@ class FakeContext:
         return self.open_sockets.get(name, 0), self.websockets.get(name, {}).get("max_total", 3)
 
     def thread_socket(self, thread_id: str, *, ws=None, token: str | None = "tok-unlocked",
-                      live: Callable[[], bool] | None = None) -> ThreadSocket:
+                      live: Callable[[], bool] | None = None, locked: bool = False) -> ThreadSocket:
         """The ThreadSocket the gate would hand the handler (a test builds one directly)."""
         thread = self._db.get_thread(thread_id) or self.add_thread(thread_id)
         bot = self.bots.get(thread.bot_id) or BotView(thread.bot_id, thread.bot_id)
@@ -400,7 +402,7 @@ class FakeContext:
                             token=token, session_live=live or (lambda: True),
                             touch=lambda: self.touched.append(token),
                             close_unavailable=close_unavailable,
-                            on_replaced=replaced.append)
+                            on_replaced=replaced.append, locked=locked)
         sock.unavailable_reasons = closed      # type: ignore[attr-defined]
         sock.replaced_callbacks = replaced     # type: ignore[attr-defined]
 

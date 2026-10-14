@@ -274,11 +274,18 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
     _SESSIONS[id(reservation)] = reservation
     try:
         try:
+            # The socket's locked flag is DisPatch's own (the gate stamps it from the
+            # tier); only a socket that says True gets the locked-device voice.
+            locked = getattr(sock, "locked", False) is True
             profile_id = await asyncio.to_thread(
-                voice_for_bot or (lambda b: routes.voice_for_bot(settings, tts_engine, b)), bot_id)
+                voice_for_bot or ((lambda b: routes.voice_for_bot(settings, tts_engine, b, locked=True))
+                                  if locked else (lambda b: routes.voice_for_bot(settings, tts_engine, b))),
+                bot_id)
         except Exception:
             log.exception("voice: voice profile lookup failed; using the default voice")
             profile_id = None
+        log.info("voice: %s speaks with %s (%s device)", thread_id, profile_id or "the default voice",
+                 "locked" if locked else "unlocked")
         conv = await asyncio.to_thread(session_options, settings, tts_engine, sock.bot, profile_id)
         rt_pieces = await asyncio.to_thread(realtime_options, settings, stt_engine, tts_engine,
                                             profile_id, conv.get("narrator_id"), _device_of(ws))
