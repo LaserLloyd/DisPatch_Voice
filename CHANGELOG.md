@@ -4,6 +4,24 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+## [1.3.5] — 2026-10-15
+
+### Fixed
+- **A reply no longer changes voice half-way.** With role-play speech on and a
+  built-in narrator voice, the first narrator piece used to move the whole reply
+  from the GPU rig to this computer, so the cloned dialogue voice changed
+  mid-reply and the rest came slower. Now only that piece is spoken locally and
+  the reply stays on the rig. A reply that opens with narration can start on the
+  rig too.
+- **The rig forgetting a voice is recovered, not fallen back from.** When the rig
+  answers `unknown_voice` (evicted or restarted) while a re-upload is already in
+  flight, the host waits up to 1.5 s for it and retries that sentence on the rig
+  once per reply before using this computer.
+
+### Changed
+- CI installs ffmpeg and libopus; on a machine without ffmpeg the tests that need
+  it skip with a reason instead of failing.
+
 ## [1.3.4] — 2026-10-14
 
 ### Added
