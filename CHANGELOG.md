@@ -4,6 +4,10 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+## [1.3.2] — 2026-10-14
+
+A review pass over 1.2.0–1.3.1.
+
 ### Fixed
 - **Voice chat screen, Type:** a message longer than the wire's 4,000-character
   bound is refused on the device with a notice and kept in the box; it used to
