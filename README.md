@@ -4,11 +4,13 @@
 
 DisPatch runs fully without it. With the add-on installed, DisPatch gains a microphone button in each chat and a Settings → Voice page. The add-on is the whole feature: the speech pipeline (Silero VAD + Smart Turn v3.2 for turn taking, Parakeet TDT 0.6B for recognition), the voice session, the voices (cloned voices and a stock synthetic voice on Chatterbox-Turbo ONNX; optional built-in voices through a plugin), the settings routes and its own frontend assets. DisPatch keeps only a small, stable extension host and the page that explains how to install this when it is absent.
 
+On the call screen there are three round buttons: **Mute**, **Type** (type your turn instead of speaking it; the reply is still spoken) and **Hang up**, plus an **Output** button on desktop browsers that choose where replies play (phone browsers cannot, so it is not shown there).
+
 Docs: [docs/voice-chat/](docs/voice-chat/index.md) (install and setup, the host side, turn taking, the protocol).
 
 ## Install, for DisPatch
 
-DisPatch 2.2.0 or later. Three steps; details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
+DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatch version](#which-dispatch-version)). Three steps; details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
 
 ```sh
 # 1. the add-on on DisPatch's environment: an editable overlay on the line that starts DisPatch
@@ -41,7 +43,20 @@ uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm o
 
 Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro` (`DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
 
-Voice chat understands and speaks English only for now. It works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with; every turn from a locked device runs with DisPatch's locked rules, and the voice settings stay unlocked-only.
+Voice chat understands and speaks English only for now. It works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with (the `safe` ones); every turn from a locked device, spoken or typed, runs with DisPatch's locked rules, and the voice settings stay unlocked-only. Since 1.3.4 a bot can use a different voice for locked devices: `bots.<id>.locked_voice` in `voice.yaml`, or the "Voice on locked devices" picker in the Bots-tab Voice popover. Empty (the default) means the bot's standard voice. The server picks it from the socket's locked flag, and a locked device cannot read the setting.
+
+### Which DisPatch version
+
+| Add-on feature | Add-on | DisPatch |
+|---|---|---|
+| Voice chat | 1.0 | 2.2.0 |
+| GPU rig engine (SpeechForge) | 1.1.0 | 2.2.0 |
+| Type button (`typed` frame), Output button | 1.2.0, 1.3.0 | 2.2.0 |
+| Voice on a `safe` bot, for an unlocked device | 1.3.1 | 2.3.1 |
+| Voice on locked devices | 1.3.3 | 2.3.4 |
+| Per-bot `locked_voice` | 1.3.4 | 2.3.4 |
+
+On an older DisPatch the newer buttons are simply not available or the socket is refused, as the [changelog](CHANGELOG.md) notes per release.
 
 ## Engine
 
@@ -64,7 +79,7 @@ Models are pinned to a Hugging Face commit (`MODEL_REVISION` in `engine.py`) and
 
 ## Optional: GPU rig
 
-A machine with an NVIDIA GPU running SpeechForge (a speech server speaking the `sf.1` protocol) can do the speech recognition, the end-of-turn score and the reply voice, so replies start sooner. It is off until you set it up:
+Since 1.1.0, a machine with an NVIDIA GPU running SpeechForge (a speech server speaking the `sf.1` protocol) can do the speech recognition, the end-of-turn score and the reply voice, so replies start sooner. It is off until you set it up:
 
 ```yaml
 # <data>/voice.yaml
