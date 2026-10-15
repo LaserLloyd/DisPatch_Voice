@@ -105,15 +105,55 @@ does without a rig.
 
 ## Voices
 
-The rig speaks a cloned voice from its **conditionals** (the `voice.npz` the Voice cloning
-tool builds), never from the reference recording, which stays on this computer. At the
-start of each voice chat the add-on checks whether the rig already has the bot's voice (and
-the narrator voice) by its sha256 and uploads it once if not, over HTTP to the same server
-with the same token. A bot with no voice of its own speaks what this computer would: the
-default profile on the rig; with no default profile, a built-in plugin voice (here) or,
-without a plugin, the stock voice (on the rig). Deleting a voice profile here deletes its
-conditionals on the rig too (whenever an address and a token are set, even with the switch
-off).
+What the rig needs to speak a cloned voice depends on its voice engine. Its `ready` answer
+names the engine's voice format (`engines.tts.voice_format`); a rig that does not name one
+is a Chatterbox rig.
+
+**Chatterbox** (`chatterbox-npz`): the rig speaks a cloned voice from its **conditionals**
+(the `voice.npz` the Voice cloning tool builds), never from the reference recording, which
+stays on this computer. At the start of each voice chat the add-on checks whether the rig
+already has the bot's voice (and the narrator voice) by its sha256 and uploads it once if
+not, over HTTP to the same server with the same token.
+
+**Engines that clone from the recording** (Fish Audio Drama 3 and dots-tts, `dotstts-ref`;
+any format other than `chatterbox-npz`): these make a voice from the profile's reference
+recording and the words spoken in it, so conditionals are no use to them. By default the
+recording does not leave this computer, and a bot whose voice is a cloned profile then
+speaks here; Settings and the Voice lab say why ("the rig's voice engine needs the
+recording and sending it is off"). To use the rig for those voices, turn on Settings →
+Voice → *Send voice recordings to the rig*, or in `voice.yaml`:
+
+```yaml
+rig:
+  send_reference_clip: true    # default false
+```
+
+With it on, the add-on sends the profile's `reference.wav` (the trimmed clip the voice was
+cloned from) to the rig's `POST /v1/voices/from-reference` once, and records the voice the
+rig made in that profile's `profile.json` (`rig_voices`, per voice format: the rig's id,
+the transcript and the sha256 of the recording it was made from). Later voice chats only
+check that the rig still has it. It is made again when the rig no longer has it (a 404, or
+`unknown_voice` during a reply) or when the profile's recording changed.
+
+* **The transcript.** A Drama 3 voice made this way speaks with the recording's words as
+  its transcript. The add-on sends the profile's own transcript when it has one; profiles
+  do not have one today, so the rig transcribes the recording with its own speech
+  recognition and returns the words, which are kept with the voice and re-sent if it ever
+  has to be made again.
+* **The rig decides too.** The rig only accepts recordings when its owner allows it
+  (SpeechForge `voices.allow_reference_clip`); until then it answers "reference clips
+  disabled" and that bot speaks here. A recording the rig cannot use (too short after
+  trimming, or no words heard) is not sent again in that voice chat.
+* **Consent and licence.** Cloning a real person's voice needs that person's consent, which
+  the profile's consent record already asserts. Fish Audio's licence terms for Drama 3
+  apply to voices made on the rig, and following them is your responsibility, as it is
+  for the profile itself.
+
+A bot with no voice of its own speaks what this computer would: the default profile on the
+rig; with no default profile, a built-in plugin voice (here) or, without a plugin, the
+stock voice (on the rig). Deleting a voice profile here deletes its voices on the rig too:
+the conditionals and every voice the rig made from its recording (whenever an address and
+a token are set, even with the switch off).
 
 Built-in voices from a plugin (Kokoro, for example) stay on this computer: a bot that
 speaks one gets the rig's speech recognition and end-of-turn score, but its replies are

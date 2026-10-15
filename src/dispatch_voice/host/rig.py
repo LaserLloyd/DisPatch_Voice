@@ -110,6 +110,14 @@ CREDIT_MARGIN_MS = 100
 BUSY_STRIKES = 2
 #: ``ready.limits.max_text`` when the rig does not say (SpeechForge's default).
 MAX_TEXT_DEFAULT = 2000
+#: ``ready.engines.tts.voice_format`` of the Chatterbox engine: a voice is its
+#: conditionals (``voice.npz``). A rig that does not say is a Chatterbox one.
+CHATTERBOX_FORMAT = "chatterbox-npz"
+#: ``X-Reference-Transcript`` limit (characters) on ``POST /v1/voices/from-reference``.
+TRANSCRIPT_MAX = 2000
+#: ``POST /v1/voices/from-reference`` cleans, transcribes and encodes the clip on the
+#: rig: seconds, not milliseconds (it runs in the background, never in a turn).
+FROM_REFERENCE_TIMEOUT_S = 60.0
 
 TOKEN_ENV = "SPEECHFORGE_TOKEN"
 
@@ -142,13 +150,19 @@ class RigSettings:
     """``voice.yaml`` ``rig:`` (all optional; the defaults are ADDON-ENGINE §1's).
 
     ``url`` has no default: an address is a fact about one install, not a
-    default of a public package. The switch is off until the owner turns it on."""
+    default of a public package. The switch is off until the owner turns it on.
+
+    ``send_reference_clip``: a rig whose voice engine makes a voice from the
+    recording (``voice_format`` other than ``chatterbox-npz``, e.g. Fish Audio
+    Drama 3) gets the profile's ``reference.wav``. Off by default: the clip stays on
+    this computer (D3) and those replies are spoken here."""
     enabled: bool = False
     url: str = ""                         # ws://<rig>:1236/v1/realtime
     stt_final_deadline_ms: int = 350      # stt.flush -> stt.final, then the CPU tail (rig p99 172 + RTT 80 + margin)
     tts_start_deadline_ms: int = 800      # tts.text -> first audio, then that reply on the CPU (rig TTFA max ~520 + RTT + margin)
     ahead_ms: int = 3000                  # credit: audio rendered past what the phone played
     first_chunk_tokens: int = 15          # the rig's first TTS chunk
+    send_reference_clip: bool = False     # the reference recording may go to the rig (its engine needs it)
 
     @classmethod
     def from_mapping(cls, raw) -> RigSettings:
@@ -184,8 +198,9 @@ def clean_rig(raw) -> dict:
     out: dict = {}
     if not isinstance(raw, dict):
         return out
-    if isinstance(raw.get("enabled"), bool):
-        out["enabled"] = raw["enabled"]
+    for k in ("enabled", "send_reference_clip"):
+        if isinstance(raw.get(k), bool):
+            out[k] = raw[k]
     url = raw.get("url")
     if url == "" or url is None and "url" in raw:
         out["url"] = ""
@@ -449,10 +464,12 @@ class RigPowerGate:
 
 
 # --------------------------------------------------------------------------- #
-# Voices: conditionals only, never the reference clip (D3)
+# Voices: the conditionals; the reference clip only when the rig's engine needs
+# it AND rig.send_reference_clip is on (D3 is this computer's default)
 # --------------------------------------------------------------------------- #
 
 _SHA_CACHE: dict[str, tuple[float, int, str]] = {}
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def file_sha256(path: Path) -> str:
@@ -469,10 +486,10 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def voice_file(profile_id: str | None) -> Path | None:
-    """The ``voice.npz`` (Chatterbox conditionals) a profile id speaks with on the CPU,
-    or None when the rig cannot speak it (a built-in voice, no profile store, no
-    chosen and no default profile). Never the reference clip."""
+def _profile_file(profile_id: str | None, name: str) -> tuple[str, Path] | None:
+    """(profile id, ``<profile>/<name>``) for the profile a profile id speaks with on
+    the CPU, or None when the rig cannot speak it (a built-in voice, no profile store,
+    no chosen and no default profile, the file missing)."""
     try:
         from .tts import builtin_id
         if builtin_id(profile_id):
@@ -486,10 +503,87 @@ def voice_file(profile_id: str | None) -> Path | None:
         if not pid:
             return None
         st.get(pid)                                  # KeyError / ProfileError: unknown
-        p = Path(st.root) / pid / "voice.npz"
-        return p if p.is_file() else None
+        p = Path(st.root) / pid / name
+        return (pid, p) if p.is_file() else None
     except Exception:
         return None
+
+
+def voice_file(profile_id: str | None) -> Path | None:
+    """The ``voice.npz`` (Chatterbox conditionals) a profile id speaks with on the CPU,
+    or None when the rig cannot speak it (a built-in voice, no profile store, no
+    chosen and no default profile). Never the reference clip."""
+    hit = _profile_file(profile_id, "voice.npz")
+    return hit[1] if hit is not None else None
+
+
+def reference_file(profile_id: str | None) -> tuple[str, Path] | None:
+    """(profile id, ``reference.wav``) for a rig whose engine makes a voice from the
+    recording. Only read when ``rig.send_reference_clip`` is on."""
+    return _profile_file(profile_id, "reference.wav")
+
+
+def _store():
+    from . import profiles_bridge as pb
+    return pb.store()
+
+
+def profile_transcript(pid: str) -> str | None:
+    """The words of a profile's reference recording, when the profile has them
+    (``profile.json`` ``transcript``; none does today)."""
+    try:
+        t = _store().get(pid).get("transcript")
+    except Exception:
+        return None
+    return t if isinstance(t, str) and t.strip() else None
+
+
+def cached_rig_voice(pid: str, fmt: str) -> dict | None:
+    """``profile.json`` ``rig_voices[fmt]``: the voice the rig made from this
+    profile's recording (``id``, ``transcript``, ``reference_sha256``), or None."""
+    try:
+        e = _store().rig_voices(pid).get(fmt)
+    except Exception:
+        return None
+    if isinstance(e, dict) and isinstance(e.get("id"), str) and _HEX64.match(e["id"]):
+        return e
+    return None
+
+
+def remember_rig_voice(pid: str, fmt: str, entry: dict | None) -> None:
+    try:
+        _store().set_rig_voice(pid, fmt, entry)
+    except Exception:
+        log.exception("voice: could not record the rig voice of %s", pid)
+
+
+def header_transcript(text: str | None) -> bytes | None:
+    """``X-Reference-Transcript`` as header bytes, or None (the rig transcribes the clip
+    itself): whitespace collapsed, at most ``TRANSCRIPT_MAX`` characters (a longer one is
+    not cut: cut words would not match the recording), Latin-1 (what the rig's server
+    decodes headers as; other text is left to its own STT)."""
+    if not isinstance(text, str):
+        return None
+    t = " ".join(text.split())
+    if not t or len(t) > TRANSCRIPT_MAX:
+        return None
+    try:
+        return t.encode("latin-1")
+    except UnicodeEncodeError:
+        return None
+
+
+def _error_code(r) -> str:
+    """``{"error": {"code"}}`` (SpeechForge's envelope) or a top-level ``code``."""
+    try:
+        doc = r.json()
+    except Exception:
+        return ""
+    if not isinstance(doc, dict):
+        return ""
+    err = doc.get("error")
+    code = err.get("code") if isinstance(err, dict) else doc.get("code")
+    return code if isinstance(code, str) else ""
 
 
 #: Test seam: the httpx transport VoiceSync uses when none is passed (None = the network).
@@ -556,6 +650,62 @@ class VoiceSync:
             log.info("voice: rig voice %s: %s", sha[:8], self.state[sha])
             return self.state[sha]
 
+    async def has(self, vid: str) -> str:
+        """``HEAD /v1/voices/<id>``: ``ready`` (200) | ``missing`` (404) | ``token`` (401)
+        | ``error``."""
+        try:
+            async with self._client() as c:
+                r = await c.head(f"{self.base}/v1/voices/{vid}")
+        except Exception as e:  # noqa: BLE001 - that voice stays on the CPU this time
+            log.info("voice: rig voice check of %s failed (%s)", vid[:8], type(e).__name__)
+            return "error"
+        return {200: "ready", 404: "missing", 401: "token"}.get(r.status_code, "error")
+
+    async def from_reference(self, wav: bytes, transcript: bytes | None = None) -> tuple[str, dict]:
+        """``POST /v1/voices/from-reference`` with the reference recording (a 16-bit WAV)
+        and, when given, its words in ``X-Reference-Transcript`` (without them the rig
+        transcribes the clip). Returns (result, reply): ``ready`` with the rig's reply
+        (``id`` reduced to its hex) | ``disabled`` (403: the rig's owner has not allowed
+        reference clips) | ``bad`` (400: the clip is unusable or no words were heard) |
+        ``token`` (401) | ``error``."""
+        headers = {"Content-Type": "audio/wav"}
+        if transcript:
+            headers["X-Reference-Transcript"] = transcript
+        try:
+            async with self._client() as c:
+                r = await c.post(f"{self.base}/v1/voices/from-reference", content=wav, headers=headers,
+                                 timeout=max(self.timeout_s, FROM_REFERENCE_TIMEOUT_S))
+        except Exception as e:  # noqa: BLE001
+            log.info("voice: rig voice from the recording failed (%s)", type(e).__name__)
+            return "error", {}
+        if r.status_code in (200, 201):
+            try:
+                doc = r.json()
+            except ValueError:
+                doc = None
+            vid = doc.get("id") if isinstance(doc, dict) else None
+            vid = vid.removeprefix("sha256:") if isinstance(vid, str) else ""
+            if not _HEX64.match(vid):
+                return "error", {}
+            out = {"id": vid}
+            for k in ("transcript", "transcript_source"):
+                if isinstance(doc.get(k), str):
+                    out[k] = doc[k]
+            log.info("voice: rig voice %s made from the recording (%d bytes, transcript from %s)",
+                     vid[:8], len(wav), out.get("transcript_source", "?"))
+            return "ready", out
+        if r.status_code == 401:
+            return "token", {}
+        code = _error_code(r)
+        if r.status_code == 403:
+            res = "disabled" if code in ("reference_clip_disabled", "") else "error"
+        elif r.status_code in (400, 413, 422):
+            res = "bad"
+        else:
+            res = "error"
+        log.info("voice: the rig refused the recording (HTTP %s %s)", r.status_code, code or "-")
+        return res, {"code": code}
+
 
 def _delete_target() -> tuple[str, str] | None:
     """(url, token) when a rig address and token are set, else None."""
@@ -581,6 +731,27 @@ def sha_for_delete(store, pid: str) -> str | None:
         return file_sha256(p) if p.is_file() else None
     except Exception:
         return None
+
+
+def ids_for_delete(store, pid: str) -> list[str]:
+    """Before a profile is deleted: every voice of it the rig may hold, when a rig is
+    set up (else [], and nothing is read): its conditionals' sha256 and each voice
+    the rig made from its recording (``profile.json`` ``rig_voices``, every format)."""
+    if _delete_target() is None:
+        return []
+    out: list[str] = []
+    sha = sha_for_delete(store, pid)
+    if sha:
+        out.append(sha)
+    try:
+        made = store.rig_voices(pid)
+    except Exception:
+        made = {}
+    for e in (made or {}).values():
+        vid = e.get("id") if isinstance(e, dict) else None
+        if isinstance(vid, str) and _HEX64.match(vid) and vid not in out:
+            out.append(vid)
+    return out
 
 
 def delete_voice_async(sha: str) -> None:
@@ -683,6 +854,9 @@ class TtsCtx:
 
 _LIVE: "weakref.WeakSet[RigConnection]" = weakref.WeakSet()
 _LAST: dict = {}
+#: rig url -> the ``voice_format`` its last ``ready`` named (this process): the next
+#: voice chat's first guess, before its own ``ready`` arrives.
+_FORMATS: dict[str, str] = {}
 
 
 class RigConnection:
@@ -748,6 +922,12 @@ class RigConnection:
         self._lock = threading.Lock()
         self.busy_check: Callable[[], bool] | None = None   # the session: a turn/reply is going on
         self.on_promote: list[Callable[[], None]] = []
+        #: Called on the loop after every ``ready`` (a resume too): the voice sync
+        #: checks that its voices are still in the format the rig's engine takes.
+        self.on_ready: list[Callable[[], None]] = []
+        #: Why a voice of this chat has no rig voice (the Voice lab and Settings say it):
+        #: ``clip_off`` | ``clip_refused`` | ``bad_clip`` | None.
+        self.voice_note: str | None = None
         _LIVE.add(self)
 
     # ------------------------------------------------------------ public state
@@ -774,6 +954,16 @@ class RigConnection:
             return max(ours, theirs)
         return ours
 
+    def voice_format(self) -> str | None:
+        """``ready.engines.tts.voice_format``: what a voice is made from on this rig.
+        None before the first ``ready``; a rig that does not say is a Chatterbox one."""
+        if not self.ready_info:
+            return None
+        eng = self.ready_info.get("engines")
+        tts = eng.get("tts") if isinstance(eng, dict) else None
+        v = tts.get("voice_format") if isinstance(tts, dict) else None
+        return v if isinstance(v, str) and v else CHATTERBOX_FORMAT
+
     def alive(self, epoch: int) -> bool:
         """Is work started at ``epoch`` still good on the rig?"""
         return self.state == "ready" and epoch == self.epoch
@@ -796,7 +986,7 @@ class RigConnection:
                             for k, v in (r.get("engines") or {}).items() if isinstance(v, dict)},
                 "gpu": r.get("gpu") if isinstance(r.get("gpu"), dict) else None,
                 "limits": r.get("limits") if isinstance(r.get("limits"), dict) else None,
-                "lease": self.lease}
+                "lease": self.lease, "voice_format": self.voice_format(), "voice_note": self.voice_note}
 
     def _publish(self) -> None:
         _LAST.clear()
@@ -954,6 +1144,12 @@ class RigConnection:
         self.proven = False
         log.info("voice: rig ready (%s, GPU %s)", (ready.get("version") or "?"),
                  ((ready.get("gpu") or {}).get("name") or "?"))
+        _FORMATS[self.settings.url] = self.voice_format() or CHATTERBOX_FORMAT
+        for fn in list(self.on_ready):
+            try:
+                fn()
+            except Exception:
+                log.exception("voice: rig ready hook failed")
         self._publish()
 
     def _refused(self, r: RigRefused) -> None:
@@ -1469,6 +1665,7 @@ def status(settings) -> dict:
     out: dict = {"configured": configured, "enabled": rs.enabled, "url_set": bool(rs.url),
                  "token": tok.source, "token_problem": tok.problem, "host": host_of(rs.url),
                  "active": bool(configured and rs.enabled), "sessions": len(live),
+                 "send_reference_clip": rs.send_reference_clip,
                  "metrics": METRICS.snapshot()}
     if not configured:
         out["state"] = "not_configured"
@@ -1483,6 +1680,10 @@ def status(settings) -> dict:
         out["state"] = "idle"
         if _LAST:
             out["last"] = {k: _LAST.get(k) for k in ("version", "gpu", "engines", "limits", "at")}
+            # Why the last voice chat's voice stayed here, unless the setting has changed since.
+            note = _LAST.get("voice_note")
+            if note and not (note == "clip_off" and rs.send_reference_clip):
+                out["voice_note"] = note
     return out
 
 
@@ -1500,17 +1701,84 @@ class RigSession:
     voices: dict = field(default_factory=dict)
     bad: set = field(default_factory=set)
     _pending: dict = field(default_factory=dict)
+    #: profile id -> the voice format its entry in ``voices`` is in
+    formats: dict = field(default_factory=dict)
+    #: profile id -> why it has no rig voice (``clip_off`` | ``clip_refused`` | ``bad_clip``)
+    notes: dict = field(default_factory=dict)
+    #: the profile ids this voice chat speaks with (re-synced when the rig's engine changes)
+    wanted: dict = field(default_factory=dict)
+    _ref_locks: dict = field(default_factory=dict)
+    _ref_busy: set = field(default_factory=set)
+    _await_ready: set = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        # Weak: the connection must not keep its session alive (no reference cycle).
+        hook = weakref.WeakMethod(self._rig_ready)
+
+        def on_ready() -> None:
+            fn = hook()
+            if fn is not None:
+                fn()
+
+        self.conn.on_ready.append(on_ready)
 
     def voice_ref(self, profile_id: str | None) -> str | None:
         """The rig voice id for a profile, or None (not synced, refused, not a cloned
         voice): that reply runs on the CPU."""
         return self.voices.get(profile_id)
 
+    def voice_format(self) -> str:
+        """The format this rig's voices are in: its ``ready`` says; before that, what
+        the last ``ready`` from the same address said; else Chatterbox's."""
+        return (self.conn.voice_format() or _FORMATS.get(self.conn.settings.url)
+                or CHATTERBOX_FORMAT)
+
+    def _note(self, profile_id: str | None, note: str | None) -> None:
+        if note is None:
+            self.notes.pop(profile_id, None)
+        else:
+            self.notes[profile_id] = note
+        order = ("clip_off", "clip_refused", "bad_clip")
+        now = next((n for n in order if n in self.notes.values()), None)
+        if now != self.conn.voice_note:
+            self.conn.voice_note = now
+            if now:
+                log.info("voice: a voice of this chat stays on this computer (%s)", now)
+            self.conn._publish()
+
+    def _rig_ready(self) -> None:
+        """Every ``ready``: voices in a format the rig's engine no longer takes are
+        dropped and the chat's voices synced again in the one it takes. A Chatterbox
+        rig with Chatterbox voices: nothing to do (the session's own sync covers it)."""
+        fmt = self.conn.voice_format()
+        stale = [pid for pid, f in self.formats.items() if f != fmt]
+        for pid in stale:
+            self.voices.pop(pid, None)
+            self.formats.pop(pid, None)
+        waited = bool(self._await_ready)
+        self._await_ready.clear()
+        if fmt == CHATTERBOX_FORMAT and not stale and not waited:
+            return
+        if stale:                   # another engine: the old reasons no longer hold
+            self.notes.clear()
+            self._note(None, None)
+        if self.wanted:
+            self.conn._spawn(self.sync_voices(list(self.wanted)))
+
     async def sync_voices(self, profile_ids) -> None:
+        for pid in dict.fromkeys(profile_ids):
+            self.wanted[pid] = True
         for pid in dict.fromkeys(profile_ids):
             await self.sync_one(pid)
 
     async def sync_one(self, profile_id: str | None, *, force: bool = False) -> None:
+        fmt = self.voice_format()
+        if fmt != CHATTERBOX_FORMAT:
+            if self.conn.voice_format() is None:
+                self._await_ready.add(profile_id)
+                return              # the clip never goes on a guess: this rig's ready syncs it
+            await self._sync_reference(profile_id, fmt, force=force)
+            return
         path = await asyncio.to_thread(voice_file, profile_id)
         if path is None:
             return
@@ -1521,13 +1789,93 @@ class RigSession:
         if sha in self.bad:
             return
         res = await self.sync.ensure(sha, path, force=force)
+        if self.conn.voice_format() not in (None, CHATTERBOX_FORMAT):
+            return                  # the rig's ready named another engine meanwhile: it re-syncs
         if res == "ready":
             self.voices[profile_id] = f"sha256:{sha}"
+            self.formats[profile_id] = CHATTERBOX_FORMAT
+            self._note(profile_id, None)
         elif res == "bad":
             self.bad.add(sha)
             self.voices.pop(profile_id, None)
         elif res == "token":
             self.voices.pop(profile_id, None)
+
+    async def _sync_reference(self, profile_id: str | None, fmt: str, *, force: bool = False) -> None:
+        """A rig whose engine makes a voice from the recording (``fmt`` is not
+        ``chatterbox-npz``): the voice it made from this profile's ``reference.wav``
+        before (``profile.json`` ``rig_voices[fmt]``, checked with ``HEAD``), else
+        ``POST /v1/voices/from-reference``. Only with ``rig.send_reference_clip`` on;
+        otherwise this voice's replies stay on this computer and the status says why."""
+        lock = self._ref_locks.setdefault(profile_id, asyncio.Lock())
+        async with lock:
+            if not force and profile_id in self.voices and self.formats.get(profile_id) == fmt:
+                return
+            self.voices.pop(profile_id, None)
+            src = await asyncio.to_thread(reference_file, profile_id)
+            if src is None:
+                return              # a built-in voice, no profile: nothing the rig could speak
+            if not self.conn.settings.send_reference_clip:
+                self._note(profile_id, "clip_off")
+                return
+            if self.notes.get(profile_id) == "clip_refused" and not force:
+                return              # the rig's owner has not allowed clips: not again this chat
+            pid, path = src
+            try:
+                ref_sha = await asyncio.to_thread(file_sha256, path)
+            except OSError:
+                return
+            if (fmt, ref_sha) in self.bad:
+                return
+            self._ref_busy.add(profile_id)
+            try:
+                vid, note = await self._reference_voice(pid, path, fmt, ref_sha, force=force)
+            finally:
+                self._ref_busy.discard(profile_id)
+            if note is not None:
+                self._note(profile_id, note)
+            if vid is None or self.conn.voice_format() not in (None, fmt):
+                return
+            self.voices[profile_id] = f"sha256:{vid}"
+            self.formats[profile_id] = fmt
+            self._note(profile_id, None)
+
+    async def _reference_voice(self, pid: str, path: Path, fmt: str, ref_sha: str, *,
+                               force: bool) -> tuple[str | None, str | None]:
+        """(the rig's id (hex) for this recording or None, a note or None). The voice is
+        re-made when the rig lost it (404 on ``HEAD``, or ``force`` after
+        ``unknown_voice``) or the recording changed."""
+        cached = await asyncio.to_thread(cached_rig_voice, pid, fmt)
+        same = cached is not None and cached.get("reference_sha256") == ref_sha
+        if same and not force:
+            res = await self.sync.has(cached["id"])
+            if res == "ready":
+                return cached["id"], None
+            if res != "missing":
+                return None, None   # token / error: this voice stays on the CPU this time
+        # The words: the profile's own, else what the rig heard in this same recording
+        # before (a re-upload skips its STT), else none (the rig transcribes the clip).
+        words = await asyncio.to_thread(profile_transcript, pid)
+        if words is None and same:
+            words = cached.get("transcript") if isinstance(cached.get("transcript"), str) else None
+        try:
+            wav = await asyncio.to_thread(path.read_bytes)
+        except OSError:
+            return None, None
+        res, reply = await self.sync.from_reference(wav, header_transcript(words))
+        if res == "ready":
+            entry = {"id": reply["id"], "reference_sha256": hashlib.sha256(wav).hexdigest(),
+                     "transcript": reply.get("transcript", words if words is not None else ""),
+                     "transcript_source": reply.get("transcript_source", "caller" if words else ""),
+                     "at": int(time.time())}
+            await asyncio.to_thread(remember_rig_voice, pid, fmt, entry)
+            return reply["id"], None
+        if res == "disabled":
+            return None, "clip_refused"
+        if res == "bad":
+            self.bad.add((fmt, ref_sha))
+            return None, "bad_clip"
+        return None, None
 
     def local_only(self, profile_id: str | None) -> bool:
         """True for a voice the rig never speaks (a built-in Kokoro voice, e.g. the
@@ -1542,7 +1890,8 @@ class RigSession:
 
     def syncing(self, profile_id: str | None) -> bool:
         """A (re-)registration of this voice is in flight."""
-        return bool(self._pending.get(profile_id)) or "syncing" in self.sync.state.values()
+        return (bool(self._pending.get(profile_id)) or profile_id in self._ref_busy
+                or "syncing" in self.sync.state.values())
 
     def wait_voice(self, profile_id: str | None, timeout_s: float,
                    clock=time.monotonic, sleep=time.sleep) -> bool:
@@ -1557,7 +1906,8 @@ class RigSession:
             sleep(0.02)
 
     def resync_threadsafe(self, profile_id: str | None) -> None:
-        """``unknown_voice`` on ``tts.open``: PUT again (once), in the background."""
+        """``unknown_voice`` on ``tts.open``: PUT again (once), in the background (on a
+        rig that makes voices from the recording: POST it again)."""
         self.voices.pop(profile_id, None)
         if self._pending.get(profile_id):
             return
@@ -1598,8 +1948,9 @@ def open_for_session(settings, *, token: str | None = None, connect=None,
     power = RigPowerGate(settings)
     conn = RigConnection(rs, value, version=__version__, connect=connect, power=power)
     sync = VoiceSync(rs.url, value, transport=http_transport)
+    session = RigSession(conn, sync, power)       # its ready hook is in place before the open
     conn.start()
-    return RigSession(conn, sync, power)
+    return session
 
 
 def random_seed() -> int:

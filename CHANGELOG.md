@@ -4,6 +4,29 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Added
+- **Rig voices from the recording, opt-in.** A GPU rig can now run a voice
+  engine that clones from the reference recording and its words (Fish Audio
+  Drama 3, dots-tts) instead of from Chatterbox conditionals; its `ready`
+  answer says which (`engines.tts.voice_format`). For such a rig the add-on
+  sends the profile's `reference.wav` to `POST /v1/voices/from-reference`,
+  but only with the new `rig.send_reference_clip` on (Settings › Voice ›
+  *Send voice recordings to the rig*; off by default, so the recording stays
+  on this computer as before). With it off, that bot's replies are spoken
+  here and Settings and the Voice lab say why. The rig transcribes the
+  recording unless the profile has a transcript (none does today), and a
+  Drama 3 voice speaks with those words as its transcript. The rig's id, the
+  transcript and the recording's sha256 are kept in `profile.json`
+  (`rig_voices`, per voice format); the voice is made again when the rig no
+  longer has it or the recording changed. The rig has its own opt-in, and the
+  Drama 3 licence terms (consent to clone a real person) are the user's to
+  follow, as the profile's consent record already asserts. Chatterbox rigs
+  work exactly as before.
+
+### Changed
+- Deleting a voice profile deletes every voice the rig made from it (the
+  conditionals and any made from the recording), not only the conditionals.
+
 ## [1.3.5] — 2026-10-15
 
 ### Fixed

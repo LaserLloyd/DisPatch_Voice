@@ -62,15 +62,16 @@ class LazyStore:
 
 
 class _RigAwareStore(LazyStore):
-    """The Voices manager's store. Deleting a profile also deletes its conditionals
-    from the GPU rig (SPEC §8.4 deletion sync) when a rig address and token are set."""
+    """The Voices manager's store. Deleting a profile also deletes its voices from the
+    GPU rig (SPEC §8.4 deletion sync) when a rig address and token are set: its
+    conditionals and every voice the rig made from its recording."""
 
     def delete(self, pid: str) -> None:
         from . import rig
-        sha = rig.sha_for_delete(store(), pid)
+        ids = rig.ids_for_delete(store(), pid)
         store().delete(pid)
-        if sha:
-            rig.delete_voice_async(sha)
+        for vid in ids:
+            rig.delete_voice_async(vid)
 
 
 def release_engine() -> None:

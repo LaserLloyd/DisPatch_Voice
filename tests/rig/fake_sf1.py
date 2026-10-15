@@ -134,6 +134,7 @@ class FakeRig:
         self.lease_state = "held"           # ready.lease.state ("unleased": loaded without a lease)
         self.loading_first = False          # state{models:"loading"} before ready (a cold rig)
         self.max_text = GOLDEN["server_frames"]["ready"]["limits"]["max_text"]
+        self.voice_format: str | None = None  # ready.engines.tts.voice_format (None: not said)
         self.tts_errors: list[str] = []     # per flush: an error code instead of audio (consumed)
         self.ticker: asyncio.Task | None = None
         # records
@@ -244,6 +245,8 @@ class FakeRig:
             ready = json.loads(json.dumps(GOLDEN["server_frames"]["ready"]))
             ready["limits"]["max_text"] = self.max_text
             ready["lease"]["state"] = self.lease_state
+            if self.voice_format is not None:
+                ready["engines"]["tts"]["voice_format"] = self.voice_format
             res = first.get("resume")
             if isinstance(res, dict) and res.get("session"):
                 self.resumed += 1

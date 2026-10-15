@@ -925,15 +925,23 @@ export function rigStatusLine(rg) {
   const st = rg.state;
   if (st === 'not_configured') return t('drive.rig_not_setup');
   if (st === 'off') return null;
+  const note = RIG_VOICE_NOTES.includes(rg.voice_note) ? t(`drive.rig_voice_${rg.voice_note}`) : null;
   if (st === 'ready') {
     const name = rg.gpu && rg.gpu.name ? String(rg.gpu.name) : '';
     const line = name ? t('drive.rig_state_ready_on', { gpu: name }) : t('drive.rig_state_ready');
     // An unleased rig serves (its lease mode is off, or StudioForge was away and the card free).
-    return rg.lease === 'unleased' ? sentences([line, t('drive.rig_state_unleased')]) : line;
+    const parts = [line, rg.lease === 'unleased' ? t('drive.rig_state_unleased') : null, note];
+    return parts.filter(Boolean).length > 1 ? sentences(parts) : line;
   }
-  if (['idle', 'connecting', 'loading', 'busy', 'down', 'cooling', 'misconfigured'].includes(st)) return t(`drive.rig_state_${st}`);
+  if (['idle', 'connecting', 'loading', 'busy', 'down', 'cooling', 'misconfigured'].includes(st)) {
+    const line = t(`drive.rig_state_${st}`);
+    return note ? sentences([line, note]) : line;
+  }
   return null;
 }
+
+/** Why a voice of the open voice chat is not spoken by the rig (`status.rig.voice_note`). */
+const RIG_VOICE_NOTES = Object.freeze(['clip_off', 'clip_refused', 'bad_clip']);
 
 /**
  * The Voice lab's rig line (ADDON-ENGINE §5), as sentences: "GPU rig: ready on RTX
@@ -956,6 +964,9 @@ export function rigLabLine(rg, fmt = (ms) => `${Math.round(ms)} ms`) {
   } else head = t(named[st] || 'vtools.rig_not_setup');
   const parts = [t('vtools.rig_prefix', { status: head })];
   if (st === 'ready' && rg.lease === 'unleased') parts.push(t('vtools.rig_unleased'));
+  if (RIG_VOICE_NOTES.includes(rg.voice_note) && st !== 'off' && st !== 'not_configured') {
+    parts.push(t(`vtools.rig_voice_${rg.voice_note}`));
+  }
   const m = rg.metrics || {};
   if (st !== 'not_configured' && st !== 'off' && st !== 'misconfigured') {
     if (Number.isFinite(m.ttfa_p50)) parts.push(t('vtools.rig_ttfa', { ms: fmt(m.ttfa_p50) }));
@@ -999,6 +1010,29 @@ export function rigRow(st, save) {
   r.querySelector('.dev-row-text').append(status);
   paint();
   return r;
+}
+
+/**
+ * Settings › Voice, under the rig switch: "Send voice recordings to the rig"
+ * (voice.yaml `rig.send_reference_clip`, off by default). A rig whose voice engine
+ * makes a voice from the recording (Fish Audio Drama 3) gets each profile's
+ * reference recording only with this on; the rig has its own opt-in as well.
+ * Disabled until the rig is set up; null without a `status.rig` that knows the
+ * setting (an older add-on server).
+ */
+export function rigClipRow(st, save) {
+  const rg = st && st.rig;
+  if (!rg || typeof rg !== 'object' || typeof rg.send_reference_clip !== 'boolean') return null;
+  const cb = switchInput(rg.send_reference_clip, t('drive.rig_clip'), async (v) => {
+    cb.disabled = true;
+    const ok = await save({ rig: { send_reference_clip: v } });
+    cb.disabled = false;
+    if (!ok) { cb.checked = !v; return; }
+    rg.send_reference_clip = v;
+  });
+  cb.id = 'drive-rig-clip-input';
+  cb.disabled = !rg.configured;
+  return row(t('drive.rig_clip'), t('drive.rig_clip_hint'), [cb], { id: 'drive-rig-clip' });
 }
 
 /**
@@ -1128,6 +1162,8 @@ export function mountDriveSettings(host, ctx) {
   voiceRows.push(row(t('drive.rp_speech'), t('drive.rp_speech_hint'), [rpSel], { id: 'drive-rp' }), narratorRow);
   const rig = rigRow(st, save);
   if (rig) voiceRows.push(rig);
+  const rigClip = rig ? rigClipRow(st, save) : null;
+  if (rigClip) voiceRows.push(rigClip);
 
   if (ctx.cloning) {
     const open = el('button', { type: 'button', class: 'btn-secondary', id: 'dev-voices-open' }, [

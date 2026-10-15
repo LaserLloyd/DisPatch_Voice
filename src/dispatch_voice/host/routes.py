@@ -760,17 +760,19 @@ def _validate_rt(raw) -> dict:
 
 def _validate_rig(raw) -> dict:
     """The ``rig`` tree of a settings PATCH (host/rig.py): ``enabled``, ``url`` (a
-    ws:// or wss:// address, or "" to clear it) and the deadlines, each named with
-    its range. The token is never a setting: it stays in the server's environment."""
+    ws:// or wss:// address, or "" to clear it), ``send_reference_clip`` and the
+    deadlines, each named with its range. The token is never a setting: it stays in
+    the server's environment."""
     from . import rig as _rig
-    keys = ("enabled", "url", *_rig.RIG_RANGES)
+    keys = ("enabled", "url", "send_reference_clip", *_rig.RIG_RANGES)
     if not isinstance(raw, dict):
         raise HTTPException(422, "rig takes an object with: " + ", ".join(keys))
     unknown = set(raw) - set(keys)
     if unknown:
         raise HTTPException(422, f"Unknown setting: rig.{sorted(unknown)[0]}")
-    if "enabled" in raw and not isinstance(raw["enabled"], bool):
-        raise HTTPException(422, "rig.enabled must be true or false")
+    for k in ("enabled", "send_reference_clip"):
+        if k in raw and not isinstance(raw[k], bool):
+            raise HTTPException(422, f"rig.{k} must be true or false")
     if "url" in raw:
         v = raw["url"]
         if not isinstance(v, str) or (v.strip() and not _rig.valid_url(v.strip())):

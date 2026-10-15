@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { domSkip } from './_require-dom.js';
 import { HAS_DOM, fakeShell, settle, withDom } from './_shell-fake.js';
 
-import { rigStatusLine, rigLabLine, rigRow, rigReason, mountDriveSettings } from '../../src/dispatch_voice/static/drive-settings.js';
+import { rigStatusLine, rigLabLine, rigRow, rigClipRow, rigReason, mountDriveSettings } from '../../src/dispatch_voice/static/drive-settings.js';
 import { rigLabRow, fmtMs } from '../../src/dispatch_voice/static/voice-tools.js';
 import { bindShell } from '../../src/dispatch_voice/static/shell.js';
 
@@ -124,4 +124,62 @@ test('rig: the Voice lab row shows the fields, the setup lines, and never a toke
   assert.match(idle.textContent, /standing by for the next voice chat/);
   assert.match(rigLabRow(null).textContent, /GPU rig: not set up/);
   assert.match(rigLabRow({ ...READY, lease: 'unleased' }).textContent, /GPU lease: none, the rig runs without one/);
+}));
+
+const CLIP_OFF = "Replies stay on this computer: the rig's voice engine needs the recording and sending it is off";
+
+test('rig: a voice the rig cannot make without the recording says why, in Settings and the Voice lab', dom, () => inShell(async () => {
+  assert.equal(rigStatusLine({ ...READY, voice_note: 'clip_off' }), `Using the rig now (RTX 3090). ${CLIP_OFF}.`);
+  assert.equal(rigStatusLine({ state: 'idle', voice_note: 'clip_off' }), `Used from the next voice chat. ${CLIP_OFF}.`);
+  assert.equal(rigStatusLine({ ...READY, lease: 'unleased', voice_note: 'clip_off' }),
+    `Using the rig now (RTX 3090). It runs without a GPU lease. ${CLIP_OFF}.`);
+  assert.equal(rigStatusLine({ state: 'off', voice_note: 'clip_off' }), null);
+  assert.equal(rigStatusLine({ ...READY, voice_note: 'something_new' }), 'Using the rig now (RTX 3090).');
+  assert.ok(rigLabLine({ ...READY, voice_note: 'clip_off' }, (ms) => `${ms} ms`)
+    .startsWith(`GPU rig: ready on RTX 3090 (GPU 3). ${CLIP_OFF}. First audio`));
+  assert.match(rigStatusLine({ ...READY, voice_note: 'clip_refused' }), /the rig does not accept recordings/);
+  assert.match(rigLabLine({ ...READY, voice_note: 'bad_clip' }), /the rig could not use the voice recording/);
+}));
+
+test('rig: "Send voice recordings to the rig" saves rig.send_reference_clip, off by default', dom, () => inShell(async () => {
+  const saves = [];
+  let ok = true;
+  assert.equal(rigClipRow({ rig: { configured: true, enabled: true, state: 'idle' } }, async () => true), null,
+    'an older server: no row');
+  const off = rigClipRow({ rig: { configured: false, enabled: false, state: 'not_configured', send_reference_clip: false } },
+    async () => true);
+  assert.equal(off.querySelector('#drive-rig-clip-input').disabled, true);
+  const st = { rig: { configured: true, enabled: true, state: 'idle', send_reference_clip: false } };
+  const r = rigClipRow(st, async (p) => { saves.push(p); return ok; });
+  document.body.append(r);
+  assert.equal(r.id, 'drive-rig-clip');
+  assert.match(r.textContent, /Send voice recordings to the rig/);
+  assert.match(r.textContent, /reference recording/);
+  assert.match(r.textContent, /The rig has its own setting/);
+  const cb = r.querySelector('#drive-rig-clip-input');
+  assert.equal(cb.checked, false);
+  assert.equal(cb.disabled, false);
+  cb.checked = true;
+  cb.dispatchEvent(new Event('change'));
+  await settle();
+  assert.deepEqual(saves, [{ rig: { send_reference_clip: true } }]);
+  assert.equal(st.rig.send_reference_clip, true);
+  ok = false;                                     // a refused save puts the switch back
+  cb.checked = false;
+  cb.dispatchEvent(new Event('change'));
+  await settle();
+  assert.equal(cb.checked, true);
+}));
+
+test('rig: the recordings switch sits under the rig switch in Settings › Voice', dom, () => inShell(async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  mountDriveSettings(host, {
+    status: { enabled: true, switch: true, ready: true, missing: [], stt: 'parakeet', tts: 'auto', smart_turn: true,
+      profiles: [], builtin_voices: [], rig: { ...READY, send_reference_clip: false } },
+    bots: () => [], voices: [], android: false,
+  });
+  const rows = [...host.querySelectorAll('#drive-group-voices .drive-row')].map((r) => r.id);
+  assert.equal(rows.indexOf('drive-rig-clip'), rows.indexOf('drive-rig') + 1);
+  assert.equal(host.querySelector('#drive-rig-clip-input').checked, false);
 }));

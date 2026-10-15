@@ -8,8 +8,11 @@
         audition.wav       a fixed test line in the cloned voice
         fillers/<n>.wav    short acknowledgements in the cloned voice, played while the LLM thinks
 
-Nothing here leaves the box. Profiles must never be copied into a repo, a
-deploy allowlist or a public backup.
+Nothing here leaves the box, with two opt-in exceptions for a GPU rig: the
+conditionals (``voice.npz``) when the rig is switched on, and ``reference.wav``
+only when ``rig.send_reference_clip`` is also on and the rig's voice engine needs
+it. Profiles must never be copied into a repo, a deploy allowlist or a public
+backup.
 """
 from __future__ import annotations
 
@@ -59,6 +62,7 @@ class Profile:
 
     def public(self) -> dict:
         m = dict(self.meta)
+        m.pop("rig_voices", None)          # the GPU rig's bookkeeping, not the profile's
         m["id"] = self.id
         return m
 
@@ -226,6 +230,30 @@ class ProfileStore:
                 meta["default"] = False
             self._write_meta(d, meta)
         return self.get(pid)
+
+    def rig_voices(self, pid: str) -> dict:
+        """``profile.json`` ``rig_voices``: ``{voice format: {"id", "transcript",
+        "reference_sha256", ...}}``, the voices a GPU rig made from this profile's
+        reference recording (only when the owner let the recording go there)."""
+        d = self._require(pid)
+        rv = json.loads((d / "profile.json").read_text()).get("rig_voices")
+        return dict(rv) if isinstance(rv, dict) else {}
+
+    def set_rig_voice(self, pid: str, fmt: str, entry: dict | None) -> None:
+        """Record (or with None forget) the rig voice of one format."""
+        with self._lock:
+            d = self._require(pid)
+            meta = json.loads((d / "profile.json").read_text())
+            rv = meta.get("rig_voices") if isinstance(meta.get("rig_voices"), dict) else {}
+            if entry is None:
+                rv.pop(fmt, None)
+            else:
+                rv[fmt] = dict(entry)
+            if rv:
+                meta["rig_voices"] = rv
+            else:
+                meta.pop("rig_voices", None)
+            self._write_meta(d, meta)
 
     def delete(self, pid: str) -> None:
         with self._lock:

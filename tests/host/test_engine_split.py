@@ -32,7 +32,7 @@ _n = itertools.count()
 
 #: The settings view of `rig:` with nothing configured (host/rig.py defaults).
 RIG_OUT = {"enabled": False, "url": "", "stt_final_deadline_ms": 350, "tts_start_deadline_ms": 800,
-           "ahead_ms": 3000, "first_chunk_tokens": 15}
+           "ahead_ms": 3000, "first_chunk_tokens": 15, "send_reference_clip": False}
 
 
 def rt_settings_out(**over):
