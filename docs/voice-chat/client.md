@@ -95,9 +95,19 @@ the state, and the line under that says what a tap on the picture does.
   says "Start talking when it says Listening" instead of "after the tone".
 - Saying **"okay, okay, got it, thanks"** (or "no thanks", "that's enough"…)
   over a long reply stops it without starting a new turn.
-- Keyboard: **Space** mutes/unmutes the microphone, **Esc** hangs up, Tab
-  stays inside the voice chat screen and focus returns to the microphone
-  button afterwards.
+- Keyboard: **Space** mutes/unmutes the microphone from anywhere on the screen
+  (on a focused button too — the button is not pressed; **Enter** still presses
+  it), **T** opens and closes the text box, **O** opens the Output menu (where
+  the button is shown), **U** is Undo and **Esc** hangs up. The letters and
+  Space are left alone while you type in the text box, over the quick sheet and
+  the Output menu, and with Ctrl, Alt or Cmd held. Hover a button (or Tab to it)
+  and a small tooltip shows its key, e.g. "Mute (Space)", "Type (T)", "Hang up
+  (Esc)"; touch screens have no hover, so they show none. Tab stays inside the
+  voice chat screen and focus returns to the microphone button afterwards.
+- **Mute is the microphone only.** A reply that is playing — from the server or
+  in the phone's voice — finishes; the word says "Muted — still speaking".
+  Typing works the same way: the box mutes the microphone, the reply to what you
+  type is spoken as usual. The picture is the interrupt.
 
 ### When the connection is slow
 

@@ -14,6 +14,10 @@
 //   onReady() / onClose()             socket edges
 //   onSayEnd()                        the reply is over: a held predictive switch goes now; the
 //                                     reply's deadlines and goodput window are cleared
+//   onReplyCut()                      the reply is over WITHOUT a `say_end` (the server sends none for
+//                                     a cut reply): a barge-in, a tap-stop, an undo, a failed turn, or
+//                                     a new turn. Same effect as onSayEnd(); without it `replyActive`
+//                                     (and a held predictive change) would block recovery for good
 //   onTurnError(seq?)                 `turn_error` (e.g. tts_failed): no audio is coming for seq
 //                                     (or for any armed seq) — a TTS fault is not the network's
 //   onProbe(bytes, elapsedMs)         a 16 KB probe came back (elapsed = request → last byte)
@@ -257,6 +261,20 @@ export function createLinkMonitor({
     return t - lastBadAt >= th.healthyMs;
   };
 
+  /** The reply is over (a `say_end`, or a cut with none): a held predictive switch goes now. */
+  const replyOver = () => {
+    replyActive = false;
+    underruns = 0;
+    // A sentence that never got audio (tts_failed, no_speech_in_reply) is not a link fault.
+    deadlines = new Map();
+    resetReply();
+    if (pending) {
+      const p = pending;
+      pending = null;
+      toText(p.next, p.why);
+    }
+  };
+
   const api = {
     get thresholds() { return th; },
     // ---- inputs
@@ -289,18 +307,9 @@ export function createLinkMonitor({
       const ms = Math.max(th.firstAudioMinMs, (pr === null ? th.firstChunkPriorMs : pr) + th.firstAudioPadMs);
       deadlines.set(seq >>> 0, t + ms);
     },
-    onSayEnd() {
-      replyActive = false;
-      underruns = 0;
-      // A sentence that never got audio (tts_failed, no_speech_in_reply) is not a link fault.
-      deadlines = new Map();
-      resetReply();
-      if (pending) {
-        const p = pending;
-        pending = null;
-        toText(p.next, p.why);
-      }
-    },
+    onSayEnd() { replyOver(); },
+    /** The reply ended without a `say_end` (barge-in, tap-stop, undo, failed turn, new turn). */
+    onReplyCut() { replyOver(); },
     onChunk(seq, arrival, tServer, durationMs = 0, _leadMs = 0, bytes = 0) {
       deadlines.delete(seq >>> 0);
       const a = Number(arrival);

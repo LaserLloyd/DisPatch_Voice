@@ -425,9 +425,45 @@ async def test_a_probe_is_answered_with_one_kind_3_message_off_the_receive_loop(
     ws.push_json({"type": "probe", "bytes": 4096}); await settle(10)
     probes = [b for b in binaries(ws) if b[1] == wire3.KIND_PROBE]
     assert len(probes) == 1 and len(probes[0][5][0]) == 4096
-    ws.push_json({"type": "probe", "bytes": 4096}); await settle(10)     # ≤ 1 per 20 s
+    ws.push_json({"type": "probe", "bytes": 4096}); await settle(10)     # ≤ 1 per 18 s
     assert len([b for b in binaries(ws) if b[1] == wire3.KIND_PROBE]) == 1
     ws.hang_up(); await task
+
+
+async def test_a_refused_probe_is_answered_with_rate_limited_and_the_window_reopens_at_18s():
+    s, ws, _, _, tr = make()
+    now = [100.0]
+    tr.probes._clock = lambda: now[0]                    # the limiter's clock, driven by hand
+    task = await start(s, ws)
+
+    def bursts():
+        return [b for b in binaries(ws) if b[1] == wire3.KIND_PROBE]
+
+    ws.push_json({"type": "probe", "bytes": 4096}); await settle(10)
+    assert len(bursts()) == 1 and not ws.json_of("error")
+    now[0] += 5.0
+    ws.push_json({"type": "probe", "bytes": 4096}); await settle(10)     # inside the window
+    assert len(bursts()) == 1, "a refused probe gets no burst"
+    errs = ws.json_of("error")
+    assert len(errs) == 1 and errs[0]["code"] == "rate_limited" and "18 s" in errs[0]["message"]
+    now[0] += 13.0                                       # 18 s after the accepted probe
+    ws.push_json({"type": "probe", "bytes": 4096}); await settle(10)
+    assert len(bursts()) == 2 and len(ws.json_of("error")) == 1
+    ws.hang_up(); await task
+
+
+async def test_an_empty_probe_and_a_v2_probe_are_not_answered_with_an_error():
+    s, ws, _, _, _ = make()
+    task = await start(s, ws)
+    ws.push_json({"type": "probe", "bytes": 0}); await settle(10)
+    assert not ws.json_of("error") and not binaries(ws)
+    ws.hang_up(); await task
+    s2, ws2, _, _, tr2 = make(q={})
+    assert not tr2.v3
+    task2 = await start(s2, ws2)
+    ws2.push_json({"type": "probe", "bytes": 4096}); await settle(10)
+    assert not ws2.json_of("error") and not binaries(ws2)
+    ws2.hang_up(); await task2
 
 
 async def test_barge_in_drops_the_cut_gens_audio_on_the_wire():

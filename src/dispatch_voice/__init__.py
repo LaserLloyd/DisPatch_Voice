@@ -4,7 +4,7 @@ This module is metadata only and imports nothing heavy: DisPatch reads
 ``EXTENSION`` during discovery (entry point group ``dispatch.extensions``) and
 imports ``setup`` only after the API handshake passes.
 """
-__version__ = "1.3.5"
+__version__ = "1.4.0"
 
 EXTENSION = {
     "id": "voice",                        # [a-z][a-z0-9-]{1,31}, unique

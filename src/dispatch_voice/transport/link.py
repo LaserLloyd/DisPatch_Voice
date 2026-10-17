@@ -11,7 +11,7 @@ failed: the downlink falls back to PCM16 from the next sentence.
 
 :func:`probe_payload` makes the incompressible burst a ``probe`` asks for
 (``os.urandom``: permessage-deflate cannot shrink it); :class:`ProbeLimiter`
-allows one per 20 s per session.
+allows one per 18 s per session (the client paces at 20 s).
 
 :class:`RelayIndicator` reports whether the phone reaches this box directly or
 through a Tailscale relay (DERP or a peer relay), from ``tailscale status --json``
@@ -43,7 +43,7 @@ WHYS = ("underrun", "rtt", "goodput", "deadline", "stall", "user", "recovered", 
 SLOW_LINK = ("phone", "wait", "text", "always_phone")
 
 PROBE_MAX = 32_768
-PROBE_EVERY_S = 20.0
+PROBE_EVERY_S = 18.0
 
 
 def probe_payload(n: int) -> bytes:
@@ -56,7 +56,14 @@ def probe_payload(n: int) -> bytes:
 
 
 class ProbeLimiter:
-    """One probe per ``every_s`` per session (the frame still spends a control token)."""
+    """One probe per ``every_s`` per session (the frame still spends a control token).
+
+    The client's obligation is one probe per 20 s, paced from its own send time;
+    the window here is measured from the last *accepted* probe, so 18 s leaves
+    room for the jitter on the earlier probe's delivery: a compliant client is
+    never refused for arriving at 19.x s (contracts C.3). ``refused`` counts the
+    refusals, so the session can tell "limited" from "v2 / empty / closed" and
+    answer the former with ``error {code: "rate_limited"}``."""
 
     def __init__(self, every_s: float = PROBE_EVERY_S, clock: Callable[[], float] = time.monotonic) -> None:
         self.every_s = every_s

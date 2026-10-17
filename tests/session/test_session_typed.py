@@ -48,6 +48,33 @@ async def test_the_reply_to_a_typed_message_is_spoken():
     ws.hang_up(); await task
 
 
+async def test_the_reply_to_a_message_typed_while_muted_is_spoken_and_the_state_stays_paused():
+    """The client's Mute / Type button sends `pause`, then `typed`: the mic stays muted
+    (state echoes are `paused`, never `listening`) but the answer is still read out."""
+    s, ws, tts, submitted = make_session([])
+    task = asyncio.create_task(s.run())
+    ws.push_json({"type": "start"}); await settle(5)
+    ws.push_json({"type": "pause"}); await settle(5)
+    assert s.listening is False
+    ws.push_json({"type": "typed", "text": "tell me a joke"})
+    assert await wait_until(lambda: submitted)
+    s.on_app_frame({"type": "message", "thread_id": THREAD,
+                    "message": {"id": "m-user", "role": "user", "content": "tell me a joke"}})
+    s.on_app_frame({"type": "thinking", "thread_id": THREAD, "state": "started"})
+    s.on_app_frame({"type": "stream_chunk", "thread_id": THREAD, "message_id": "run:1",
+                    "text": "Why did the cat sit on the laptop? For the warmth."})
+    s.on_app_frame({"type": "stream_done", "thread_id": THREAD, "provisional_id": "run:1",
+                    "message_id": "m-9", "message": {"id": "m-9", "role": "assistant",
+                    "content": "Why did the cat sit on the laptop? For the warmth."}})
+    assert await wait_until(lambda: len(tts.said) >= 2)
+    assert tts.said == ["Why did the cat sit on the laptop?", "For the warmth."]
+    assert ws.json_of("audio"), "the audio went out, not only the text"
+    assert s.listening is False
+    states = [m["state"] for m in ws.json_of("state")]
+    assert "listening" not in states[states.index("paused"):], states
+    ws.hang_up(); await task
+
+
 async def test_a_bad_typed_frame_submits_nothing():
     s, ws, _tts, submitted = make_session([])
     task = asyncio.create_task(s.run())

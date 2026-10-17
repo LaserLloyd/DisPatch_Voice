@@ -933,13 +933,13 @@ test('overlay: with the focus on the picture (where it starts) Space is the micr
       const undo = o.ws.frames('undo').at(-1);
       assert.ok(undo, 'U sends undo');
       assert.equal(undo.message_id, 'u-9');
-      // Another button keeps its own Space (Hang up is not a shortcut target).
+      // Space is Mute on every button now (the focused button's own tap is held back).
       const end = o.overlay.querySelector('.drive-end');
       const n = o.ws.sent.length;
       const ev = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
       end.dispatchEvent(ev);
-      assert.equal(ev.defaultPrevented, false);
-      assert.equal(o.ws.sent.length, n);
+      assert.equal(ev.defaultPrevented, true);
+      assert.deepEqual(o.ws.sent.slice(n).map((f) => f.type), ['pause']);
     } finally { o.d.close({ quiet: true }); o.restore(); }
   }, world.globals);
 });
@@ -1626,5 +1626,533 @@ test('overlay: with setSinkId the Output button lists the outputs; picking one s
       assert.equal(o.overlay.querySelector('.drive-output-menu'), null);
       assert.ok(document.querySelector('.drive-overlay'));
     } finally { o.d.close(); o.restore(); saveDriveSettings(globalThis.localStorage, { sinkId: '' }); }
+  }, world.globals);
+});
+
+// ------------------------- the call screen: shortcuts, tooltips, Mute = mic only ---
+
+const key = (type, k, extra = {}) => new KeyboardEvent(type, { key: k, code: k === ' ' ? 'Space' : `Key${String(k).toUpperCase()}`, bubbles: true, cancelable: true, ...extra });
+/** Press and release `k` on `target`: the two events, so a test can read both default actions. */
+function press(target, k, extra = {}) {
+  const down = key('keydown', k, extra);
+  target.dispatchEvent(down);
+  const up = key('keyup', k, extra);
+  target.dispatchEvent(up);
+  return { down, up };
+}
+/** The last enabled/disabled the overlay told the mic worklet. */
+const micEnabled = (world) => world.mic.port.posted.filter((m) => m && 'enabled' in m).at(-1).enabled;
+const FRAME_TYPES = (frames) => frames.map((f) => f.type).filter((x) => x !== 'heard' && x !== 'ping');
+
+test('overlay: Space mutes from any round button, Undo and the gear — and neither the keydown nor the keyup activates the focused button', dom, async () => {
+  const world = fakeAudioWorld();
+  world.globals.AudioContext.prototype.setSinkId = async () => {};
+  await withDom(async () => {
+    const o = await openOverlay(world, { devices: [{ kind: 'audiooutput', deviceId: 'default', label: 'Default' }] });
+    try {
+      o.ws.msg({ type: 'transcript', text: 'Never mind that.', merged: false, message_id: 'u-9' });
+      const q = (s) => o.overlay.querySelector(s);
+      const targets = ['.drive-pause', '.drive-type', '.drive-output', '.drive-end', '.drive-undo', '.drive-gear', '.drive-ring'];
+      for (const sel of targets) {
+        const btn = q(sel);
+        assert.equal(btn.hidden, false, `${sel} is on screen`);
+        const before = o.ws.sent.length;
+        const wasMuted = q('.drive-pause').dataset.muted === '1';
+        const { down, up } = press(btn, ' ');
+        assert.equal(down.defaultPrevented, true, `${sel}: keydown held back`);
+        assert.equal(up.defaultPrevented, true, `${sel}: keyup held back (a button clicks on Space's keyup)`);
+        assert.deepEqual(FRAME_TYPES(o.ws.sent.slice(before)), [wasMuted ? 'start' : 'pause'], sel);
+        assert.equal(q('.drive-pause').dataset.muted, wasMuted ? '0' : '1', `${sel}: Space flipped the microphone`);
+        assert.equal(q('.drive-compose').hidden, true, `${sel}: the Type button did not run`);
+        assert.equal(q('.drive-sheet'), null, `${sel}: the gear did not open the sheet`);
+        assert.equal(q('.drive-output-menu'), null, `${sel}: the Output menu did not open`);
+        assert.equal(q('.drive-undo').hidden, false, `${sel}: Undo did not run`);
+        assert.equal(o.ws.frames('undo').length, 0);
+        assert.ok(document.querySelector('.drive-overlay'), `${sel}: still on the call`);
+      }
+      // Enter still presses the button it is on.
+      const enter = key('keydown', 'Enter');
+      q('.drive-type').dispatchEvent(enter);
+      assert.equal(enter.defaultPrevented, false);
+    } finally { o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: Space is left alone in the text box, on its Send button, with a modifier, over the sheet or the Output menu and when stopped; a held key is one toggle', dom, async () => {
+  const world = fakeAudioWorld();
+  world.globals.AudioContext.prototype.setSinkId = async () => {};
+  await withDom(async () => {
+    const o = await openOverlay(world, { devices: [{ kind: 'audiooutput', deviceId: 'default', label: 'Default' }] });
+    try {
+      const q = (s) => o.overlay.querySelector(s);
+      // The text box: Space is a space.
+      q('.drive-type').click();
+      assert.equal(o.ws.sent.at(-1).type, 'pause');
+      const input = q('.drive-compose-input');
+      const typedSpace = key('keydown', ' ');
+      input.dispatchEvent(typedSpace);
+      assert.equal(typedSpace.defaultPrevented, false);
+      assert.equal(q('.drive-pause').dataset.muted, '1', 'still muted, not toggled');
+      // The box's own Send keeps Space (it sends).
+      const send = q('.drive-compose-send');
+      const sp = press(send, ' ');
+      assert.equal(sp.down.defaultPrevented, false);
+      assert.equal(sp.up.defaultPrevented, false);
+      // Modifiers (Ctrl+Space is the OS / IME), an IME in progress.
+      const n1 = o.ws.sent.length;
+      const ring = q('.drive-ring');
+      assert.equal(press(ring, ' ', { ctrlKey: true }).down.defaultPrevented, false);
+      assert.equal(press(ring, ' ', { altKey: true }).down.defaultPrevented, false);
+      assert.equal(press(ring, ' ', { metaKey: true }).down.defaultPrevented, false);
+      ring.dispatchEvent(key('keydown', ' ', { isComposing: true }));
+      assert.equal(o.ws.sent.length, n1);
+      // Unmute, then a held key: not activated, and one toggle only.
+      ring.dispatchEvent(key('keydown', ' '));
+      assert.equal(q('.drive-pause').dataset.muted, '0');
+      const held = key('keydown', ' ', { repeat: true });
+      ring.dispatchEvent(held);
+      assert.equal(held.defaultPrevented, true, 'a repeat never activates the button either');
+      assert.equal(q('.drive-pause').dataset.muted, '0', 'but it does not flutter the microphone');
+      // The Output menu is open: Space picks the row it is on.
+      q('.drive-output').click();
+      await settle();
+      const row = q('.drive-output-item');
+      assert.ok(row, 'the menu is open');
+      const n2 = o.ws.sent.length;
+      assert.equal(press(row, ' ').down.defaultPrevented, false);
+      assert.equal(press(q('.drive-output'), ' ').down.defaultPrevented, false, 'nor from the button under an open menu');
+      assert.equal(o.ws.sent.length, n2);
+      row.click();                                                   // picking a row closes the menu
+      await settle();
+      assert.equal(q('.drive-output-menu'), null);
+      // The sheet is open: nothing here.
+      q('.drive-gear').click();
+      await settle();
+      assert.ok(q('.drive-sheet'), 'the sheet is open');
+      const n3 = o.ws.sent.length;
+      assert.equal(press(q('.drive-sheet'), ' ').down.defaultPrevented, false);
+      assert.equal(o.ws.sent.length, n3);
+      o.overlay.dispatchEvent(key('keydown', 'Escape'));             // Esc closes the sheet only
+      await settle();
+      assert.equal(q('.drive-sheet'), null);
+      // Stopped: Try again keeps the native Space.
+      o.ws.drop(1013, 'busy');
+      assert.equal(o.overlay.dataset.state, 'stopped');
+      const n4 = o.ws.sent.length;
+      assert.equal(press(q('.drive-pause'), ' ').down.defaultPrevented, false);
+      assert.equal(press(ring, ' ').up.defaultPrevented, false);
+      assert.equal(o.ws.sent.length, n4);
+    } finally { o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: T opens and closes the text box (muting first), O the Output menu, U takes back the last words; never while typing, with a modifier or while composing', dom, async () => {
+  const world = fakeAudioWorld();
+  world.globals.AudioContext.prototype.setSinkId = async () => {};
+  await withDom(async () => {
+    const o = await openOverlay(world, { devices: [
+      { kind: 'audiooutput', deviceId: 'default', label: 'Default' },
+      { kind: 'audiooutput', deviceId: 'sp1', label: 'Speakers (Realtek)' },
+    ] });
+    try {
+      const q = (s) => o.overlay.querySelector(s);
+      const ring = q('.drive-ring');
+      const compose = q('.drive-compose');
+      // T: the Type button's job.
+      const t1 = key('keydown', 't');
+      ring.dispatchEvent(t1);
+      assert.equal(t1.defaultPrevented, true, 'the letter does not land in the box it just opened');
+      assert.equal(compose.hidden, false);
+      assert.equal(o.ws.sent.at(-1).type, 'pause', 'muted first');
+      assert.equal(document.activeElement, q('.drive-compose-input'));
+      // A t, T, o, u or U typed in the box is a letter.
+      const input = q('.drive-compose-input');
+      const n = o.ws.sent.length;
+      for (const k of ['t', 'T', 'o', 'u', 'U']) {
+        const ev = key('keydown', k);
+        input.dispatchEvent(ev);
+        assert.equal(ev.defaultPrevented, false, `${k} is a letter in the box`);
+      }
+      assert.equal(compose.hidden, false);
+      assert.equal(q('.drive-output-menu'), null);
+      assert.equal(o.ws.sent.length, n);
+      // Esc closes the box; T from the picture opens it again, T from another button closes it.
+      input.dispatchEvent(key('keydown', 'Escape'));
+      assert.equal(compose.hidden, true);
+      ring.dispatchEvent(key('keydown', 'T'));
+      assert.equal(compose.hidden, false);
+      q('.drive-end').dispatchEvent(key('keydown', 't'));
+      assert.equal(compose.hidden, true, 'T again, from another button: the box goes away');
+      assert.equal(q('.drive-type').getAttribute('aria-pressed'), 'false');
+      // Modifiers and composition: nothing.
+      const before = o.ws.sent.length;
+      for (const extra of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }, { isComposing: true }]) {
+        for (const k of ['t', 'o', 'u']) {
+          const ev = key('keydown', k, extra);
+          ring.dispatchEvent(ev);
+          assert.equal(ev.defaultPrevented, false, `${k} ${JSON.stringify(extra)}`);
+        }
+      }
+      assert.equal(compose.hidden, true);
+      assert.equal(q('.drive-output-menu'), null);
+      assert.equal(o.ws.sent.length, before);
+      // O: the Output menu (and the same key on the button closes it).
+      const o1 = key('keydown', 'o');
+      ring.dispatchEvent(o1);
+      assert.equal(o1.defaultPrevented, true);
+      await settle();
+      assert.ok(q('.drive-output-menu'), 'O opens the menu');
+      q('.drive-output').dispatchEvent(key('keydown', 'O'));
+      assert.equal(q('.drive-output-menu'), null, 'O again closes it');
+      // U: Undo, from a button too.
+      o.ws.msg({ type: 'transcript', text: 'Never mind that.', merged: false, message_id: 'u-3' });
+      q('.drive-gear').dispatchEvent(key('keydown', 'u'));
+      assert.equal(o.ws.frames('undo').at(-1).message_id, 'u-3');
+    } finally { o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: T and O do nothing where their buttons are not there (no Output on a phone; nothing when stopped)', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      const q = (s) => o.overlay.querySelector(s);
+      assert.equal(q('.drive-output').hidden, true);
+      const ev = key('keydown', 'o');
+      q('.drive-ring').dispatchEvent(ev);
+      assert.equal(ev.defaultPrevented, false);
+      assert.equal(q('.drive-output-menu'), null);
+      o.ws.drop(1013, 'busy');
+      assert.equal(o.overlay.dataset.state, 'stopped');
+      const tk = key('keydown', 't');
+      q('.drive-ring').dispatchEvent(tk);
+      assert.equal(tk.defaultPrevented, false);
+      assert.equal(q('.drive-compose').hidden, true);
+    } finally { o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: every round button and Undo carry a "<label> (<key>)" tooltip and aria-keyshortcuts, no native title; Try again / Back to chat have none', dom, async () => {
+  const world = fakeAudioWorld();
+  world.globals.AudioContext.prototype.setSinkId = async () => {};
+  await withDom(async () => {
+    const o = await openOverlay(world, { devices: [{ kind: 'audiooutput', deviceId: 'default', label: 'Default' }, { kind: 'audiooutput', deviceId: 'bt1', label: 'Headphones (Bluetooth)' }] });
+    try {
+      const q = (s) => o.overlay.querySelector(s);
+      const tip = (sel) => q(sel).dataset.tip;
+      const keys = (sel) => q(sel).getAttribute('aria-keyshortcuts');
+      assert.equal(EN.drive.tip_shortcut, '{label} ({key})');
+      assert.equal(EN.drive.key_space, 'Space');
+      assert.equal(EN.drive.key_esc, 'Esc');
+      assert.equal(tip('.drive-pause'), 'Mute (Space)');
+      assert.equal(tip('.drive-type'), 'Type (T)');
+      assert.equal(tip('.drive-output'), 'Output (O)');
+      assert.equal(tip('.drive-end'), 'Hang up (Esc)');
+      assert.deepEqual(['.drive-pause', '.drive-type', '.drive-output', '.drive-end'].map(keys), ['Space', 'T', 'O', 'Escape']);
+      // Mute and Unmute swap; the tooltip follows the button's word.
+      q('.drive-pause').click();
+      assert.equal(tip('.drive-pause'), 'Unmute (Space)');
+      assert.equal(keys('.drive-pause'), 'Space');
+      press(q('.drive-ring'), ' ');
+      assert.equal(tip('.drive-pause'), 'Mute (Space)');
+      // The Output tooltip keeps the plain word although the button names the route.
+      q('.drive-output').click();                      // the menu reads the device list…
+      await settle();
+      q('.drive-output').click();                      // …and closes again
+      saveDriveSettings(globalThis.localStorage, { sinkId: 'bt1' });
+      assert.equal(q('.drive-output').textContent, EN.drive.output_bluetooth);
+      assert.equal(tip('.drive-output'), 'Output (O)');
+      saveDriveSettings(globalThis.localStorage, { sinkId: '' });
+      // Undo: the word without its countdown.
+      assert.equal(q('.drive-undo').hasAttribute('data-tip'), false);
+      o.ws.msg({ type: 'transcript', text: 'Hello there', merged: false, message_id: 'u-1' });
+      assert.equal(tip('.drive-undo'), 'Undo (U)');
+      assert.equal(keys('.drive-undo'), 'U');
+      assert.match(q('.drive-undo').textContent, /Undo \(\d+ s\)/, 'the visible label still counts down');
+      // No native tooltip on top of the custom one; the aria-labels are as they were.
+      for (const sel of ['.drive-pause', '.drive-type', '.drive-output', '.drive-end', '.drive-undo']) assert.equal(q(sel).hasAttribute('title'), false, sel);
+      assert.equal(q('.drive-type').getAttribute('aria-label'), EN.drive.type_input_aria);
+      // Stopped: Try again / Back to chat have no key, so no tooltip.
+      o.ws.drop(1013, 'busy');
+      assert.equal(o.overlay.dataset.state, 'stopped');
+      for (const sel of ['.drive-pause', '.drive-end']) {
+        assert.equal(q(sel).hasAttribute('data-tip'), false, `${sel} has no tooltip when stopped`);
+        assert.equal(q(sel).hasAttribute('aria-keyshortcuts'), false, sel);
+      }
+      assert.equal(q('.drive-pause').textContent, EN.drive.try_again);
+    } finally { o.d.close({ quiet: true }); o.restore(); saveDriveSettings(globalThis.localStorage, { sinkId: '' }); }
+  }, world.globals);
+});
+
+test('voice.css: the tooltip shows on hover and keyboard focus, is hidden on touch, and has a forced-colours and a reduced-motion answer', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../../src/dispatch_voice/static/voice.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  assert.match(css, /\.drive-road, \.drive-undo \{ position: relative; \}/);
+  assert.match(css, /\[data-tip\]::after \{[^}]*content: attr\(data-tip\)[^}]*bottom: calc\(100% \+ 6px\)[^}]*left: 50%[^}]*translateX\(-50%\)[^}]*white-space: nowrap[^}]*pointer-events: none/);
+  assert.match(css, /\[data-tip\]:hover::after, \.drive-overlay \[data-tip\]:focus-visible::after \{ opacity: 1; visibility: visible; \}/);
+  assert.match(css, /@media \(hover: none\) \{\s*\.drive-overlay \[data-tip\]::after \{ display: none; \}/);
+  assert.match(css, /@media \(forced-colors: active\) \{[^@]*\[data-tip\]::after \{[^}]*CanvasText/);
+  assert.match(css, /@media \(prefers-reduced-motion: no-preference\) \{\s*\.drive-overlay \[data-tip\]::after \{ transition/);
+});
+
+test('overlay: the live caption never shows "null" — the first words (tail only) read as just the words, then committed + tail', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      const you = o.overlay.querySelector('.drive-you');
+      o.ws.msg({ type: 'partial', committed: '', tail: 'a', stable: 0, t: 0.2 });
+      assert.equal(you.textContent, 'a');
+      assert.equal(you.querySelector('.drive-committed'), null);
+      assert.equal(you.querySelector('.drive-tail').textContent, 'a');
+      o.ws.msg({ type: 'partial', committed: 'hello', tail: 'a', stable: 1, t: 0.4 });
+      assert.equal(you.textContent, 'hello a');
+      assert.equal(you.querySelector('.drive-committed').textContent, 'hello');
+      assert.equal(you.querySelector('.drive-tail').textContent, 'a');
+      o.ws.msg({ type: 'partial', committed: 'hello a', tail: '', stable: 2, t: 0.6 });
+      assert.equal(you.textContent, 'hello a');
+      assert.equal(you.querySelector('.drive-tail'), null);
+      o.ws.msg({ type: 'partial', committed: '', tail: '', stable: 2, t: 0.8 });
+      assert.equal(you.textContent, '');
+      assert.doesNotMatch(you.textContent, /null/);
+    } finally { o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
+/** Spy on every gain node the overlay makes: what touched its AudioParam (the duck gain). */
+function watchGains(world) {
+  const touched = [];
+  const proto = world.globals.AudioContext.prototype;
+  const make = proto.createGain;
+  let made = 0;
+  proto.createGain = function createGain() {
+    const g = make.call(this);
+    if (made++ > 0) return g;                       // the first is the duck gain; the rest are earcons
+    for (const m of ['setTargetAtTime', 'setValueAtTime', 'cancelScheduledValues', 'exponentialRampToValueAtTime']) {
+      const orig = g.gain[m].bind(g.gain);
+      g.gain[m] = (...a) => { touched.push(m); return orig(...a); };
+    }
+    return g;
+  };
+  return { touched };
+}
+
+for (const how of ['the Mute button', 'Space on the picture', 'Space on Hang up']) {
+  test(`overlay: Mute (${how}) while a reply plays pauses only the microphone — one \`pause\`, the reply goes on, "Muted — still speaking", then "Muted"`, dom, async () => {
+    const world = fakeAudioWorld();
+    const watch = watchGains(world);
+    await withDom(async () => {
+      const o = await openOverlay(world);
+      try {
+        o.ws.msg({ type: 'ready', proto: 3, sid: 'aaaa', sample_rate_in: 16000 });
+        o.ws.msg({ type: 'state', state: 'speaking' });
+        sayWithAudio(o.ws, { seq: 1, text: 'A long answer that keeps going.', ms: 1000 });
+        world.render(200);
+        assert.equal(o.word(), EN.drive.state_speaking);
+        const player = world.players[0];
+        const sentBefore = o.ws.sent.length;
+        const playerBefore = player.port.posted.length;
+        const gainsBefore = watch.touched.length;
+        if (how === 'the Mute button') o.overlay.querySelector('.drive-pause').click();
+        else if (how === 'Space on the picture') press(o.overlay.querySelector('.drive-ring'), ' ');
+        else press(o.overlay.querySelector('.drive-end'), ' ');
+        assert.deepEqual(FRAME_TYPES(o.ws.sent.slice(sentBefore)), ['pause'], 'exactly one frame, and not a stop_playback / cancel / barge_in');
+        for (const bad of ['stop_playback', 'cancel', 'barge_in', 'flush']) assert.equal(o.ws.frames(bad).length, 0, bad);
+        // The player is untouched: no pause, flush, reset, gain; the duck gain node saw nothing.
+        const posts = player.port.posted.slice(playerBefore).map((m) => m && m.type);
+        assert.deepEqual(posts.filter((x) => ['pause', 'flush', 'reset', 'gain', 'end'].includes(x)), []);
+        assert.equal(player.core.paused, false);
+        assert.equal(watch.touched.length, gainsBefore, 'the duck gain was not touched');
+        // Still audible: the next quanta carry the reply.
+        const out = new Float32Array(128);
+        player.core.render(out);
+        assert.ok(out.some((v) => v !== 0), 'the reply is still coming out');
+        // The mic worklet was told to stop capturing.
+        assert.equal(micEnabled(world), false);
+        assert.equal(o.overlay.dataset.state, 'paused');
+        assert.equal(o.word(), EN.drive.paused_speaking);
+        assert.equal(o.overlay.querySelector('.drive-pause').dataset.muted, '1');
+        // The reply plays out; the server says it is done: the plain word.
+        world.render(1500);
+        await settle();
+        o.ws.msg({ type: 'state', state: 'paused' });
+        assert.equal(o.word(), EN.drive.state_paused);
+        // Unmute: `start`, the microphone back, listening again.
+        o.overlay.querySelector('.drive-pause').click();
+        assert.equal(o.ws.sent.at(-1).type, 'start');
+        assert.equal(micEnabled(world), true);
+        o.ws.msg({ type: 'state', state: 'listening' });
+        assert.equal(o.overlay.dataset.state, 'listening');
+        assert.equal(o.word(), EN.drive.state_listening);
+      } finally { o.d.close({ quiet: true }); o.restore(); }
+    }, world.globals);
+  });
+}
+
+test('overlay: the picture tap in `listening` mutes with one `pause` and nothing else; a tap on the muted screen unmutes with `start`', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      o.ws.msg({ type: 'state', state: 'listening' });
+      const n = o.ws.sent.length;
+      o.overlay.querySelector('.drive-ring').click();
+      assert.deepEqual(FRAME_TYPES(o.ws.sent.slice(n)), ['pause']);
+      assert.equal(o.overlay.dataset.state, 'paused');
+      assert.equal(o.word(), EN.drive.state_paused);
+      o.ws.msg({ type: 'state', state: 'paused' });
+      o.overlay.querySelector('.drive-ring').click();
+      assert.equal(o.ws.sent.at(-1).type, 'start');
+      assert.equal(o.overlay.dataset.state, 'listening');
+    } finally { o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: Mute while the phone voice is reading a reply does not cancel the utterance', dom, async (t) => {
+  const world = fakeAudioWorld();
+  const synth = fakeSynth([{ voiceURI: 'v-en', name: 'English', lang: 'en-US', localService: true, default: true }]);
+  await withDom(async () => {
+    localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, firstRunOpens: 3 }));
+    t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: 5_000_000 });
+    const o = await openOverlay(world);
+    try {
+      o.ws.msg({ type: 'ready', proto: 3, sid: 'aaaa', sample_rate_in: 16000, codec_in: 'pcm16', codec_out: 'pcm16' });
+      o.ws.msg({ type: 'state', state: 'speaking' });
+      o.ws.msg({ type: 'say', gen: 0, seq: 1, text: 'This sentence is late.', kind: 'reply', message_id: 'm1', t: 1 });
+      advance(t, 6500, 250);
+      assert.deepEqual(synth.spoken.map((u) => u.text), ['This sentence is late.'], 'the phone voice has the sentence');
+      synth.start();
+      advance(t, 300, 250);
+      const cancels = synth.cancels;
+      const n = o.ws.sent.length;
+      press(o.overlay.querySelector('.drive-pause'), ' ');
+      advance(t, 300, 100);
+      assert.equal(o.overlay.dataset.state, 'paused');
+      assert.equal(synth.cancels, cancels, 'the utterance was not cancelled');
+      assert.ok(synth.current, 'and is still being spoken');
+      assert.deepEqual(FRAME_TYPES(o.ws.sent.slice(n)).filter((x) => x !== 'link'), ['pause']);
+      assert.equal(o.word(), EN.drive.paused_speaking);
+      synth.end();
+      advance(t, 300, 100);
+      o.ws.msg({ type: 'say_end', gen: 0, seq: 1 });
+      o.ws.msg({ type: 'state', state: 'paused' });
+      advance(t, 300, 100);
+      assert.equal(o.word(), EN.drive.state_paused);
+      assert.equal(synth.cancels, cancels);
+    } finally { t.mock.timers.reset(); o.d.close({ quiet: true }); o.restore(); }
+  }, { ...world.globals, speechSynthesis: synth, SpeechSynthesisUtterance: FakeUtterance, performance: mockPerf() });
+});
+
+test('overlay: typing acts like a muted microphone, the reply is spoken as usual — one `pause`, `typed` on Enter, the player untouched, "Muted — still speaking" then "Muted"', dom, async () => {
+  const world = fakeAudioWorld();
+  const watch = watchGains(world);
+  await withDom(async () => {
+    const o = await openOverlay(world);
+    try {
+      o.ws.msg({ type: 'ready', proto: 3, sid: 'aaaa', sample_rate_in: 16000 });
+      await settle();
+      const playerBefore = world.players[0].port.posted.length;   // a new session resets the player once; nothing after that may
+      const n = o.ws.sent.length;
+      o.overlay.querySelector('.drive-type').click();
+      const input = o.overlay.querySelector('.drive-compose-input');
+      assert.deepEqual(FRAME_TYPES(o.ws.sent.slice(n)), ['pause'], 'opening the box mutes once');
+      assert.equal(micEnabled(world), false);
+      input.value = 'what is on today?';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.deepEqual(o.ws.frames('typed'), [{ type: 'typed', text: 'what is on today?' }]);
+      o.ws.msg({ type: 'transcript', text: 'what is on today?', typed: true, message_id: 'u-1', merged: false });
+      o.ws.msg({ type: 'state', state: 'thinking' });
+      assert.equal(o.overlay.dataset.state, 'paused');
+      // The reply arrives and plays in full.
+      o.ws.msg({ type: 'state', state: 'speaking' });
+      sayWithAudio(o.ws, { seq: 1, text: 'Nothing until three.', mid: 'm-1', ms: 800 });
+      world.render(200);
+      const player = world.players[0];
+      assert.equal(player.core.paused, false);
+      assert.equal(o.word(), EN.drive.paused_speaking, 'muted, still speaking');
+      assert.equal(o.overlay.querySelector('.drive-type').getAttribute('aria-pressed'), 'true');
+      assert.equal(o.ws.frames('stop_playback').length + o.ws.frames('cancel').length, 0);
+      assert.deepEqual(player.port.posted.slice(playerBefore).map((m) => m && m.type).filter((x) => ['pause', 'flush', 'reset', 'gain'].includes(x)), []);
+      assert.equal(watch.touched.length, 0, 'the duck gain is untouched');
+      const out = new Float32Array(128);
+      player.core.render(out);
+      assert.ok(out.some((v) => v !== 0), 'audible');
+      // Over: the mic stays muted.
+      world.render(1500);
+      await settle();
+      o.ws.msg({ type: 'state', state: 'paused' });
+      assert.equal(o.word(), EN.drive.state_paused);
+      assert.equal(o.overlay.querySelector('.drive-pause').dataset.muted, '1');
+      assert.equal(o.ws.frames('start').length, 1, 'no `start` since the first one: the mic stayed off');
+    } finally { o.d.close({ quiet: true }); o.restore(); }
+  }, world.globals);
+});
+
+test('overlay: a typed turn read by the phone voice is not cancelled either', dom, async (t) => {
+  const world = fakeAudioWorld();
+  const synth = fakeSynth([{ voiceURI: 'v-en', name: 'English', lang: 'en-US', localService: true, default: true }]);
+  await withDom(async () => {
+    localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, firstRunOpens: 3 }));
+    t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: 5_000_000 });
+    const o = await openOverlay(world);
+    try {
+      o.ws.msg({ type: 'ready', proto: 3, sid: 'aaaa', sample_rate_in: 16000, codec_in: 'pcm16', codec_out: 'pcm16' });
+      const cancels = synth.cancels;                       // whatever the open itself did
+      o.overlay.querySelector('.drive-type').click();
+      const input = o.overlay.querySelector('.drive-compose-input');
+      input.value = 'hello';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.equal(o.ws.frames('typed').length, 1);
+      o.ws.msg({ type: 'state', state: 'speaking' });
+      o.ws.msg({ type: 'say', gen: 0, seq: 1, text: 'Hi, typed friend.', kind: 'reply', message_id: 'm1', t: 1 });
+      advance(t, 6500, 250);
+      assert.deepEqual(synth.spoken.map((u) => u.text), ['Hi, typed friend.']);
+      synth.start();
+      advance(t, 300, 250);
+      assert.equal(synth.cancels, cancels, 'typing and the reply cancelled nothing');
+      assert.ok(synth.current);
+      assert.equal(o.word(), EN.drive.paused_speaking);
+      synth.end();
+      advance(t, 300, 100);
+      o.ws.msg({ type: 'say_end', gen: 0, seq: 1 });
+      o.ws.msg({ type: 'state', state: 'paused' });
+      advance(t, 300, 100);
+      assert.equal(o.word(), EN.drive.state_paused);
+      assert.equal(synth.cancels, cancels);
+    } finally { t.mock.timers.reset(); o.d.close({ quiet: true }); o.restore(); }
+  }, { ...world.globals, speechSynthesis: synth, SpeechSynthesisUtterance: FakeUtterance, performance: mockPerf() });
+});
+
+test('overlay: with "Type instead of talking" on, the box stays out and the mic stays muted after a reply', dom, async () => {
+  const world = fakeAudioWorld();
+  await withDom(async () => {
+    saveDriveSettings(globalThis.localStorage, { typedInput: true, firstRunOpens: 3 });
+    const o = await openOverlay(world);
+    try {
+      o.ws.msg({ type: 'ready', proto: 3, sid: 'aaaa', sample_rate_in: 16000 });
+      const compose = o.overlay.querySelector('.drive-compose');
+      assert.equal(compose.hidden, false);
+      assert.equal(o.overlay.dataset.state, 'paused');
+      const input = o.overlay.querySelector('.drive-compose-input');
+      input.value = 'tell me a story';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      assert.equal(o.ws.frames('typed').length, 1);
+      o.ws.msg({ type: 'state', state: 'speaking' });
+      sayWithAudio(o.ws, { seq: 1, text: 'Once upon a time.', mid: 'm-1', ms: 600 });
+      world.render(200);
+      assert.equal(world.players[0].core.paused, false);
+      assert.equal(o.word(), EN.drive.paused_speaking);
+      world.render(1200);
+      await settle();
+      const starts = o.ws.frames('start').length;
+      o.ws.msg({ type: 'state', state: 'listening' });
+      assert.equal(o.overlay.dataset.state, 'paused', 'the server says listening; the screen is still a muted microphone');
+      assert.equal(o.word(), EN.drive.state_paused);
+      assert.equal(compose.hidden, false, 'the box is still out');
+      assert.equal(o.overlay.querySelector('.drive-pause').dataset.muted, '1');
+      assert.equal(o.ws.frames('start').length, starts, 'no `start` was sent');
+      assert.equal(micEnabled(world), false);
+    } finally { o.d.close({ quiet: true }); o.restore(); saveDriveSettings(globalThis.localStorage, { typedInput: false }); }
   }, world.globals);
 });

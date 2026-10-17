@@ -1,6 +1,6 @@
 [project]
 name = "dispatch-voice"
-version = "1.3.5"
+version = "1.4.0"
 description = "Voice chat for DisPatch Chat: the DisPatch Voice add-on (local speech, cloned voices, Chatterbox-Turbo ONNX on the CPU)"
 license = "MIT"
 requires-python = ">=3.12"

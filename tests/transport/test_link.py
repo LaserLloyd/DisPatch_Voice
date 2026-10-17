@@ -84,15 +84,17 @@ def test_probe_payload_is_capped_random_and_incompressible():
     assert len(co.compress(a) + co.flush()) >= len(a)
 
 
-def test_probe_limiter_one_per_20s():
+def test_probe_limiter_one_per_18s_so_a_client_pacing_at_20s_is_never_refused():
     t = [0.0]
     lim = ProbeLimiter(clock=lambda: t[0])
     assert lim.allow()
-    t[0] = 19.9
+    t[0] = 17.9
     assert not lim.allow()
-    t[0] = 20.0
+    t[0] = 18.0
     assert lim.allow()
     assert lim.refused == 1
+    t[0] = 18.0 + 19.5                                   # 19.5 s later: jitter on a 20 s pace
+    assert lim.allow() and lim.refused == 1
 
 
 # --------------------------------------------------------------- peer address #

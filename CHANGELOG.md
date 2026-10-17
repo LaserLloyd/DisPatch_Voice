@@ -4,6 +4,39 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-17
+
+A round of fixes from a live call where the voice chat moved to the phone's
+voice and stayed there.
+
+### Fixed
+- **The microphone no longer hears the phone's voice.** `speechSynthesis` has no
+  echo-cancellation reference, so while the phone read a reply its own speaker
+  reached the microphone: bogus turns, and 0.6 s of "speech" cut the reply. The
+  device now mutes its microphone on the wire while the phone's voice speaks and
+  for 0.4 s after (the frames are zeroed, so the uplink's offsets stay intact);
+  tap the picture to interrupt a reply the phone is reading.
+- **The link recovers after an interrupted reply.** The link monitor cleared its
+  "reply in progress" only on `say_end`, which the server never sends for a cut
+  reply (a barge-in, a tap, an undo, a failed turn). One interrupted reply while
+  on the phone's voice stopped every probe, so the chat never went back to the
+  server's voice. The monitor is now told when a reply is cut.
+- **A refused probe is answered.** The server answers a probe inside its window
+  with `error {code: "rate_limited"}` instead of silence (the client waited 30 s),
+  and accepts one per 18 s so a client pacing at 20 s is never refused by jitter.
+- **Live captions no longer start with "null".** The caption of what you are
+  saying showed the word "null" before the first committed words.
+
+### Added
+- **Keyboard shortcuts on the call screen**, and a tooltip with the key when you
+  hover or focus a button: Space mutes/unmutes from anywhere on the screen
+  (except in the text box), T opens the text box, O the Output menu, U Undo,
+  Esc hangs up.
+
+### Changed
+- Mute mutes only the microphone, as before; typing a message (the Type button)
+  mutes the microphone the same way and the reply is still spoken.
+
 ## [1.3.5] — 2026-10-15
 
 ### Fixed

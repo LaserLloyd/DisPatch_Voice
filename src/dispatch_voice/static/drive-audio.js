@@ -50,6 +50,13 @@ export const WAIT_PREBUFFER_MS = 10000;
 /** The duck gain (SPEC §4.6 layer 1: ramp to 0.15 over 40 ms). */
 export const DUCK_GAIN = 0.15;
 export const DUCK_RAMP_MS = 40;
+/**
+ * Half-duplex on the device: while the phone voice speaks (speechSynthesis has no
+ * echo-cancellation reference, so its own speaker reaches the mic), and for this long
+ * after it stops (the room's tail), every mic frame is zeroed before it leaves
+ * `micMessage`. Zeroed, not dropped: the uplink offsets stay contiguous.
+ */
+export const PHONE_VOICE_MUTE_TAIL_MS = 400;
 
 /** Which voice a sentence goes to when the link is degraded (§5.4): 'phone' | 'text'. */
 export function localPath({ slowLink = 'phone', phoneOk = false } = {}) {
@@ -334,6 +341,9 @@ export function createDriveAudio({
 
   const bias = B.createEchoBias ? B.createEchoBias({ bluetooth }) : null;
   let localSpeaking = false;
+  let phoneMutedUntil = 0;     // the mic stays zeroed this long after the phone voice stops
+  /** True while the phone voice speaks and for PHONE_VOICE_MUTE_TAIL_MS after (half-duplex). */
+  const micHalfDuplex = () => localSpeaking || now() < phoneMutedUntil;
 
   const duck = B.createOptimisticDuck ? B.createOptimisticDuck({
     apply: (on, info = {}) => {
@@ -412,6 +422,7 @@ export function createDriveAudio({
 
   function onLocalSpeaking(on) {
     localSpeaking = !!on;
+    if (!localSpeaking) phoneMutedUntil = now() + PHONE_VOICE_MUTE_TAIL_MS;
     micPost({ localSpeaking: localSpeaking });
     if (bias) micPost({ echoBiasDb: bias.value });
     if (on) showPhoneCaption();
@@ -1038,6 +1049,7 @@ export function createDriveAudio({
             // A new turn: the reply before it was said in full or cut (a backchannel
             // or a cough over a reply never becomes a transcript).
             endReply();
+            if (monitor && proto >= 3) monitor.onReplyCut();   // the server sends no say_end for a cut reply
             if (typeof m.message_id === 'string' && m.message_id) lastTurnRow = m.message_id;
             if (duck) duck.onTurnAccepted();
             if (bias) { bias.onCleanTurn(); micPost({ echoBiasDb: bias.value }); }
@@ -1057,6 +1069,7 @@ export function createDriveAudio({
           // Any other reason fails the whole turn: nothing of the reply is left to resume.
           if (m.reason !== 'tts_failed' && reply && reply.sid === sid
               && (!m.message_id || reply.ids.has(m.message_id))) endReply();
+          if (m.reason !== 'tts_failed' && monitor && proto >= 3) monitor.onReplyCut();   // no say_end is coming
           if (monitor && proto >= 3) monitor.onTurnError(Number.isFinite(m.seq) ? m.seq : undefined);
           break;
         }
@@ -1096,6 +1109,9 @@ export function createDriveAudio({
       if (d.buf instanceof ArrayBuffer) {
         const off = Number.isFinite(d.off) ? d.off >>> 0 : (micClock ? micClock.off : 0);
         micClock = { off: (off + 320) >>> 0, at: now() };
+        // Half-duplex: the phone voice has no echo reference, so its own speaker would be
+        // heard, transcribed and barged in on. Same length, same `off`: the offsets stay whole.
+        if (micHalfDuplex()) d = { ...d, buf: new ArrayBuffer(d.buf.byteLength) };
         if (!everReady) {
           preReady.push({ off, buf: d.buf });
           if (preReady.length > PRE_READY_FRAMES) preReady.splice(0, preReady.length - PRE_READY_FRAMES);
@@ -1114,7 +1130,7 @@ export function createDriveAudio({
       if (d.gate === 'closed' && uplink) { uplink.flush(); return; }
       if (typeof d.speech === 'boolean') {
         if (duck && ready) duck.onSpeech(d.speech);
-        cb('onSpeech', d.speech);
+        if (!micHalfDuplex()) cb('onSpeech', d.speech);   // never "hearing you" for the phone's own voice
         return;
       }
       if (typeof d.level === 'number') cb('onMicLevel', d.level);
@@ -1170,6 +1186,7 @@ export function createDriveAudio({
       if (reply && (reply.sid !== sid || genNewer(g, reply.gen))) endReply();
       for (const r of order) if (r.sid === sid && genNewer(g, r.gen) && !r.shown) r.cut = true;
       replyActive = false;
+      if (monitor && proto >= 3) monitor.onReplyCut();   // the server sends no say_end for a cut reply
       playing = null;
       if (sayCap && ready && h) send({ type: 'heard', gen: g, seq: h.seq, played_ms: h.played_ms, source: h.source });
       cb('onPlaying', null);
@@ -1193,6 +1210,7 @@ export function createDriveAudio({
       if (duck) duck.onBargeIn();
       endReply();               // the listener stopped it: nothing to resume after a drop
       replyActive = false;
+      if (monitor && proto >= 3) monitor.onReplyCut();
       playing = null;
       cb('onPlaying', null);
       return sayCap && h ? h : null;
@@ -1206,6 +1224,7 @@ export function createDriveAudio({
     undone() {
       endReply();
       replyActive = false;
+      if (monitor && proto >= 3) monitor.onReplyCut();
       stopHeard = null;
     },
 
@@ -1268,6 +1287,8 @@ export function createDriveAudio({
     get replyPlaying() { return (!!playing && playing.kind === 'reply' && !isStarved()) || localSpeaking; },
     get playingKind() { return localSpeaking ? 'reply' : (playing && !isStarved() ? playing.kind : null); },
     get localSpeaking() { return localSpeaking; },
+    /** The phone voice speaks (or just stopped): the mic is being zeroed. */
+    get micHalfDuplex() { return micHalfDuplex(); },
     get phoneOk() { return phoneOk(); },
     get ring() { return ring; },
     /** For tests: the sentence records in arrival order. */

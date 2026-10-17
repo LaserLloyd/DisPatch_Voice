@@ -500,3 +500,58 @@ test('the default clock is monotonic epoch-ms and is the same function as the do
   assert.ok(b >= a && b - a < 50);
   assert.equal(monoNow.toString(), codec.monoNow.toString(), 'one clock definition in both modules');
 });
+
+// ---- a reply cut with no say_end (barge-in, tap-stop, undo, failed turn, new turn) ----
+
+/** Text mode by a missed deadline, a reply seq still open (the server sent no say_end). */
+function textMidReply() {
+  const ctx = setup();
+  ctx.m.onReady();
+  ctx.m.onSay(1, 0, 'reply');
+  for (let i = 0; i < 40; i++) { ctx.clock.advance(250); ctx.m.tick(); }
+  assert.deepEqual(ctx.links.map((e) => [e.mode, e.why]), [['text', 'deadline']]);
+  ctx.m.onSay(2, 0, 'reply');
+  return ctx;
+}
+/** Healthy pongs (RTT 50) for `s` seconds, asking for a probe each second; true once one is due. */
+function probeDue(ctx, s) {
+  for (let i = 0; i < s; i++) {
+    ctx.clock.advance(1000); ctx.m.onPong(50); ctx.m.tick();
+    if (ctx.m.wantProbe()) return true;
+  }
+  return false;
+}
+
+test('onReplyCut: a reply cut with no say_end no longer blocks recovery — it probes after the dwell and climbs to the 16 kbps rung', () => {
+  const ctx = textMidReply();
+  ctx.m.onReplyCut();
+  assert.equal(probeDue(ctx, 100), true, 'a probe is due once healthy for 30 s and past the dwell');
+  assert.equal(ctx.m.stats().dwell_ms, 60000);
+  ctx.m.onProbe(16384, 100);
+  assert.deepEqual(ctx.links.at(-1), { mode: 'audio', downKbps: 16, upKbps: 12, why: 'recovered' });
+});
+
+test('onReplyCut control: WITHOUT it the open reply keeps wantProbe() false for good (the bug)', () => {
+  const ctx = textMidReply();
+  assert.equal(probeDue(ctx, 300), false);
+  assert.equal(ctx.m.current().mode, 'text');
+});
+
+test('onReplyCut applies a held predictive change now, like say_end (a `link` event with why rtt)', () => {
+  const ctx = setup();
+  pongs(ctx, 4, 1600);                              // → ladder rung (never held)
+  ctx.clock.advance(11000);
+  ctx.m.onSay(1, 0, 'reply');
+  ctx.m.onChunk(1, ctx.clock.now(), 0, 100);
+  pongs(ctx, 3, 1600);
+  assert.equal(ctx.m.stats().pending, 'rtt', 'held mid-reply');
+  const n = ctx.links.length;
+  ctx.m.onReplyCut();                               // the reply was cut: no say_end is coming
+  assert.equal(ctx.m.stats().pending, null);
+  assert.equal(ctx.links.length, n + 1);
+  assert.deepEqual(ctx.links.at(-1), { mode: 'text', downKbps: 16, upKbps: 12, why: 'rtt' });
+  // Idempotent: a second cut (or the late say_end) is harmless.
+  ctx.m.onReplyCut();
+  ctx.m.onSayEnd();
+  assert.equal(ctx.links.length, n + 1);
+});

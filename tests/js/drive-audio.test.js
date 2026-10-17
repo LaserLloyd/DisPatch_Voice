@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
   createDriveAudio, wireLink, localPath, completeSentences, genNewer, CURSOR_WAIT_MS, OLD_AUDIO_MAX_MS,
-  DUCK_GAIN, WAIT_PREBUFFER_MS, RING_MAX_BYTES,
+  DUCK_GAIN, WAIT_PREBUFFER_MS, RING_MAX_BYTES, PHONE_VOICE_MUTE_TAIL_MS,
 } from '../../src/dispatch_voice/static/drive-audio.js';
 import { PlayerCore } from '../../src/dispatch_voice/static/voice-player-worklet.js';
 import { packDown, unpackUp, CODEC, KIND, UP_FLAGS } from '../../src/dispatch_voice/static/opus-codec.js';
@@ -1057,4 +1057,168 @@ test('a barge_in in the new session ends a reply of the old session whatever its
   w.a.frame({ type: 'barge_in', gen: 1 });          // the listener talks over it
   w.close();
   assert.equal(w.open().after_partial, undefined, 'the cut reply is never resumed');
+});
+
+// ---------------------------------------------------- half-duplex phone voice ---
+
+/** Every sample byte of an uplink frame, flattened. */
+const upBytes = (buf) => unpackUp(buf).packets.flatMap((p) => [...p]);
+
+test('F1: while the phone voice speaks the mic frames are zeroed (same offsets, so the uplink stays contiguous); the tail is 400 ms; after it they pass unchanged', () => {
+  const w = world({ settings: { slowLink: 'always_phone' } });
+  w.open(); w.readyV3();
+  w.micFrame(0, 500);
+  assert.ok(upBytes(w.bins.at(-1)).some((b) => b !== 0), 'before the phone speaks: the mic passes');
+  w.a.frame({ type: 'say', gen: 0, seq: 1, text: 'Phone only.', kind: 'reply', message_id: 'm1', t: 1 });
+  w.clock.advance(100);
+  w.synth.start();
+  assert.equal(w.a.localSpeaking, true);
+  w.micFrame(320, 500);
+  const during = w.bins.at(-1);
+  assert.equal(unpackUp(during).off, 320, 'the offset is untouched');
+  assert.equal(upBytes(during).length, 640, 'same length');
+  assert.ok(upBytes(during).every((b) => b === 0), 'zeroed while the phone speaks');
+  w.synth.end();
+  assert.equal(w.a.localSpeaking, false);
+  w.clock.advance(399);
+  w.micFrame(640, 500);
+  assert.equal(unpackUp(w.bins.at(-1)).off, 640);
+  assert.ok(upBytes(w.bins.at(-1)).every((b) => b === 0), 'still zeroed inside the 400 ms tail');
+  w.clock.advance(2);
+  w.micFrame(960, 500);
+  assert.equal(unpackUp(w.bins.at(-1)).off, 960);
+  assert.ok(upBytes(w.bins.at(-1)).some((b) => b !== 0), 'after the tail the mic passes unchanged');
+  // The flag still goes up for the server's own echo rule.
+  assert.equal(w.mic.filter((m) => 'localSpeaking' in m).map((m) => m.localSpeaking).at(-1), false);
+});
+
+test('F1: the zeroing also covers the offline ring (replayed later) and a v2 server raw PCM16', () => {
+  const w = world({ settings: { slowLink: 'always_phone' } });
+  w.open(); w.readyV3();
+  w.a.frame({ type: 'say', gen: 0, seq: 1, text: 'Phone only.', kind: 'reply', message_id: 'm1', t: 1 });
+  w.clock.advance(100);
+  w.synth.start();
+  w.close();                                       // the phone keeps speaking; the mic goes to the ring
+  w.micFrame(0, 700);
+  w.open();
+  w.readyV3({ sid: 'sid-2' });
+  w.clock.advance(CURSOR_WAIT_MS + 100);           // the replay starts from the client's own cursor
+  const replayed = w.bins.filter((b) => unpackUp(b).off === 0);
+  assert.ok(replayed.length >= 1, 'the ring frame was replayed');
+  for (const b of replayed) assert.ok(upBytes(b).every((v) => v === 0), 'zeroed in the ring');
+  // v2: raw PCM16 on the wire.
+  const v2 = world({ settings: { slowLink: 'always_phone' } });
+  v2.open(); v2.ready({ sid: 'abcd', say: true });
+  v2.micFrame(0, 500);
+  assert.ok([...new Uint8Array(v2.bins.at(-1))].some((b) => b !== 0), 'v2: passes while the phone is silent');
+  v2.a.frame({ type: 'say', gen: 0, seq: 1, text: 'Read me aloud.', kind: 'reply', message_id: 'm1', t: 1 });
+  v2.clock.advance(100);
+  v2.synth.start();
+  v2.micFrame(320, 500);
+  assert.equal(v2.bins.at(-1).byteLength, 640, 'same length');
+  assert.ok([...new Uint8Array(v2.bins.at(-1))].every((b) => b === 0), 'v2: zeroed while the phone speaks');
+});
+
+test('F1: {speech:true} during half-duplex never reaches the UI ("hearing you" for the echo); levels still flow; after the tail it does', () => {
+  const w = world({ settings: { slowLink: 'always_phone' } });
+  w.open(); w.readyV3();
+  w.a.frame({ type: 'say', gen: 0, seq: 1, text: 'Phone only.', kind: 'reply', message_id: 'm1', t: 1 });
+  w.clock.advance(100);
+  w.synth.start();
+  w.a.micMessage({ speech: true });
+  w.a.micMessage({ speech: false });
+  assert.deepEqual(w.ui.speech, []);
+  w.synth.end();
+  w.clock.advance(300);
+  w.a.micMessage({ speech: true });
+  assert.deepEqual(w.ui.speech, [], 'inside the tail');
+  w.clock.advance(150);
+  w.a.micMessage({ speech: true });
+  assert.deepEqual(w.ui.speech, [true], 'after the tail');
+});
+
+test('F1: micHalfDuplex follows the phone voice plus the tail', () => {
+  const w = world({ settings: { slowLink: 'always_phone' } });
+  w.open(); w.readyV3();
+  assert.equal(w.a.micHalfDuplex, false);
+  w.a.frame({ type: 'say', gen: 0, seq: 1, text: 'Phone only.', kind: 'reply', message_id: 'm1', t: 1 });
+  w.clock.advance(100);
+  w.synth.start();
+  assert.equal(w.a.micHalfDuplex, true);
+  w.synth.end();
+  assert.equal(w.a.micHalfDuplex, true, 'the tail');
+  w.clock.advance(PHONE_VOICE_MUTE_TAIL_MS - 1);
+  assert.equal(w.a.micHalfDuplex, true);
+  w.clock.advance(1);
+  assert.equal(w.a.micHalfDuplex, false);
+});
+
+// ------------------------------------------------ link recovery after a cut reply ---
+
+/** Text mode by a missed first-audio deadline, with reply seq 2 still in flight (no say_end). */
+function degradedMidReply() {
+  const w = world();
+  w.open(); w.readyV3();
+  w.a.frame({ type: 'say', gen: 0, seq: 1, text: 'This is late.', kind: 'reply', message_id: 'm1', t: 1 });
+  w.tick(6500);
+  assert.equal(w.frames('link').at(-1).mode, 'text');
+  w.a.frame({ type: 'say', gen: 0, seq: 2, text: 'And this.', kind: 'reply', message_id: 'm1', t: 2 });
+  return w;
+}
+const healthyFor = (w, seconds) => {
+  for (let i = 0; i < seconds && !w.frames('probe').length; i++) { w.clock.advance(750); w.tick(250); w.a.pong({ type: 'pong', t: 0, rx_off: 0 }, 50); }   // a probe goes out on the last quarter-second
+};
+
+test('F2: a server barge_in cuts the reply in text mode; healthy pongs then lead to a probe (it used to stay silent for good)', () => {
+  const w = degradedMidReply();
+  w.a.frame({ type: 'barge_in', gen: 1 });
+  healthyFor(w, 200);
+  assert.ok(w.frames('probe').length >= 1, 'the monitor probes after the cut reply');
+});
+
+test('F2 control: without the cut the same reply keeps the monitor from probing', () => {
+  const w = degradedMidReply();
+  healthyFor(w, 200);
+  assert.equal(w.frames('probe').length, 0, 'a reply still "in flight" blocks recovery');
+});
+
+test('F2: a new turn (transcript with text) and a tap-stop end the in-flight reply for the monitor too', () => {
+  const t = degradedMidReply();
+  t.a.frame({ type: 'transcript', text: 'next question', merged: false, message_id: 'u2', upto: 32000 });
+  healthyFor(t, 200);
+  assert.ok(t.frames('probe').length >= 1, 'transcript');
+  const s = degradedMidReply();
+  s.a.stopHere();
+  healthyFor(s, 200);
+  assert.ok(s.frames('probe').length >= 1, 'stopHere');
+});
+
+test('F2: a whole-turn turn_error and an undo end the in-flight reply for the monitor; a tts_failed one (one sentence) does not', () => {
+  const e = degradedMidReply();
+  e.a.frame({ type: 'turn_error', reason: 'llm_error', message_id: 'm1' });
+  healthyFor(e, 200);
+  assert.ok(e.frames('probe').length >= 1, 'turn_error');
+  const u = degradedMidReply();
+  u.a.undone();
+  healthyFor(u, 200);
+  assert.ok(u.frames('probe').length >= 1, 'undone');
+  const t = degradedMidReply();
+  t.a.frame({ type: 'turn_error', reason: 'tts_failed', seq: 2 });
+  healthyFor(t, 200);
+  assert.equal(t.frames('probe').length, 0, 'the reply goes on after a failed sentence');
+});
+
+test('F2: after the probe recovers the link (`applyLinkMode(\'audio\')`), later `say` frames are no longer read by the phone', () => {
+  const w = degradedMidReply();
+  w.a.frame({ type: 'barge_in', gen: 1 });
+  healthyFor(w, 200);
+  assert.ok(w.frames('probe').length >= 1);
+  w.clock.advance(100);
+  w.a.binary(packDown(CODEC.pcm16, KIND.probe, 1, 0, 0, [new Uint8Array(16384)]).buffer);
+  assert.equal(w.frames('link').at(-1).why, 'recovered');
+  assert.equal(w.frames('link').at(-1).mode, 'audio');
+  const spoken = w.synth.spoken.length;
+  w.a.frame({ type: 'say', gen: 1, seq: 3, text: 'Back on the server voice.', kind: 'reply', message_id: 'm2', t: 3 });
+  w.clock.advance(100);
+  assert.equal(w.synth.spoken.length, spoken, 'the phone stays quiet');
 });

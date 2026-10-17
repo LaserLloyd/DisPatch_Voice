@@ -323,6 +323,11 @@ Delegating to this one also covers the wrap.
 - `onPong(rttMs, rxOff, sentOff)`
 - `onSay(seq, tServer, kind)`
 - `onSayEnd()`: also clears the reply's first-audio deadlines and its goodput window.
+- `onReplyCut()`: the reply is over without a `say_end` (the server sends none for a cut reply):
+  a barge-in, a tap-stop, an undo, a failed turn (`turn_error` other than `tts_failed`) or a new
+  turn (a `transcript` with text). It does what `onSayEnd()` does, including applying a held
+  predictive change now. Without it `replyActive` stays set and `wantProbe()` never becomes true,
+  so a call that fell back to the phone voice could not switch back after one interrupted reply.
 - `onTurnError(seq?)`: call it on `turn_error` (for example `tts_failed`). It clears that seq's
   deadline, or every armed one without a seq, so a TTS fault is never blamed on the network.
 - `onChunk(seq, arrival, tServer, durationMs, leadMs, bytes)`: take `arrival` from a monotonic
@@ -424,7 +429,14 @@ Delegating to this one also covers the wrap.
   now. It is set on the last sentence's `onend` after `sayEnd({gen, last_seq})`, or 400 ms after
   the queue drains with no `say` pending.
 - `onSpeaking(bool)` drives the uplink's `local_speaking` flag and the worklet's
-  `{localSpeaking}`.
+  `{localSpeaking}`. Those only feed the server's own echo rule (a backup now).
+- Half-duplex mic (`drive-audio.js`): speechSynthesis gives no echo-cancellation reference, so
+  while the phone voice speaks, and for `PHONE_VOICE_MUTE_TAIL_MS` (400 ms) after `onSpeaking(false)`,
+  every mic frame is zeroed in `micMessage` before it reaches the uplink, the pre-ready queue or a
+  v2 server's `sendBinary`. The frame keeps its length and `off`, so the uplink offsets stay
+  contiguous and the replay ring stays consistent. `{speech}` edges are not forwarded to the UI
+  during that time (no "hearing you" for the phone's own voice); `{level}` reports still flow.
+  `api.micHalfDuplex` exposes the state. The user's Mute is a separate mechanism.
 - After a `cancel()`, the next `speak()` waits 60 ms, because Chrome can drop a `speak()` issued
   in the same task.
 

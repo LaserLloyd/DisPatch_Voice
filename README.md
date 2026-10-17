@@ -30,7 +30,7 @@ dispatch-voice fetch-models
 **On a server you keep running**, point the overlay at a release checkout that nobody develops in, and start DisPatch through its launcher, which falls back to DisPatch without voice (instead of a restart loop) when the overlay cannot be resolved or crashes on import:
 
 ```sh
-git -C <dispatch-voice> worktree add --detach <release-dir> v1.3.5     # later releases: git -C <release-dir> checkout --detach <tag>
+git -C <dispatch-voice> worktree add --detach <release-dir> v1.4.0     # later releases: git -C <release-dir> checkout --detach <tag>
 cd <dispatch-chat>/backend
 uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm once, online, after every release
 <dispatch-chat>/scripts/local-chat-launch --uv "$(command -v uv)" --with-editable <release-dir> \

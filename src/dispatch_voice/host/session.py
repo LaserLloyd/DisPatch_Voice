@@ -4330,7 +4330,7 @@ class VoiceSession:
             n = _int_field(msg, "bytes", 0)
             if n:
                 # Never inline: a stalled downlink holds the transport's send path.
-                task = asyncio.create_task(self.tr.send_probe(n))
+                task = asyncio.create_task(self._answer_probe(n))
                 self._turn_tasks.add(task)
                 task.add_done_callback(self._turn_tasks.discard)
         elif t == "replay_last":
@@ -4440,6 +4440,17 @@ class VoiceSession:
             self._tokens -= 1.0
             return True
         return False
+
+    async def _answer_probe(self, n: int) -> None:
+        """Send the probe burst; when the limiter (and not v2, an empty size or a
+        closed socket) refused it, say so with ``error {code: "rate_limited"}``, so
+        the client's monitor fails the probe at once and tries again in 20 s instead
+        of waiting out its 30 s timeout. A refused probe is not a protocol error: it
+        does not count toward any flood limit."""
+        before = self.tr.probes.refused
+        sent = await self.tr.send_probe(n)
+        if not sent and self.tr.probes.refused > before and not self._closed:
+            await self._limited("rate_limited", "Probe refused: one per 18 s.")
 
     async def _limited(self, code: str, message: str) -> None:
         """At most one error frame per code every 2 s (a flood stays a flood

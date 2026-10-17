@@ -222,6 +222,27 @@ body.drive-open { overflow: hidden; }
 .drive-end.drive-end-plain .drive-road-icon { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-strong); }
 .drive-end.drive-end-plain .drive-road-icon .rail-icon { transform: none; }
 .drive-road-label { white-space: nowrap; }
+/* Shortcut tooltips (drive.js sets data-tip="Mute (Space)" on the round buttons and
+   Undo): a bubble above the button on mouse hover and on keyboard focus. A touch
+   screen has no hover, so there a tap would leave the bubble stuck: hidden. */
+.drive-road, .drive-undo { position: relative; }
+.drive-overlay [data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 4;
+  padding: 5px 10px; white-space: nowrap; pointer-events: none;
+  background: var(--bg-elevated, var(--bg-tertiary)); color: var(--text-primary);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px color-mix(in oklab, var(--text-primary) 18%, transparent);
+  font-size: 12.5px; font-weight: 600; line-height: 1.3; letter-spacing: normal; text-transform: none;
+  opacity: 0; visibility: hidden;
+}
+.drive-overlay [data-tip]:hover::after, .drive-overlay [data-tip]:focus-visible::after { opacity: 1; visibility: visible; }
+@media (prefers-reduced-motion: no-preference) {
+  .drive-overlay [data-tip]::after { transition: opacity .12s ease, visibility .12s; }
+}
+@media (hover: none) {
+  .drive-overlay [data-tip]::after { display: none; }
+}
 /* Output (1.3.0): a route picker over the buttons, desktop browsers only
    (AudioContext.setSinkId); phones route audio themselves. */
 .drive-bar { position: relative; }
@@ -285,6 +306,7 @@ body.drive-open { overflow: hidden; }
   .drive-road-icon { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
   .drive-pause[data-muted="1"] .drive-road-icon, .drive-type[aria-pressed="true"] .drive-road-icon,
   .drive-end .drive-road-icon { background: Highlight; color: HighlightText; border-color: Highlight; }
+  .drive-overlay [data-tip]::after { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; box-shadow: none; }
 }
 
 /* ---------------------------------------------------- quick settings sheet */

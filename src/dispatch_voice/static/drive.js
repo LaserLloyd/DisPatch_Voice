@@ -26,6 +26,9 @@
 // sentences in italics; a first-run hint (or the English-only line) on the
 // first three opens; `waiting` after 60 s offline, retrying up to 15 min;
 // Hang up when quiet; All settings… opens over this screen without hanging up.
+// Keyboard (1.4.0): Space mutes/unmutes from anywhere on the screen, T the text
+// box, O the Output menu, U Undo, Esc hangs up; a hover/focus tooltip names each
+// button's key (`data-tip`, voice.css).
 //
 // v3 part 2 (the audio path, drive-audio.js): the player worklet (pause,
 // rewind, `played`/`idle`), the mic gate and offsets, Opus both ways with a
@@ -658,9 +661,26 @@ function roadButton(cls) {
     el('span', { class: 'drive-road-label' }),
   ]);
 }
-function setRoad(btn, paths, label) {
+/**
+ * `key` (the shortcut's name as shown, e.g. 'T' or t('drive.key_space')) gives the
+ * button its hover/focus tooltip "<label> (<key>)" (`data-tip`, drawn by voice.css)
+ * and `aria-keyshortcuts` (`aria` = the key in ARIA's spelling when it differs:
+ * 'Space', 'Escape'). Without a key both go (Try again / Back to chat have none).
+ * `tipLabel` is the tooltip's word when the visible one changes with the state.
+ */
+function setRoad(btn, paths, label, key = null, { aria = key, tipLabel = label } = {}) {
   btn.firstChild.replaceChildren(railIcon(paths));
   btn.lastChild.textContent = label;
+  setShortcut(btn, tipLabel, key, aria);
+}
+function setShortcut(btn, label, key, aria = key) {
+  if (key) {
+    btn.dataset.tip = t('drive.tip_shortcut', { label, key });
+    btn.setAttribute('aria-keyshortcuts', aria);
+  } else {
+    delete btn.dataset.tip;
+    btn.removeAttribute('aria-keyshortcuts');
+  }
 }
 
 /**
@@ -1032,14 +1052,15 @@ export function openDrive(thread, ctx) {
     // The label says what a tap does ("Mute" / "Unmute"), so no aria-pressed: a
     // swapped label plus a pressed state read "Unmute, toggle button, pressed" (FR-ux M5).
     // `data-muted` only lights the circle while the microphone is off.
-    setRoad(pauseBtn, listening ? MIC_OFF_ICON : MIC_ICON, listening ? t('drive.pause') : t('drive.resume'));
+    // Each button's tooltip names its key (hover or keyboard focus); Space mutes from anywhere on the screen.
+    setRoad(pauseBtn, listening ? MIC_OFF_ICON : MIC_ICON, listening ? t('drive.pause') : t('drive.resume'), t('drive.key_space'), { aria: 'Space' });
     pauseBtn.dataset.muted = listening ? '0' : '1';
     pauseBtn.removeAttribute('aria-pressed');
     typeBtn.hidden = false;
-    setRoad(typeBtn, KEYBOARD_ICON, t('drive.type_input'));
+    setRoad(typeBtn, KEYBOARD_ICON, t('drive.type_input'), 'T');
     typeBtn.setAttribute('aria-label', t('drive.type_input_aria'));
     typeBtn.setAttribute('aria-pressed', String(composeOpen));
-    setRoad(endBtn, HANDSET_ICON, t('drive.end'));
+    setRoad(endBtn, HANDSET_ICON, t('drive.end'), t('drive.key_esc'), { aria: 'Escape' });
     paintOutput();
   }
 
@@ -1378,11 +1399,12 @@ export function openDrive(thread, ctx) {
     const committed = String(m.committed || '');
     const tail = String(m.tail || '');
     you.classList.remove('drive-empty');
-    you.replaceChildren(
+    // replaceChildren writes a null argument as the text "null": leave the empty parts out.
+    you.replaceChildren(...[
       committed ? el('span', { class: 'drive-committed', text: committed }) : null,
       committed && tail ? ' ' : null,
       tail ? el('span', { class: 'drive-tail', text: tail }) : null,
-    );
+    ].filter((c) => c !== null));
     syncTalk();
   }
 
@@ -1498,6 +1520,7 @@ export function openDrive(thread, ctx) {
     undoFor = rowId || null;
     undo.open();
     undoBtn.hidden = false;
+    setShortcut(undoBtn, t('drive.undo'), 'U');
     const tick = () => {
       if (!undo.canUndo()) { hideUndo(); return; }
       undoBtn.textContent = t('drive.undo_countdown', { s: undo.remaining() });
@@ -1683,7 +1706,7 @@ export function openDrive(thread, ctx) {
     if (outputBtn.hidden) return;
     const cur = currentOutput();
     const word = cur.route === 'default' ? t('drive.output') : t(`drive.output_${cur.route}`);
-    setRoad(outputBtn, ROUTE_ICONS[cur.route] || SPEAKER_ICON, word);
+    setRoad(outputBtn, ROUTE_ICONS[cur.route] || SPEAKER_ICON, word, 'O', { tipLabel: t('drive.output') });
     outputBtn.setAttribute('aria-label', cur.label ? t('drive.output_aria_now', { name: cur.label }) : t('drive.output_aria'));
     outputBtn.setAttribute('aria-haspopup', 'menu');
     outputBtn.setAttribute('aria-expanded', String(!!outputMenu));
@@ -1870,18 +1893,35 @@ export function openDrive(thread, ctx) {
       return;
     }
     if (e.key === 'Tab') { trapFocus(e); return; }
-    const tag = (e.target && e.target.tagName) || '';
-    // The picture is a button and holds the focus from the start, so the
-    // screen's shortcuts must apply on it too: Space = the microphone (never
-    // the picture's tap, which interrupts a playing reply), U = Undo. Enter
-    // on the picture stays its tap. Other buttons keep their own Space.
-    const onRing = e.target === ring;
-    if ((!onRing && /^(BUTTON|SELECT|INPUT|TEXTAREA)$/.test(tag)) || sheet) return;
+    if (sheet || e.isComposing || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (!shortcutTarget(e.target)) return;
+    // Space mutes from anywhere on the screen (the picture, any round button, Undo,
+    // the gear): never the focused button's own tap, which is why keydown AND keyup
+    // are held back (a button activates on Space's keyup). Not in a text field and
+    // not over the Output menu, where Space picks the row it is on.
     if (e.key === ' ' || e.code === 'Space') {
-      if (state === 'stopped') return;          // the picture's tap is Try again here
-      e.preventDefault(); quiet.heard(); setListening(!listening);
+      if (outputMenu || state === 'stopped') return;   // the picture's tap is Try again here
+      e.preventDefault();
+      if (e.repeat) return;                            // a held key is one toggle
+      quiet.heard(); setListening(!listening);
+      return;
     }
-    else if ((e.key === 'u' || e.key === 'U') && !undoBtn.hidden) { e.preventDefault(); doUndo(); }
+    const k = String(e.key || '').toLowerCase();
+    if (k === 'o' && !outputBtn.hidden) { e.preventDefault(); if (!e.repeat) toggleOutputMenu(); return; }
+    if (outputMenu) return;                            // the open menu keeps the other letters
+    if (k === 't' && !typeBtn.hidden && state !== 'stopped') { e.preventDefault(); if (!e.repeat) toggleCompose(); }
+    else if (k === 'u' && !undoBtn.hidden) { e.preventDefault(); if (!e.repeat) doUndo(); }
+  }
+  /**
+   * Where the screen's key shortcuts apply: anywhere but a text field (the box, the
+   * sheet's selects), the box's Send (Space sends there) and the Output menu's rows.
+   * The picture and the round buttons, Undo and the gear all count.
+   */
+  function shortcutTarget(target) {
+    const tag = (target && target.tagName) || '';
+    if (/^(SELECT|INPUT|TEXTAREA)$/.test(tag)) return false;
+    if (tag === 'BUTTON') return !!target.closest('.drive-ring, .drive-road, .drive-undo, .drive-gear');
+    return true;
   }
   function trapFocus(e) {
     const scope = sheet ? sheet.panel : root;
@@ -1943,9 +1983,12 @@ export function openDrive(thread, ctx) {
   undoBtn.addEventListener('click', doUndo);
   gear.addEventListener('click', openSheet);
   root.addEventListener('keydown', onKey);
-  // A button activates on Space's keyup: keep the picture's tap out of it (onKey).
+  // A button activates on Space's keyup (Firefox even after a prevented keydown): keep
+  // the focused button's click out of it wherever onKey took the Space for Mute.
   root.addEventListener('keyup', (e) => {
-    if (e.target === ring && (e.key === ' ' || e.code === 'Space') && state !== 'stopped') e.preventDefault();
+    if (!(e.key === ' ' || e.code === 'Space')) return;
+    if (sheet || outputMenu || state === 'stopped' || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (shortcutTarget(e.target)) e.preventDefault();
   });
   document.addEventListener('visibilitychange', onVisibility);
   if (globalThis.addEventListener) globalThis.addEventListener('online', onOnline);
