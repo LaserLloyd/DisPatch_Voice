@@ -59,6 +59,14 @@ quiet|be quiet|shut up|got it thanks|okay thanks|ok thanks|okay got it|ok got it
 alright that's enough|stop it|stop stop|no no|wait wait|hold on a second|hang on a second|enough enough
 thanks so much|thank you so much|thanks a lot|thank you very much|thanks very much|thank you thank you
 """.replace("\n", "|").split("|"))
+#: The unambiguous ones (1.5.0): a clear request to stop. At the "normal" and "low"
+#: interrupt sensitivities only these stop a reply mid-speech or at any level; "what",
+#: "sorry", "no", "thanks" and the rest are said across a family room all the time.
+STRONG_COMMAND_WORDS = frozenset("stop wait pause enough quiet hush shush skip".split())
+STRONG_STOP_PHRASES = frozenset("""
+hold on|hang on|that's enough|thats enough|never mind|nevermind|be quiet|shut up|stop it
+hold on a second|hang on a second|all right that's enough|alright that's enough
+""".replace("\n", "|").split("|")) - {""}
 #: One of these alone is a backchannel; repeated ("okay okay"), or next to a stop
 #: phrase ("perfect, thanks"), it is a stop.
 ACK_WORDS = frozenset("okay ok yeah yes right sure mhm mm uh-huh uhhuh yep yup aha alright perfect great cool".split())
@@ -201,8 +209,22 @@ def _is_stop(words: list[str]) -> bool:
     return others >= 1 or (acks >= 2 and len(set(core)) == 1)
 
 
+def has_strong_stop(words) -> bool:
+    """A clear stop word or phrase anywhere in ``words`` (a string or tokens)."""
+    toks = tokens(words) if isinstance(words, str) else list(words)
+    core = [w for w in toks if w not in FILLERS]
+    if any(w in STRONG_COMMAND_WORDS for w in core):
+        return True
+    joined = " " + " ".join(core) + " "
+    return any(f" {p} " in joined for p in STRONG_STOP_PHRASES)
+
+
 def classify_interruption(words: str, *, dur_s: float, recent_said: Sequence[str],
-                          prev_verdict: tuple[str, float] | None, now: float) -> Verdict:
+                          prev_verdict: tuple[str, float] | None, now: float,
+                          weak_stops: bool = True) -> Verdict:
+    """``weak_stops`` False (1.5.0, the "normal"/"low" sensitivities mid-speech or for
+    faint speech): only a clear stop word makes ``stop``; an ambiguous one ("what",
+    "thank you", "okay okay") and the two-backchannels rule give ``backchannel``."""
     toks = tokens(words)
     if not toks:
         # Nothing recognisable (a cough, road noise): the session's false-interruption
@@ -213,10 +235,10 @@ def classify_interruption(words: str, *, dur_s: float, recent_said: Sequence[str
     if not single_command and _echo_fraction(core, recent_said) >= ECHO_OVERLAP:
         return "echo"
     if _is_stop(toks):
-        return "stop"
+        return "stop" if (weak_stops or has_strong_stop(core)) else "backchannel"
     if dur_s < BACKCHANNEL_MAX_S and len(core) <= BACKCHANNEL_MAX_TOKENS \
             and not any(w in COMMAND_WORDS for w in core):
-        if prev_verdict is not None and prev_verdict[0] == "backchannel" \
+        if weak_stops and prev_verdict is not None and prev_verdict[0] == "backchannel" \
                 and (now - prev_verdict[1]) <= SECOND_BACKCHANNEL_S:
             return "stop"
         return "backchannel"

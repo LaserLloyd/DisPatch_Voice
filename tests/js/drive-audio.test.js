@@ -44,7 +44,9 @@ function world({ settings = {}, voices = VOICES, synth = fakeSynth(VOICES), effe
   const gains = [];
   const ui = { sentences: [], now: [], links: [], ducks: [], cutoffs: 0, says: [], speech: [], phoneFailed: 0 };
   let open = false;
-  const s = { slowLink: 'phone', optimisticDuck: true, bargeIn: true, phoneVoice: '', ...settings };
+  // interruptSensitivity 'high': these suites pin the 1.4.0 rules (the optimistic duck is
+  // 'high' only since 1.5.0; the test below covers 'normal').
+  const s = { slowLink: 'phone', optimisticDuck: true, bargeIn: true, phoneVoice: '', interruptSensitivity: 'high', ...settings };
   const back = { onmessage: null };
   const core = new PlayerCore({ postMessage: (m) => back.onmessage && back.onmessage({ data: m }) }, RATE);
   const port = {
@@ -255,6 +257,24 @@ test('optimistic duck (§4.6 layer 1): a speech edge 1.5 s into a reply ducks to
   assert.equal(w.core.paused, false);
   assert.equal(w.gains.at(-1), 1);
   assert.deepEqual(w.frames('duck_local').at(-1), { type: 'duck_local', on: false });
+});
+
+test('1.5.0: below the "high" interrupt sensitivity a mic energy edge never pauses the reply on the phone (the server decides)', () => {
+  for (const interruptSensitivity of ['normal', 'low', undefined]) {
+    const w = world({ settings: { interruptSensitivity } });
+    w.open(); w.readyV3();
+    w.a.frame({ type: 'say', gen: 0, seq: 1, text: 'Talk talk talk.', kind: 'reply', message_id: 'm1', t: 1 });
+    for (let i = 0; i < 100; i++) w.a.binary(down(1));
+    w.play(1700);
+    w.a.micMessage({ speech: true });
+    assert.deepEqual(w.ui.ducks, [], String(interruptSensitivity));
+    assert.equal(w.playerOps('pause').length, 0);
+    assert.deepEqual(w.frames('duck_local'), []);
+    assert.equal(w.core.paused, false);
+    // The server's own duck still pauses it (it waited for sustained, loud-enough speech).
+    w.a.frame({ type: 'duck', on: true, gen: 0 });
+    assert.equal(w.core.paused, true);
+  }
 });
 
 test('server duck → pause; resume {rewind} restarts the sentence; a resume for another gen is ignored; barge_in ends the duck', () => {

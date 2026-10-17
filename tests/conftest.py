@@ -199,3 +199,14 @@ def pytest_runtest_makereport(item, call):
             and _NO_FFMPEG in str(call.excinfo.value):
         rep.outcome = "skipped"
         rep.longrepr = (str(item.path), item.location[1] or 0, "Skipped: needs ffmpeg (not on PATH)")
+
+
+@pytest.fixture(autouse=True)
+def _interrupt_sensitivity_high(request, monkeypatch):
+    """The suites written before 1.5.0 pin the 1.4.0 interruption rules, which are the
+    "high" interrupt sensitivity: sessions start there unless a test is marked
+    ``interrupt_default`` (it then gets the shipped default, "normal")."""
+    if request.node.get_closest_marker("interrupt_default") is None:
+        from dispatch_voice.host import session as _session
+        monkeypatch.setattr(_session, "DEFAULT_SENSITIVITY", "high")
+    yield

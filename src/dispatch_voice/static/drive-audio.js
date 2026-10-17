@@ -361,7 +361,10 @@ export function createDriveAudio({
     notify: (on) => { if (proto >= 3) send({ type: 'duck_local', on: !!on }); },
     rtt: () => (monitor && monitor.rttEwma) || 0,
     now, setTimer, clearTimer,
-    enabled: () => proto >= 3 && !localSpeaking && cfg().optimisticDuck !== false && cfg().bargeIn !== false,
+    // 1.5.0: only at the "high" interrupt sensitivity — any 60 ms sound over the floor
+    // paused the reply (a dish, a door, the room talking); otherwise the server decides.
+    enabled: () => proto >= 3 && !localSpeaking && cfg().optimisticDuck !== false && cfg().bargeIn !== false
+      && (cfg().interruptSensitivity || 'normal') === 'high',
   }) : null;
 
   let monitor = null;

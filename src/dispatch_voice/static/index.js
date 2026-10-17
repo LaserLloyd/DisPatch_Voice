@@ -22,7 +22,7 @@
 // (feasibility M7), and every file is ONE module instance: the siblings
 // import each other through their own `import.meta.url` query, which is this one.
 
-export const EXT = { id: 'voice', api: [1, 1], version: '1.4.0' };  // = dispatch_voice.__version__ (pinned by tests/host/test_setup.py)
+export const EXT = { id: 'voice', api: [1, 1], version: '1.5.0' };  // = dispatch_voice.__version__ (pinned by tests/host/test_setup.py)
 
 /** The query every sibling is imported with: the server's assets hash. */
 export function versionQuery(opts, selfUrl = import.meta.url) {

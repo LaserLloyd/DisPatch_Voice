@@ -115,12 +115,20 @@ import numpy as np
 from ..rt.backchannel import (
     COMMAND_WORDS,
     FILLERS,
+    STRONG_COMMAND_WORDS,
     BackchannelGate,
     classify_interruption,
 )
 from ..rt.backchannel import tokens as _bc_tokens
 from ..rt.endpoint import REPROBE_AFTER_S, Learned, Signals, TurnPolicy
 from ..rt.heard import HeardMap, HeardPosition, Span
+from ..rt.interrupt import (
+    DEFAULT_SENSITIVITY,
+    LevelMeter,
+    sensitivity_value,
+    speech_level_db,
+)
+from ..rt.interrupt import profile as interrupt_profile
 from ..rt.settings import RtSettings
 from ..rt.speculate import Speculator
 from ..text.acks import TurnAcks
@@ -212,7 +220,8 @@ BACKCHANNEL_GAIN = 0.5
 #: speaking, or within this long of the last reply audio stopping.
 ECHO_PLAYING_GRACE_S = 1.0
 #: A tick partial (speech still going over a reply) confirms a REAL interruption
-#: only with at least this many words; shorter ones wait for the pause verdict.
+#: only with at least this many words; shorter ones wait for the pause verdict. The
+#: "high" interrupt sensitivity's value; the profile carries the live one (1.5.0).
 TICK_MIN_WORDS = 3
 #: While speech runs over a reply the tail is re-read this often (captions alone:
 #: the STT's own 1 s). Natural interruptions rarely pause ≥ 0.25 s in their first
@@ -466,6 +475,11 @@ class _Utt:
     stop_cut: bool = False          # a tick's stop word cut the reply (the run goes on)
     stop_cut_aborted: bool = False  # ... and that run was aborted since
     hold_onset: float | None = None  # the onset of the speech a merge hold is for
+    #: began while a reply was playing or on its way (1.5.0: its level never teaches the
+    #: meter the listener's voice)
+    over_reply: bool = False
+    duck_done: bool = False         # the late duck (1.5.0) already ran for it
+    faint_logged: bool = False      # "too faint to be you" was logged once for it
 
 
 def _log_task_failure(task: asyncio.Task) -> None:
@@ -696,6 +710,13 @@ class VoiceSession:
         self.rt_speculate = True
         self.rt_backchannels = False
         self.rt_optimistic_duck = True
+        # Interrupt sensitivity (1.5.0, start.interrupt_sensitivity; rt/interrupt.py) and
+        # the level meter behind its gate: every frame the detector sees feeds the floor.
+        self.interrupt_sensitivity = DEFAULT_SENSITIVITY
+        self.interrupt = interrupt_profile(DEFAULT_SENSITIVITY)
+        self.levels = LevelMeter()
+        if hasattr(detector, "frame_observer"):
+            detector.frame_observer = self.levels.observe
         # the probe flow
         self._pause_id = 0                # bumps when a probed pause is stale (speech resumed, turn ended)
         self._pause_task: asyncio.Task | None = None
@@ -2490,6 +2511,7 @@ class VoiceSession:
                 else:
                     events = await asyncio.to_thread(self.detector.feed, piece)
                 await self._detect(events)
+                await self._maybe_late_duck()
         finally:
             self._pos = end
         if (self.sstt is not None and getattr(self.detector, "active", False) and not self._closed
@@ -2531,6 +2553,46 @@ class VoiceSession:
                     await self._on_turn_end(ev, upto=upto)
             elif isinstance(ev, Discarded):
                 await self._drop_open_utterance()
+
+    # ------------------------------------------- interrupt sensitivity (1.5.0) #
+    def _open_level_db(self) -> float | None:
+        """The open utterance's level so far (the detector's frames, pre-roll included)."""
+        frames = getattr(getattr(self.detector, "ep", None), "_frames", None)
+        if not frames:
+            return None
+        try:
+            return speech_level_db(np.concatenate(list(frames)))
+        except (ValueError, TypeError):    # a frame list mutating under the audio thread
+            return None
+
+    def _level_ok(self, level_db: float | None, utt: _Utt | None = None) -> bool:
+        """The level gate: is speech at ``level_db`` the listener, not the room? Logs the
+        first "no" of an utterance (journal evidence for the next tuning round)."""
+        ok, why = self.levels.judge(level_db, self.interrupt)
+        utt = utt if utt is not None else self._utt
+        if not ok and not utt.faint_logged:
+            utt.faint_logged = True
+            log.info("voice: speech over the reply too faint to be the listener (%s); "
+                     "the reply goes on", why)
+        return ok
+
+    async def _maybe_late_duck(self) -> None:
+        """The reply pauses only once speech over it is sustained (the profile's
+        ``duck_speech_s``) and loud enough to be the listener (the level gate). At
+        "high" the duck happens at SpeechStart instead (1.4.0)."""
+        dur = self.interrupt.duck_speech_s
+        utt = self._utt
+        if (dur is None or self._duck or self._hold or utt.duck_done or utt.interrupted
+                or not self._talking() or not getattr(self.detector, "active", False)):
+            return
+        ep = getattr(self.detector, "ep", None)
+        if ep is None or not getattr(ep, "confirmed", False):
+            return
+        if float(getattr(ep, "speech_s", 0.0) or 0.0) < dur:
+            return
+        utt.duck_done = True
+        if self._level_ok(self._open_level_db(), utt):
+            await self._set_duck(True)
 
     async def _undo_duck(self) -> None:
         """End a duck that never became anything: the paused reply resumes."""
@@ -2684,7 +2746,8 @@ class VoiceSession:
         # A new utterance: its own state object. A turn end still running for the
         # previous one keeps that one's object (review-T3s3 #1(c)).
         self._utt_seq += 1
-        self._utt = _Utt(self._utt_seq, started_at=now, while_playing=self._playing_now(now))
+        self._utt = _Utt(self._utt_seq, started_at=now, while_playing=self._playing_now(now),
+                         over_reply=self._talking() or self._playing_now(now))
         self._interrupt_at = None             # a metric left over from an utterance that never became a turn
         self.bc_gate.new_turn()               # ≤ 3 backchannels per utterance (SPEC §4.7)
         prev = self._current
@@ -2715,7 +2778,11 @@ class VoiceSession:
             if self.speaking:
                 await self._set_duck(True)
         elif self._talking():
-            await self._set_duck(True)
+            if self.interrupt.duck_speech_s is None:
+                self._utt.duck_done = True
+                await self._set_duck(True)
+            else:
+                await self._maybe_late_duck()
         await self.state("hearing")
 
     async def _on_turn_end(self, ev: TurnEnd, *, upto: int | None = None) -> None:
@@ -2750,7 +2817,8 @@ class VoiceSession:
         # for an utterance that began while our voice played; Amendment T4-3).
         cut = (self._duck or self._talking()) and not merging
         if ((cut or self._utt_while_playing) and not merging
-                and await self._consumed_over_reply(text, self._speech_s_of(ev), self.clock())):
+                and await self._consumed_over_reply(text, self._speech_s_of(ev), self.clock(),
+                                                    level_db=speech_level_db(ev.audio))):
             return
         self._utt_while_playing = None
         if not self._check_live():
@@ -2781,6 +2849,8 @@ class VoiceSession:
             # new question replaces it — never two answers back to back.
             await self._abandon(prev, abort=True)
         self._hold = False
+        if not cut and not self._utt.over_reply:
+            self.levels.note_voice(speech_level_db(ev.audio))   # the listener's own level (1.5.0)
         try:
             msg_id = await self._submit(text)
         except Exception:
@@ -2903,7 +2973,8 @@ class VoiceSession:
         # words join the turn — SPEC §4.3), and not twice for one utterance.
         over_reply = (self._duck or self._talking()) and not self._hold
         if over_reply and not self._interrupted_utt:
-            verdict = self._classify(partial.text if partial else "", ev.speech_s, now)
+            verdict = self._classify(partial.text if partial else "", ev.speech_s, now,
+                                     level_db=speech_level_db(ev.audio))
             if verdict != "real":
                 await self._false_or_stop(verdict, partial.text if partial else "")
                 return
@@ -2912,6 +2983,8 @@ class VoiceSession:
             # become the next turn through the decision below.
             self._interrupted_utt = True
             self._duck_verdict = True
+            log.info("voice: speech over the reply cut it at a pause (%d words)",
+                     len(_bc_tokens(partial.text if partial else "")))
             await self._interrupt(self._current, by_user_voice=True, abort=self.settings.barge_abort_turn)
             self._after_barge_in = True
             if pid != self._pause_id or self._closed:
@@ -2939,7 +3012,8 @@ class VoiceSession:
                              utt=self._utt, upto=self._event_upto(turn_end, ev.silence_s))
 
     def _classify(self, text: str, speech_s: float, now: float, *, record: bool = True,
-                  utt: _Utt | None = None) -> str:
+                  utt: _Utt | None = None, level_db: float | None = None,
+                  final: bool = True) -> str:
         """``classify_interruption`` over the last two sentences said, with the
         echo rule only while audio is playing (Amendment T4-3). No words at all
         (a cough, road noise) is a false interruption, never a backchannel for
@@ -2947,11 +3021,20 @@ class VoiceSession:
         "began while our voice played"; default the open one)."""
         if not _bc_tokens(text):
             return "noise"
-        began = (utt if utt is not None else self._utt).while_playing
+        u = utt if utt is not None else self._utt
+        began = u.while_playing
         playing = began if began is not None else self._playing_now(now)
         recent = self._echo_candidates() if (playing or self._playing_now(now)) else []
+        # Interrupt sensitivity (1.5.0): the level gate applies while a reply is still
+        # audible (its end leaves an ordinary turn); an ambiguous stop word counts only as
+        # a whole utterance (not a tick) that passed the gate, unless the profile says always.
+        audible = self._duck or self._talking()
+        loud = (not audible) or self.levels.judge(level_db, self.interrupt)[0]
+        weak = self.interrupt.weak_stops or (final and loud and level_db is not None)
         v = classify_interruption(text, dur_s=speech_s, recent_said=recent,
-                                  prev_verdict=self._prev_verdict, now=now)
+                                  prev_verdict=self._prev_verdict, now=now, weak_stops=weak)
+        if v == "real" and audible and not self._level_ok(level_db, u):
+            v = "noise"
         if record and v in ("backchannel", "stop"):
             # A tick's verdict is not recorded (record=False) unless acted on: an early,
             # unstable partial ("Mm-hmm." for the first 0.3 s of "Actually…") must not
@@ -3006,13 +3089,16 @@ class VoiceSession:
         self._cursor_clear()
 
     async def _consumed_over_reply(self, text: str, speech_s: float, now: float, *,
-                                   utt: _Utt | None = None) -> bool:
+                                   utt: _Utt | None = None, level_db: float | None = None) -> bool:
         """An utterance that ran over a reply and ENDED with no word verdict yet (the
         hard silence beat the pause probe, or the whole-utterance path): its words
         decide. True = consumed (echo, backchannel, noise or stop: nothing becomes a
         turn, the reply resumes or is cut); False = a real interruption."""
-        verdict = self._classify(text, speech_s, now, utt=utt)
+        verdict = self._classify(text, speech_s, now, utt=utt, level_db=level_db)
         if verdict == "real":
+            if self._duck or self._talking():
+                log.info("voice: speech over the reply cut it at its end (%d words)",
+                         len(_bc_tokens(text)))
             return False
         if self.spec is not None:
             await self.spec.discard()
@@ -3029,7 +3115,10 @@ class VoiceSession:
         core = [w for w in _bc_tokens(text) if w not in FILLERS]
         if not core or len(core) > 3:
             return False
-        cmds = {w for w in core if w in COMMAND_WORDS}
+        # 1.5.0: below "high" only a clear stop word cuts mid-speech ("what", "sorry",
+        # "no" are said across a room all the time).
+        words = COMMAND_WORDS if self.interrupt.early_any_command else STRONG_COMMAND_WORDS
+        cmds = {w for w in core if w in words}
         if not cmds:
             return False
         ours = set(_bc_tokens(" ".join(self._echo_candidates())))
@@ -3094,7 +3183,7 @@ class VoiceSession:
             return
         now = self.clock()
         verdict = self._classify(partial.text, max(0.0, now - (self._utt_started_at or now)), now,
-                                 record=False)
+                                 record=False, level_db=self._open_level_db(), final=False)
         if verdict == "echo":
             # Our own bleed so far: the reply resumes at once — but the utterance stays
             # open. A listener who starts by quoting the bot ("Dentist at three? Can we
@@ -3116,9 +3205,10 @@ class VoiceSession:
             await self._interrupt(cur if (cur is not None and not cur.closed) else None,
                                   by_user_voice=True, abort=False)
             log.info("voice: stop word over the reply (%r); listening on", partial.text[:40])
-        elif verdict == "real" and len(_bc_tokens(partial.text)) >= TICK_MIN_WORDS:
+        elif verdict == "real" and len(_bc_tokens(partial.text)) >= self.interrupt.tick_min_words:
             self._interrupted_utt = True
             self._duck_verdict = True
+            log.info("voice: speech over the reply cut it (%d words)", len(_bc_tokens(partial.text)))
             await self._interrupt(self._current, by_user_voice=True, abort=self.settings.barge_abort_turn)
             self._after_barge_in = True
 
@@ -3337,7 +3427,8 @@ class VoiceSession:
         # verdict now — an echo, a backchannel or a "stop" never becomes a turn.
         cut = (self._duck or self._talking()) and not merging and not utt.interrupted
         if ((cut or (utt.while_playing and not utt.interrupted)) and not merging
-                and await self._consumed_over_reply(text, self._speech_s_of(ev), self.clock(), utt=utt)):
+                and await self._consumed_over_reply(text, self._speech_s_of(ev), self.clock(), utt=utt,
+                                                    level_db=speech_level_db(ev.audio))):
             if self.spec is not None:
                 self.spec.new_turn()
             return
@@ -3389,6 +3480,8 @@ class VoiceSession:
         self._duck_verdict = True
         if self._duck:
             await self._set_duck(False)
+        if not cut and not utt.interrupted and not utt.over_reply:
+            self.levels.note_voice(speech_level_db(ev.audio))   # the listener's own level (1.5.0)
         try:
             msg_id = await self._submit(text, prefetched=run)
         except Exception:
@@ -4092,6 +4185,12 @@ class VoiceSession:
         if "barge_in" in msg:
             v = msg.get("barge_in")
             self.barge_in_enabled = v if isinstance(v, bool) else True
+        if "interrupt_sensitivity" in msg:
+            v = sensitivity_value(msg.get("interrupt_sensitivity"))
+            if v != self.interrupt_sensitivity:
+                log.info("voice: interrupt sensitivity %s", v)
+            self.interrupt_sensitivity = v
+            self.interrupt = interrupt_profile(v)
         if "reply_style" in msg:
             v = msg.get("reply_style")
             self.reply_style = v if v in REPLY_STYLES else "normal"

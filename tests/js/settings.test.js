@@ -100,6 +100,19 @@ test('blob: a change notifies listeners (the open voice chat re-sends start)', (
 
 // ------------------------------------------------------------ start ---
 
+test('1.5.0: Interrupt sensitivity defaults to normal, keeps low/normal/high, drops junk, and rides in start', () => {
+  assert.equal(DRIVE_DEFAULTS.interruptSensitivity, 'normal');
+  assert.equal(normalizeDriveSettings({}).interruptSensitivity, 'normal', 'a pre-1.5 blob gets the new default');
+  for (const v of ['low', 'normal', 'high']) {
+    assert.equal(normalizeDriveSettings({ interruptSensitivity: v }).interruptSensitivity, v);
+    assert.equal(startPayload({ interruptSensitivity: v }).interrupt_sensitivity, v);
+  }
+  for (const junk of ['loud', 3, null, true]) {
+    assert.equal(normalizeDriveSettings({ interruptSensitivity: junk }).interruptSensitivity, 'normal');
+  }
+  assert.equal(startPayload({}).interrupt_sensitivity, 'normal');
+});
+
 test('start: Reactions maps to start.acks and rt.backchannels (only "often")', () => {
   for (const [reactions, bc] of [['off', false], ['sometimes', false], ['often', true]]) {
     const f = startPayload({ reactions });
@@ -111,7 +124,7 @@ test('start: Reactions maps to start.acks and rt.backchannels (only "often")', (
 test('start: carries exactly the C.3 fields; follow_up only when this device chose', () => {
   const f = startPayload({ ...DRIVE_DEFAULTS, captions: false, slowLink: 'text' }, 'm-2', ['m-2', 'm-1']);
   assert.deepEqual(Object.keys(f).sort(),
-    ['acks', 'after', 'after_ids', 'barge_in', 'patience', 'reply_style', 'rt', 'slow_link', 'type'].sort());
+    ['acks', 'after', 'after_ids', 'barge_in', 'interrupt_sensitivity', 'patience', 'reply_style', 'rt', 'slow_link', 'type'].sort());
   assert.equal(f.type, 'start');
   assert.equal(f.slow_link, 'text');
   assert.deepEqual(f.rt, { partials: false, backchannels: false, optimistic_duck: true });
@@ -280,7 +293,7 @@ function rowsOf(host, groupSel = 'section.dev-group') {
   }));
 }
 
-test('Settings → Voice: 20 rows in 6 groups + a collapsed Status (SPEC §7.1, 1.2.0: + Type instead of talking)', dom, () => withDom(async () => {
+test('Settings → Voice: 21 rows in 6 groups + a collapsed Status (SPEC §7.1, 1.2.0: + Type instead of talking, 1.5.0: + Interrupt sensitivity)', dom, () => withDom(async () => {
   const { shell } = fakeShell();
   const prev = bindShell(shell);
   try {
@@ -294,7 +307,9 @@ test('Settings → Voice: 20 rows in 6 groups + a collapsed Status (SPEC §7.1, 
     assert.deepEqual(groups.map((g) => g.id), ['drive-group-switch', 'drive-group-voices', 'drive-group-listening',
       'drive-group-replies', 'drive-group-connection', 'drive-group-device']);
     const total = groups.reduce((n, g) => n + g.rows.length, 0);
-    assert.equal(total, 20, JSON.stringify(groups));
+    assert.equal(total, 21, JSON.stringify(groups));
+    assert.deepEqual(groups[2].rows, ['drive-patience', 'drive-barge-in', 'drive-interrupt-sensitivity', 'drive-auto-listen',
+      'drive-typed-input', 'drive-mic']);
     assert.deepEqual(groups[1].rows, ['drive-default-voice', 'drive-speed', 'drive-rp', 'drive-narrator', 'drive-manage-voices']);
     assert.deepEqual(groups[3].rows, ['drive-reply-length', 'drive-follow-up', 'drive-reactions', 'drive-tones']);
     assert.deepEqual(groups[4].rows, ['drive-slow', 'drive-phone-voice']);
@@ -440,7 +455,7 @@ test('quick sheet: "{bot}\'s voice" PUTs this bot in the full roster (order kept
       assert.equal(fetch.calls.some((c) => c.path === '/api/voice/settings'), false, 'the server default is untouched');
       assert.equal(bot.voice, 'p1');
       // Six road rows (Type instead of talking since 1.2.0) + the voice row + All settings.
-      assert.equal(sheet.querySelectorAll('.dev-group-body > .dev-row').length, 8);
+      assert.equal(sheet.querySelectorAll('.dev-group-body > .dev-row').length, 9);   // 1.5.0: + Interrupt sensitivity
       assert.ok(sheet.querySelector('#drive-sheet-typed input.dev-switch'));
       assert.ok(sheet.querySelector('#drive-sheet-all'));
     } finally { bindShell(prev); }
@@ -457,7 +472,8 @@ test('quick sheet on a locked device (1.3.3): device settings only — no bot vo
     assert.equal(sheet.querySelector('#drive-sheet-voice'), null, 'the bot voice writes server state');
     assert.equal(sheet.querySelector('#drive-sheet-all'), null, 'Settings are unlocked-only');
     assert.ok(sheet.querySelector('#drive-sheet-typed input.dev-switch'));
-    assert.equal(sheet.querySelectorAll('.dev-group-body > .dev-row').length, 6);
+    assert.ok(sheet.querySelector('#drive-sheet-interrupt'), 'a device setting, like Pause before replying (1.5.0)');
+    assert.equal(sheet.querySelectorAll('.dev-group-body > .dev-row').length, 7);
   } finally { bindShell(prev); }
 }));
 

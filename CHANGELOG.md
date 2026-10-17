@@ -4,6 +4,37 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-10-17
+
+Background noise and people talking in the room kept pausing and cutting replies.
+
+### Added
+- **Interrupt sensitivity** (Settings › Voice › Listening, and the call screen's
+  quick settings): Low, Normal or High — how sure the voice chat must be that it is
+  you before it stops a reply. A device setting, sent with `start`
+  (`interrupt_sensitivity`). **Normal is the new default** and is less eager than
+  before; High keeps the 1.4.0 rules exactly.
+
+### Changed
+- **An adaptive level gate.** The session follows the room's ambient level and your
+  own voice level (learned from the turns you make while nothing plays). At Normal,
+  speech over a reply counts only when it is 10 dB over the room and within 10 dB of
+  your usual level (Low: 14 dB over the room, within 6 dB of you), so someone across
+  the room, a TV or a clatter neither pauses nor cuts the reply. Unknown levels never
+  block.
+- **The reply pauses after sustained speech.** At Normal the server pauses a reply
+  after 0.45 s of speech that passes the gate (Low 0.7 s; High 0.25 s at any level),
+  and the phone's instant pause on any sound over its floor (the optimistic duck)
+  now runs only at High.
+- **Stop words.** At Normal and Low only a clear stop word stops a reply mid-speech
+  or at any level: "stop", "wait", "pause", "enough", "quiet", "hold on", "hang on",
+  "that's enough", "never mind". "What?", "sorry", "no", "thank you", "okay okay"
+  stop a reply only as a whole utterance in your own voice, never from across the
+  room. A cut while you are still talking needs four words of your own (Low five;
+  High three).
+- The journal now says why speech over a reply was ignored ("too faint to be the
+  listener", with the levels) and when it cut the reply.
+
 ## [1.4.0] — 2026-10-17
 
 A round of fixes from a live call where the voice chat moved to the phone's

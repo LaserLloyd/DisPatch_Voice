@@ -1,6 +1,6 @@
 [project]
 name = "dispatch-voice"
-version = "1.4.0"
+version = "1.5.0"
 description = "Voice chat for DisPatch Chat: the DisPatch Voice add-on (local speech, cloned voices, Chatterbox-Turbo ONNX on the CPU)"
 license = "MIT"
 requires-python = ">=3.12"
@@ -59,4 +59,5 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "models: needs the downloaded speech/Chatterbox models (slow, CPU-heavy; run under the models lock)",
     "contract: runs against a DisPatch backend checkout with the extension host (DISPATCH_BACKEND)",
+    "interrupt_default: the session starts at the shipped interrupt sensitivity (normal), not the 1.4.0 rules (high)",
 ]

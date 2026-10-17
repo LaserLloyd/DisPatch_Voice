@@ -65,6 +65,11 @@ More scenarios (``--scenarios``; V2 verification):
 ``bargein``   (dispatch target) talking over a reply on the real session: the optimistic duck
               ≤ 200 ms, the server's ``barge_in``, flush to the new gen, ``heard``, the
               interruption transcribed, no further caption from the cut reply.
+``noise``     (dispatch target, 1.5.0) the default "normal" interrupt sensitivity on the real
+              session: after two ordinary turns (the session learns the listener's level), a
+              kitchen clatter and then a talker across the room (the ``medium`` clip 22 dB down)
+              over a long reply neither pause nor cut it; the listener's own "Wait, stop…" at
+              full level still cuts it with ``barge_in``.
 ``livelike``  (dispatch target) its own scratch DisPatch set up like the live box: the add-on
               by its entry point, voice on by ``voice.yaml``, the Kokoro plugin overlaid when
               it is installed (``$DISPATCH_VOICE_KOKORO_SRC``, default the sibling
@@ -314,6 +319,33 @@ class Checks:
 def _short(x, n: int = 400) -> str:
     s = x if isinstance(x, str) else json.dumps(x, default=str)
     return s if len(s) <= n else s[:n] + "…"
+
+
+def generated_clip(name: str) -> bytes | None:
+    """Clips made on the fly (1.5.0 ``noise`` scenario): ``noise`` = 3 s of a busy room
+    — low rumble, broadband hiss and a few sharp clatters (dishes, a door), peaking around
+    −14 dBFS; nothing a recogniser can turn into words."""
+    if name != "noise":
+        return None
+    import io
+    rate = 16000
+    rng = np.random.default_rng(20261017)
+    n = 3 * rate
+    hiss = rng.standard_normal(n) * 0.02
+    rumble = np.convolve(rng.standard_normal(n), np.ones(200) / 200, mode="same") * 0.6
+    x = hiss + rumble
+    for at in (0.4, 1.1, 1.9, 2.5):
+        i = int(at * rate)
+        k = np.arange(int(0.12 * rate))
+        x[i:i + len(k)] += rng.standard_normal(len(k)) * 0.25 * np.exp(-k / (0.025 * rate))
+    pcm = (np.clip(x, -1, 1) * 32767).astype("<i2")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm.tobytes())
+    return buf.getvalue()
 
 
 def clip_onset_s(name: str, db: float = -40.0) -> float:
@@ -722,6 +754,10 @@ class Browser:
 
         def route(r, request):
             m = clip_re.search(request.url.split("?")[0])
+            gen = generated_clip(m.group(1)) if m else None
+            if gen is not None:
+                r.fulfill(status=200, headers={"Content-Type": "audio/wav"}, body=gen)
+                return
             if m and (CLIPS / f"{m.group(1)}.wav").is_file():
                 r.fulfill(status=200, headers={"Content-Type": "audio/wav"},
                           body=(CLIPS / f"{m.group(1)}.wav").read_bytes())
@@ -1727,7 +1763,7 @@ def _subseq(needle: list[str], hay: list[str]) -> bool:
 def run_dispatch(pw, a, c: Checks, out: Path) -> dict:
     res: dict = {}
     base = f"http://127.0.0.1:{a.port_base}"
-    if a.scenarios & {"settings", "lab", "conversation", "undo", "bargein", "cdp", "drop", "failback"}:
+    if a.scenarios & {"settings", "lab", "conversation", "undo", "bargein", "noise", "cdp", "drop", "failback"}:
         res.update(_run_dispatch_main(pw, a, c, out, base))
     if "livelike" in a.scenarios:
         # Its own server (a PIN, entry points, Kokoro) on the same ports, after the first one stopped.
@@ -1754,6 +1790,8 @@ def _run_dispatch_main(pw, a, c: Checks, out: Path, base: str) -> dict:
             res["undo"] = dispatch_undo(pw, a, c, base, llm)
         if "bargein" in a.scenarios:
             res["barge_in"] = dispatch_barge_in(pw, a, c, base)
+        if "noise" in a.scenarios:
+            res["noise"] = dispatch_noise(pw, a, c, base, llm)
         if "cdp" in a.scenarios:
             res["cdp"] = dispatch_cdp(pw, a, c, base)
         if a.scenarios & {"drop", "failback"}:
@@ -2024,6 +2062,8 @@ def dispatch_barge_in(pw, a, c: Checks, base: str) -> dict:
     out: dict = {}
     tid = new_thread(base)
     br = Browser(pw, width=390, height=844, direct=base)
+    # The optimistic duck runs only at the "high" interrupt sensitivity since 1.5.0.
+    br.ctx.add_init_script("try { localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, interruptSensitivity: 'high' })); } catch (e) {}")
     try:
         if not open_voice_chat(br, tid, c, tag, ready_timeout=180):
             return out
@@ -2067,6 +2107,83 @@ def dispatch_barge_in(pw, a, c: Checks, base: str) -> dict:
         br.page.keyboard.press("Escape")
         errs = br.script_errors()
         c.ok(f"{tag}: no script errors", not errs, errs[:3])
+    finally:
+        br.close()
+    return out
+
+
+def dispatch_noise(pw, a, c: Checks, base: str, llm) -> dict:
+    """1.5.0: the default interrupt sensitivity ("normal") on the REAL session. Noise and a
+    far-away talker over a long reply neither pause nor cut it; the listener's own voice does."""
+    want = a.noise_sensitivity
+    tag = f"dispatch/390/noise ({want})"
+    out: dict = {}
+    tid = new_thread(base)
+    br = Browser(pw, width=390, height=844, direct=base)
+    if want != "normal":      # the control run: --noise-sensitivity high is the 1.4.0 rules
+        br.ctx.add_init_script("try { localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, interruptSensitivity: '%s' })); } catch (e) {}" % want)
+
+    def since(t, d, typ):
+        return [f for f in br.frames(d, typ) if f["t"] > t]
+
+    try:
+        if not open_voice_chat(br, tid, c, tag, ready_timeout=180):
+            return out
+        sens = br.ev("() => JSON.parse(localStorage.getItem('dispatch-drive') || '{}').interruptSensitivity || 'normal'")
+        start = [f["m"] for f in br.frames("out", "start")]
+        c.ok(f"{tag}: the device runs the {want} sensitivity and sends it in start",
+             sens == want and start and start[-1].get("interrupt_sensitivity") == want,
+             {"stored": sens, "start": start[-1] if start else None})
+        # Two ordinary turns, short replies played out: the session learns the listener's level.
+        llm.configure(reply="short")
+        for clip in ("short", "driver1b"):
+            t0 = br.ev("() => performance.now()")
+            br.say(clip)
+            br.wait("(t) => window.__e2e.ws.some((f) => f.dir === 'in' && f.m && f.m.type === 'say_end' && f.t > t)", 90, t0)
+            br.wait("() => document.querySelector('.drive-overlay').dataset.state === 'listening'", 30)
+            br.page.wait_for_timeout(1500)
+        llm.configure(reply="long")
+        t0 = br.ev("() => performance.now()")
+        br.say("medium")
+        br.wait("(t) => window.__e2e.captions.some((c) => c.t > t)", 90, t0)
+        br.wait("() => { const c = window.__e2e.captions; return c.length && performance.now() - c[c.length - 1].t < 400; }", 15)
+        br.page.wait_for_timeout(1800)
+        n_pause = len(br.port("pause"))
+        # 1) a busy room: rumble, hiss, clatters (≈ −14 dBFS peaks)
+        inj = br.say("noise")
+        br.page.wait_for_timeout(3600)
+        out["noise"] = {"duck": [f["m"] for f in since(inj["at"], "in", "duck")],
+                        "barge_in": len(since(inj["at"], "in", "barge_in")),
+                        "duck_local": len(since(inj["at"], "out", "duck_local")),
+                        "player_pauses": len(br.port("pause")) - n_pause}
+        c.ok(f"{tag}: room noise over the reply never pauses or cuts it",
+             not out["noise"]["duck"] and not out["noise"]["barge_in"] and not out["noise"]["duck_local"]
+             and not out["noise"]["player_pauses"], out["noise"])
+        # 2) a talker across the room: real words, 22 dB under the listener
+        n_pause = len(br.port("pause"))
+        inj = br.say("medium", 0.08)
+        br.page.wait_for_timeout(8200)
+        playing = br.ev("() => document.querySelector('.drive-overlay').dataset.state")
+        out["far_talker"] = {"duck": [f["m"] for f in since(inj["at"], "in", "duck") if f["m"].get("on")],
+                             "barge_in": len(since(inj["at"], "in", "barge_in")),
+                             "transcripts": [f["m"].get("text") for f in since(inj["at"], "in", "transcript")],
+                             "player_pauses": len(br.port("pause")) - n_pause, "state": playing}
+        c.ok(f"{tag}: a talker across the room neither pauses nor cuts the reply, and is not a turn",
+             not out["far_talker"]["duck"] and not out["far_talker"]["barge_in"]
+             and not any(out["far_talker"]["transcripts"]), out["far_talker"])
+        # 3) the listener, at full level: "Wait, stop, that's not what I meant."
+        inj = br.say("interrupt")
+        got = br.wait("(t) => window.__e2e.ws.some((f) => f.dir === 'in' && f.m && f.m.type === 'barge_in' && f.t > t)", 8, inj["at"])
+        bi = since(inj["at"], "in", "barge_in")
+        onset = clip_onset_s("interrupt")
+        out["listener"] = {"barge_ms": round(bi[0]["t"] - (inj["at"] + onset * 1000)) if bi else None}
+        c.ok(f"{tag}: the listener's own voice still cuts the reply (barge_in ≤ 1.5 s)",
+             got and out["listener"]["barge_ms"] is not None and out["listener"]["barge_ms"] <= 1500, out["listener"])
+        br.page.keyboard.press("Escape")
+        errs = br.script_errors()
+        c.ok(f"{tag}: no script errors", not errs, errs[:3])
+    except Exception as e:      # a harness failure is a failed check with the socket summary
+        c.ok(f"{tag}: scenario ran", False, {"error": repr(e), "summary": br.summary()})
     finally:
         br.close()
     return out
@@ -2457,9 +2574,11 @@ def parse_args(argv=None):
     ap.add_argument("--shots", type=Path, default=DEFAULT_SHOTS)
     ap.add_argument("--chrome", default=None,
                     help="Chromium executable (default: $DISPATCH_E2E_CHROME, else Playwright's own)")
-    ap.add_argument("--scenarios", default="settings,lab,conversation,3g,edge,blackout,keys,drop,cdp,failback,shots,locales,undo,bargein,livelike",
+    ap.add_argument("--scenarios", default="settings,lab,conversation,3g,edge,blackout,keys,drop,cdp,failback,shots,locales,undo,bargein,noise,livelike",
                     help="comma list: conversation, settings, lab (both targets); 3g, edge, blackout, keys, drop, "
-                         "cdp, failback, shots, locales (ref); drop, cdp, failback, undo, bargein, livelike (dispatch)")
+                         "cdp, failback, shots, locales (ref); drop, cdp, failback, undo, bargein, noise, livelike (dispatch)")
+    ap.add_argument("--noise-sensitivity", choices=["low", "normal", "high"], default="normal",
+                    help="the interrupt sensitivity the noise scenario runs at (high = the 1.4.0 control)")
     ap.add_argument("--blackout-s", type=float, default=75.0)
     ap.add_argument("--drop-s", type=float, default=66.0, help="how long the signal stays away after the mid-reply drop")
     a = ap.parse_args(argv)

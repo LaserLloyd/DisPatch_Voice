@@ -433,6 +433,9 @@ class TurnDetector:
         self._lock = threading.Lock()
         #: The uplink offset just past the last processed frame (None until a feed with ``end``).
         self.pos: int | None = None
+        #: Called with ``(frame_db, prob)`` for EVERY frame (1.5.0: the session's level
+        #: meter follows the room's floor from it); None = nobody listens.
+        self.frame_observer: Callable[[float, float], None] | None = None
 
     @property
     def frame_sink(self) -> Callable[[np.ndarray, float], None] | None:
@@ -484,6 +487,13 @@ class TurnDetector:
             while len(self._buf) >= FRAME:
                 frame, self._buf = self._buf[:FRAME], self._buf[FRAME:]
                 self.last_prob = self.vad(frame)
+                obs = self.frame_observer
+                if obs is not None:
+                    try:
+                        obs(float(10.0 * np.log10(float(np.mean(frame * frame)) + 1e-12)), self.last_prob)
+                    except Exception:
+                        log.exception("voice: frame observer failed")
+                        self.frame_observer = None
                 got = self.ep.process(frame, self.last_prob)
                 if end is not None:
                     # Everything still in `_buf` came after this frame.

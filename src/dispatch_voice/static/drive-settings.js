@@ -32,6 +32,8 @@ export const LEGACY_PATIENCE_KEY = 'dispatch-drive-patience';
 /** Blob layout version: 3 = the voice chat v3 keys (F.3). Older blobs migrate. */
 export const BLOB_VERSION = 3;
 export const PATIENCE_PRESETS = ['quick', 'normal', 'patient'];
+/** 1.5.0: how sure the server must be that speech over a reply is you (rt/interrupt.py). */
+export const INTERRUPT_SENSITIVITIES = ['low', 'normal', 'high'];
 export const REPLY_STYLES = ['short', 'normal', 'longer'];
 export const THINKING_LEVELS = ['off', 'low', 'medium'];
 export const REACTIONS = ['off', 'sometimes', 'often'];
@@ -46,6 +48,7 @@ export const VOICE_REPO_URL = 'https://github.com/LaserLloyd/DisPatch_Voice';
 export const DRIVE_DEFAULTS = Object.freeze({
   patience: 'normal',      // how long the server waits after you stop talking
   bargeIn: true,           // talking over a reply stops it
+  interruptSensitivity: 'normal', // 1.5.0: low | normal | high (high = the 1.4.0 rules)
   autoListen: true,        // false = push-to-talk: pause after every reply
   sounds: true,            // the Tones row: earcons (heard you / ready / error)
   replyStyle: 'normal',    // short | normal | longer
@@ -86,6 +89,7 @@ export function normalizeDriveSettings(raw) {
   const out = { ...DRIVE_DEFAULTS };
   const old = r.v !== BLOB_VERSION;
   if (PATIENCE_PRESETS.includes(r.patience)) out.patience = r.patience;
+  if (INTERRUPT_SENSITIVITIES.includes(r.interruptSensitivity)) out.interruptSensitivity = r.interruptSensitivity;
   if (REPLY_STYLES.includes(r.replyStyle)) out.replyStyle = r.replyStyle;
   for (const k of BOOL_KEYS) if (typeof r[k] === 'boolean') out[k] = r[k];
   for (const k of ['micId', 'sinkId', 'phoneVoice']) {
@@ -170,6 +174,7 @@ export function startPayload(s, after = null, afterIds = null, extra = null) {
     type: 'start',
     patience: v.patience,
     barge_in: v.bargeIn,
+    interrupt_sensitivity: v.interruptSensitivity,
     reply_style: v.replyStyle,
     acks: v.reactions,
     slow_link: v.slowLink,
@@ -591,6 +596,13 @@ export function previewButton(getVoice, onError) {
 }
 
 const patienceOptions = () => PATIENCE_PRESETS.map((v) => ({ value: v, label: t(`drive.patience_${v}`) }));
+const sensitivityOptions = () => INTERRUPT_SENSITIVITIES.map((v) => ({ value: v, label: t(`drive.interrupt_${v}`) }));
+/** The "Interrupt sensitivity" row (1.5.0): how sure the server must be that speech over a reply is you. */
+function sensitivityRow(s, set, { id = 'drive-interrupt-sensitivity' } = {}) {
+  return row(t('drive.interrupt_sensitivity'), t('drive.interrupt_sensitivity_hint'),
+    [segmented(t('drive.interrupt_sensitivity'), sensitivityOptions(), s.interruptSensitivity,
+      (v) => set({ interruptSensitivity: v }))], { block: true, id });
+}
 const replyOptions = () => REPLY_STYLES.map((v) => ({ value: v, label: t(`drive.reply_${v}`) }));
 const reactionOptions = () => REACTIONS.map((v) => ({ value: v, label: t(`drive.acks_${v}`) }));
 /** Follow-up is three-state (Amendment T7a-4): the bot's default, or this device's On/Off. */
@@ -682,6 +694,7 @@ export function buildQuickSheet({
       [segmented(t('drive.patience'), patienceOptions(), s.patience, (v) => set({ patience: v }))], { block: true }),
     row(t('drive.barge_in'), t('drive.barge_in_hint'),
       [switchInput(s.bargeIn, t('drive.barge_in'), (v) => set({ bargeIn: v }))]),
+    sensitivityRow(s, set, { id: 'drive-sheet-interrupt' }),
     typedInputRow(s, set, { id: 'drive-sheet-typed' }),
     row(t('drive.reply_length'), t('drive.reply_length_hint'),
       [segmented(t('drive.reply_length'), replyOptions(), s.replyStyle, (v) => set({ replyStyle: v }))], { block: true }),
@@ -1146,6 +1159,7 @@ export function mountDriveSettings(host, ctx) {
       [segmented(t('drive.patience'), patienceOptions(), s.patience, (v) => set({ patience: v }))], { block: true, id: 'drive-patience' }),
     row(t('drive.barge_in'), t('drive.barge_in_hint'),
       [switchInput(s.bargeIn, t('drive.barge_in'), (v) => set({ bargeIn: v }))], { id: 'drive-barge-in' }),
+    sensitivityRow(s, set),
     row(t('drive.auto_listen'), t('drive.auto_listen_hint'),
       [switchInput(s.autoListen, t('drive.auto_listen'), (v) => set({ autoListen: v }))], { id: 'drive-auto-listen' }),
     typedInputRow(s, set),
