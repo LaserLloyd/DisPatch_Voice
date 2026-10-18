@@ -12,7 +12,8 @@ nothing here knows what the store is: the only contract is the callable.
   would be, and the keys the file has that the schema refuses (``dropped``).
 * **Idempotent**: after a real run a marker file ``voice.yaml.migrated`` records it and a second
   call reports ``already_migrated`` without writing (``force=True`` runs it again).
-* **Reversible**: the file is copied to ``voice.yaml.bak`` first and is NOT deleted. The add-on
+* **Reversible**: once the store holds every key the file is copied to ``voice.yaml.bak``, and it
+  is NOT deleted (a failed run leaves it untouched and makes no copy). The add-on
   keeps reading ``voice.yaml`` as the lowest-priority source for one release (environment >
   store > voice.yaml > default).
 * **Secrets** are never in voice.yaml (the rig token is a credential file, not a setting), so

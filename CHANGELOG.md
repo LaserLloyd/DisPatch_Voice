@@ -8,6 +8,24 @@ All notable changes to DisPatch Voice.
 - `dispatch-voice --version` prints `dispatch-voice <version>` (it was rejected as a missing subcommand).
 
 ### Fixed
+- **Security:** a `module:setup` target in the `extensions` setting (writable by any operator
+  through Settings / `PATCH /api/voice/settings`) was imported and called at the next start, so
+  `sys:exit` stopped DisPatch at every boot. Module targets are honoured only from
+  `DISPATCH_VOICE_EXTENSIONS`; the setting names installed plugins.
+- **Security:** the profile-deletion sync and the doctor's probe sent the rig token to `rig.url`
+  without the network policy; an address the policy refuses never receives it now.
+- A public rig on the `rig.allow` list was refused at the voice-chat gate (the chat stayed on
+  the CPU while the status page said the rig was ready).
+- Windows: a token file or `voice.yaml` whose ACL granted a second account (or any group other
+  than the well-known "everybody" ones) counted as private; now anybody but you, SYSTEM and
+  Administrators makes it not private.
+- A Chatterbox model move that stopped half way (a file in use on Windows) left the engine
+  pointed at the half-filled new folder and the rest of the move marked done; it now keeps
+  loading from the complete set and a retry finishes the move.
+- A plugin's STT/TTS provider (or `stt_provider: rig`) could be selected but voice chats never
+  used it; the status health and the provider row now say what runs instead.
+- The README screenshots moved to `docs/screenshots/` with an `ALLOWED.txt`, so the privacy
+  check (CI and the git hooks) passes again.
 - `dispatch-voice doctor` inside the DisPatch container read `~/.local/share/local-chat` and so
   reported the models missing and the switch off: it now honours `LOCAL_CHAT_DATA_DIR` (the legacy
   name DisPatch still answers to) after `DISPATCH_DATA_DIR`, the same order DisPatch uses. The rig
