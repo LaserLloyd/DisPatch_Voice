@@ -9,7 +9,7 @@ use it sit behind the session's existing seams: ``rt/stt_rig.py``
 
 **Off unless set up.** ``rig.enabled`` in ``<data>/voice.yaml`` only takes
 effect when ``rig.url`` is set AND the ``SPEECHFORGE_TOKEN`` is present (the
-environment, else ``~/.config/local-chat/speechforge.env``, mode 0600). With no
+environment, else the host credential store, else ``<data>/ext/voice/speechforge.env``, mode 0600). With no
 rig, :func:`open_for_session` returns None and the session is exactly the CPU
 one. The token is read at each voice-chat open (a rotation needs no restart),
 sent only in the upgrade header, never logged, never shown to the browser and
@@ -207,8 +207,34 @@ def host_of(url: str) -> str:
 # The token (never logged, never sent to the browser, never in voice.yaml)
 # --------------------------------------------------------------------------- #
 
-def token_path() -> Path:
+TOKEN_SECRET = "speechforge_token"
+
+
+def legacy_token_path() -> Path:
+    """Where 1.5.0 to 1.6.0 kept the token: under the user's home, which is NOT in DisPatch's
+    data folder (it is lost on a container image update and read-only under ``read_only: true``).
+    Still read, as a fallback; never written."""
     return Path.home() / ".config" / "local-chat" / "speechforge.env"
+
+
+def token_path() -> Path:
+    """The token FILE: ``<state_dir>/speechforge.env`` (``<data>/ext/voice/``), so it lives with the
+    rest of the add-on's state, survives an image update and works under a read-only root. Outside
+    DisPatch with no ``DISPATCH_DATA_DIR`` (the standalone page, a plain shell) it is the old
+    home-folder file."""
+    from . import context
+    if context.get_context() is not None or os.environ.get("DISPATCH_DATA_DIR", "").strip():
+        return context.paths().state_dir / "speechforge.env"
+    return legacy_token_path()
+
+
+def _secret_store():
+    """The host's credential store (``ctx.secrets``: get/set/delete by name), or None outside a
+    DisPatch that offers one. The token is a credential, so the host's store is its first home."""
+    from . import context
+    ctx = context.get_context()
+    store = getattr(ctx, "secrets", None) if ctx is not None else None
+    return store if store is not None and all(hasattr(store, m) for m in ("get", "set", "delete")) else None
 
 
 @dataclass(frozen=True)
@@ -253,15 +279,10 @@ def ws_logger() -> logging.Logger:
 _ENV_LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 
-def read_token() -> Token:
-    """``SPEECHFORGE_TOKEN`` from the environment, else from the env file. A file
-    that other users can read is refused (and named, by path, in the status)."""
-    env = (os.environ.get(TOKEN_ENV) or "").strip()
-    if env:
-        return Token(env, "env")
-    p = token_path()
+def _token_from_file(p: Path) -> Token | None:
+    """The token in env-file ``p``, a Token that says why not, or None when there is no file."""
     if not p.exists():
-        return Token()
+        return None
     readable = fsperm.others_can_read(p)
     if readable:
         log.warning("voice: %s is readable by other users; the rig token in it is ignored (%s)", p,
@@ -286,17 +307,60 @@ def read_token() -> Token:
     return Token(problem="no_token")
 
 
+def read_token() -> Token:
+    """The rig token, first found of: ``SPEECHFORGE_TOKEN`` in the environment; the host's
+    credential store (``ctx.secrets``); the token file in the add-on's state folder; the pre-1.6.1
+    file under the home folder. A file that other users can read is refused (and named in the
+    status). ``source`` is ``env``, ``secret`` or ``file``."""
+    env = (os.environ.get(TOKEN_ENV) or "").strip()
+    if env:
+        return Token(env, "env")
+    store = _secret_store()
+    if store is not None:
+        try:
+            v = (store.get(TOKEN_SECRET) or "").strip()
+        except Exception:       # noqa: BLE001 - a locked keyring falls through to the files
+            log.warning("voice: the host credential store could not be read; trying the token file")
+            v = ""
+        if v:
+            return Token(v, "secret")
+    first: Token | None = None
+    for p in dict.fromkeys([token_path(), legacy_token_path()]):         # the new place first, once each
+        t = _token_from_file(p)
+        if t is None:
+            continue
+        if t.value:
+            return t
+        first = first or t
+    return first or Token()
+
+
 TOKEN_MIN, TOKEN_MAX = 8, 512
 _TOKEN_OK = re.compile(r"\A[\x21-\x7e]+\Z")       # printable ASCII, no space, no control characters
 
 
-def write_token(value: str) -> Path:
-    """Save the rig token to :func:`token_path` as ``SPEECHFORGE_TOKEN=<value>``, readable by
-    the owner only (0600 / an owner-only ACL), atomically. The value is never logged and never
-    echoed. ``ValueError`` (its message names the rule, not the value) for a malformed token."""
+def write_token(value: str) -> Path | None:
+    """Save the rig token: in the host's credential store when it has one (``ctx.secrets``; nothing
+    on disk but the host's own protected store), else to :func:`token_path` as
+    ``SPEECHFORGE_TOKEN=<value>``, readable by the owner only (0600 / an owner-only ACL),
+    atomically. Returns the file written, or None for the credential store. The value is never
+    logged and never echoed. ``ValueError`` (its message names the rule, not the value) for a
+    malformed token."""
     v = value.strip() if isinstance(value, str) else ""
     if not (TOKEN_MIN <= len(v) <= TOKEN_MAX) or not _TOKEN_OK.match(v) or any(c in v for c in "'\"`$\\"):
         raise ValueError(f"The token must be {TOKEN_MIN}-{TOKEN_MAX} visible characters with no spaces or quotes.")
+    store = _secret_store()
+    if store is not None:
+        try:
+            store.set(TOKEN_SECRET, v)
+        except Exception:       # noqa: BLE001 - no usable store: the private file is the fallback
+            log.warning("voice: the host credential store refused the rig token; saving it to a private file")
+        else:
+            with contextlib.suppress(OSError):
+                token_path().unlink()           # the old file must not outlive a later clear()
+            _MISCONFIGURED.clear()
+            log.info("voice: the rig token was saved to the host credential store")
+            return None
     p = token_path()
     made = not p.parent.exists()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -314,14 +378,28 @@ def write_token(value: str) -> Path:
 
 
 def clear_token() -> bool:
-    """Delete the token file; True when there was one."""
-    try:
-        token_path().unlink()
-    except FileNotFoundError:
-        return False
-    _MISCONFIGURED.clear()
-    log.info("voice: the rig token file was removed")
-    return True
+    """Forget the rig token everywhere the add-on can: the credential store and both token files
+    (the environment variable is the operator's). True when there was one to remove."""
+    had = False
+    store = _secret_store()
+    if store is not None:
+        try:
+            had = bool(store.get(TOKEN_SECRET))
+            store.delete(TOKEN_SECRET)
+        except Exception:       # noqa: BLE001
+            log.warning("voice: the host credential store could not remove the rig token")
+    for p in dict.fromkeys([token_path(), legacy_token_path()]):
+        try:
+            p.unlink()
+            had = True
+        except FileNotFoundError:
+            pass
+        except OSError:
+            log.warning("voice: could not remove %s", p.name)
+    if had:
+        _MISCONFIGURED.clear()
+        log.info("voice: the rig token was removed")
+    return had
 
 
 def _fingerprint(url: str, token: str) -> str:
