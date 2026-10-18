@@ -1,5 +1,15 @@
 # dispatch-voice
 
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/readme/settings-voice.png" alt="DisPatch Settings, Voice tab on the Glacier theme: the Use voice chat switch, what is missing on the server and the speech-model download"><br><sub><b>Settings &rarr; Voice.</b> One switch to turn voice chat on, a plain list of what the server still needs, and a Download button for the speech models.</sub></td>
+    <td width="50%"><img src="docs/screenshots/readme/settings-voice-providers.png" alt="DisPatch Settings, Voice tab: speech-to-text and text-to-speech provider pickers"><br><sub><b>Providers.</b> Choose where speech is recognised and where replies are spoken: this computer, a GPU speech rig, or an OpenAI-compatible server.</sub></td>
+  </tr>
+</table>
+
+<sub>Captured in DisPatch Chat 3.0 with the add-on installed and its speech models not yet downloaded.</sub>
+
 **DisPatch Voice**: voice chat for [DisPatch Chat](https://github.com/LaserLloyd/DisPatch_Chat), as an add-on. You talk to a DisPatch bot hands-free; it listens, answers in its own voice and can be interrupted. Everything runs on the CPU of the machine DisPatch runs on; by default nothing is sent anywhere. What you switch on does send data: the **GPU rig** receives your microphone audio and the reply text, an **OpenAI-compatible server** (speech to text, or the HQ voice) receives the audio or the reply text, and the optional **MiniMax** engine receives the reply text. Each is off until you set it up, each address is checked against a network policy (below), and nothing else leaves the machine.
 
 DisPatch runs fully without it. With the add-on installed, DisPatch gains a microphone button in each chat and a Settings → Voice page. The add-on is the whole feature: the speech pipeline (Silero VAD + Smart Turn v3.2 for turn taking, Parakeet TDT 0.6B for recognition), the voice session, the voices (cloned voices and a stock synthetic voice on Chatterbox-Turbo ONNX; optional built-in voices through a plugin), the settings routes and its own frontend assets. DisPatch keeps only a small, stable extension host and the page that explains how to install this when it is absent.
