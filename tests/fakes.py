@@ -120,7 +120,7 @@ class ExtPaths:
         fsperm.ensure_private(state, directory=True)
         return cls(voice_yaml=data / "voice.yaml", acks_yaml=data / "voice-acks.yaml",
                    voices_dir=data / "voices", cache_dir=data / "voice-cache",
-                   models_dir=models_dir or data / "speech-models", state_dir=state)
+                   models_dir=models_dir or data / "models", state_dir=state)
 
 
 @dataclass

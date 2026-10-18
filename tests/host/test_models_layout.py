@@ -82,3 +82,54 @@ def test_an_explicit_env_folder_is_honoured_and_never_moved(layout, monkeypatch,
     rep = models.migrate(dry_run=False)
     assert rep["moved"] == 0 and {m["state"] for m in rep["moves"]} == {"explicit"}
     assert (layout / "silero_vad.onnx").exists()
+
+
+# ---- review F8: DisPatch 3.0 renamed its folder to <data>/models ------------------------------ #
+
+def test_the_default_folder_is_named_models_and_the_old_host_name_is_still_read(layout):
+    assert layout.name == "models"
+    old = layout.parent / "speech-models"
+    put(old / "speech" / "silero_vad.onnx", b"s")                     # a 2.x install with the 1.6.0 layout
+    put(old / "chatterbox" / "tokenizer.json", b"t")
+    assert models.speech_dir() == old / "speech" and models.chatterbox_dir() == old / "chatterbox"
+    assert models.legacy_host_root() == old
+
+
+def test_a_flat_2x_install_in_the_old_host_folder_still_works(layout):
+    old = layout.parent / "speech-models"
+    put(old / "silero_vad.onnx")
+    assert models.speech_dir() == old and models.legacy_present()
+
+
+def test_the_add_on_can_move_what_the_host_left_behind(layout, tmp_path):
+    old = layout.parent / "speech-models"
+    put(old / "silero_vad.onnx", b"flat")
+    put(old / "chatterbox" / "tokenizer.json", b"tok")
+    put(old / "chatterbox" / "onnx" / "speech_encoder_q4.onnx", b"e")
+    rep = models.migrate()                                           # dry run first
+    assert rep["moved"] == 0 and {m["state"] for m in rep["moves"]} == {"move"}
+    assert (old / "silero_vad.onnx").exists()
+    rep = models.migrate(dry_run=False)
+    assert rep["errors"] == [] and rep["moved"] == 2
+    assert (layout / "speech" / "silero_vad.onnx").read_bytes() == b"flat"
+    assert (layout / "chatterbox" / "onnx" / "speech_encoder_q4.onnx").read_bytes() == b"e"
+    assert not old.exists()                                          # emptied, so removed
+    assert models.speech_dir() == layout / "speech" and models.chatterbox_dir() == layout / "chatterbox"
+    assert models.migrate(dry_run=False)["moves"] == []              # idempotent
+
+
+def test_two_sources_for_one_file_move_only_the_first(layout):
+    old = layout.parent / "speech-models"
+    put(layout / "silero_vad.onnx", b"in-new-root")
+    put(old / "silero_vad.onnx", b"in-old")
+    rep = models.migrate(dry_run=False)
+    assert [m["state"] for m in rep["moves"]] == ["moved", "skip_exists"]
+    assert (layout / "speech" / "silero_vad.onnx").read_bytes() == b"in-new-root"
+    assert (old / "silero_vad.onnx").read_bytes() == b"in-old"       # never overwritten, never deleted
+
+
+def test_no_legacy_root_when_the_models_folder_is_the_old_name(host_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("DISPATCH_SPEECH_MODELS", str(tmp_path / "speech-models"))
+    from dispatch_voice.host import context
+    context.clear_context()
+    assert models.legacy_host_root() is None
