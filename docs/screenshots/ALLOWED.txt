@@ -1,0 +1,4 @@
+# Images a person opened and checked: no real names, addresses, avatars of real people or message text.
+# One basename per line (scripts/scrub_check.py refuses any other image under docs/screenshots/).
+settings-voice.png
+settings-voice-providers.png
