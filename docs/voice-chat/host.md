@@ -72,8 +72,12 @@ and whether the `--with-editable` overlay resolves offline.
 
 Everything the add-on needs from DisPatch arrives through the context
 (`ctx.paths`, `ctx.bots`, `submit_turn`, `abort_turn`, `retract_message`,
-`replies_after`, `subscribe_frames`, `socket_count`). The add-on never imports
-`app.*`; `host/context.py` holds the context, and outside DisPatch (the CLI,
+`replies_after`, `subscribe_frames`, `socket_count`). DisPatch 3.0 adds two more,
+both feature-tested with `getattr(ctx, ..., None)` so an older DisPatch still works:
+`ctx.secrets` (`get` / `set` / `delete` by name; the rig token lives there, see
+[rig.md](rig.md)) and `ctx.settings_writer(namespace)` (the host calls
+`migrate_voice_yaml(writer, dry_run=False)` once its settings store exists). The
+add-on never imports `app.*`; `host/context.py` holds the context, and outside DisPatch (the CLI,
 `dispatch-voice serve`, tests) the paths come from `DISPATCH_DATA_DIR` instead.
 
 ## A voice chat, end to end
