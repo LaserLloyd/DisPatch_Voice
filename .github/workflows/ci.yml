@@ -60,6 +60,12 @@ jobs:
         env:
           DISPATCH_VOICE_REQUIRE_FFMPEG: "1"
         run: uv run pytest -q
+      - name: Run the forge-voice-core tests
+        # The host-independent engines (packages/forge-voice-core) have their own suite and its own pytest
+        # config; it includes the "imports without dispatch_voice / fastapi / starlette" guard.
+        env:
+          DISPATCH_VOICE_REQUIRE_FFMPEG: "1"
+        run: uv run pytest -q packages/forge-voice-core/tests
 
   test-windows:
     name: Python tests (Windows, 3.12)
@@ -80,12 +86,17 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --python 3.12
       - name: Run the test suite
-        # The same suite as Linux: file-mode checks become ACL checks (src/dispatch_voice/fsperm.py),
+        # The same suite as Linux: file-mode checks become ACL checks (packages/forge-voice-core/src/forge_voice_core/fsperm.py),
         # every text file is read as UTF-8, waits are real time (tests/settling.py).
         shell: bash
         env:
           DISPATCH_VOICE_REQUIRE_FFMPEG: "1"
         run: uv run pytest -q
+      - name: Run the forge-voice-core tests
+        shell: bash
+        env:
+          DISPATCH_VOICE_REQUIRE_FFMPEG: "1"
+        run: uv run pytest -q packages/forge-voice-core/tests
 
   client:
     name: Client tests

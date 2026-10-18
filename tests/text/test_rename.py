@@ -25,8 +25,9 @@ _ALLOWED_LINE = re.compile(r"now called voice chat", re.IGNORECASE)
 def scanned_files() -> list[Path]:
     files = [ROOT / "README.md", ROOT / "CHANGELOG.md",
              ROOT / "src/dispatch_voice/standalone/voices.html",
-             ROOT / "src/dispatch_voice/speak.py"]
+             ROOT / "packages/forge-voice-core/src/forge_voice_core/speak.py"]
     files += sorted((ROOT / "src/dispatch_voice/text").glob("*.py"))
+    files += sorted((ROOT / "packages/forge-voice-core/src/forge_voice_core/text").glob("*.py"))
     files += sorted(p for p in (ROOT / "docs").rglob("*.md") if "legacy" not in p.parts)
     return [p for p in files if p.is_file()]
 

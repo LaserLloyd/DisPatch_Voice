@@ -1,7 +1,7 @@
 """Cloned voices in the host: the profile store, the ``chatterbox`` engine, the
 resolver, the fillers, the stock voice and the ``/api/voice/profiles`` router
 (the two halves ``host/dv.py`` dissolved into). The Chatterbox engine is a
-fake, so no model is loaded; the real engine's own tests are tests/test_models.py."""
+fake, so no model is loaded; the real engine's own tests are packages/forge-voice-core/tests/test_models.py."""
 from __future__ import annotations
 
 import json

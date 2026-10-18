@@ -4,7 +4,20 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Changed
+- **The host-independent engines are their own package, `forge-voice-core`** (`packages/forge-voice-core/`, import
+  `forge_voice_core`): the CPU engines (Silero VAD, Smart Turn, Parakeet, Moonshine, Chatterbox-Turbo, the OpenAI-compatible
+  clients), the provider interfaces, the settings-schema primitives and the engine-level settings rows, the model registry
+  and download job, the system-requirement checks, the network address policy and the GPU-rig (sf.1) client (extra
+  `speechforge`). `dispatch-voice` now depends on it; DisPatch behaves as before (logger names, environment variables,
+  settings, wire and defaults are unchanged). Every moved import path (`dispatch_voice.host.tts`, `dispatch_voice.rt.*`,
+  `dispatch_voice.engine`, `dispatch_voice.audio`, ...) stays as a deprecated alias of the core module (the same module object).
+  The host contract another application implements is `packages/forge-voice-core/docs/HOST_API.md`.
+  Installing from a built archive or a git URL needs the core named too (README, "Two packages in this repository").
+
 ### Added
+- `forge_voice_core.hostlink`: the one seam between the engines and an application; `dispatch_voice/_core_bridge.py` is
+  DisPatch's implementation.
 - `dispatch-voice --version` prints `dispatch-voice <version>` (it was rejected as a missing subcommand).
 
 ### Fixed

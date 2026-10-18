@@ -231,6 +231,42 @@ Open <http://127.0.0.1:8769> (it redirects to `/voices/ui`). Loopback only, no l
 Expected to work but not tested (CI runs Linux and Windows). Use the Linux methods with
 `brew install ffmpeg opus uv git` in place of the `apt-get` and `uv` install lines.
 
+### Two packages in this repository
+
+The host-independent engines (Silero VAD, Smart Turn, Parakeet and Moonshine recognition, Chatterbox-Turbo speech, the
+OpenAI-compatible clients, the provider interfaces, the model downloads with progress and Cancel, the network address
+policy and the optional GPU-rig client) are their own installable package, **`forge-voice-core`**, in
+[`packages/forge-voice-core/`](packages/forge-voice-core/README.md). `dispatch-voice` is that package plus DisPatch's
+integration (the FastAPI routes, the voice session, the browser client, the settings keys). `dispatch-voice` depends on
+`forge-voice-core[speechforge]`, so installing the add-on installs both; nothing changes for a DisPatch user. Other
+applications embed the core through [its host contract](packages/forge-voice-core/docs/HOST_API.md). The old import paths
+(`dispatch_voice.host.tts`, `dispatch_voice.rt.*`, `dispatch_voice.engine`, ...) are kept as thin aliases of the moved
+modules, marked deprecated.
+
+How the two get installed:
+
+* **From a checkout** (every `uv pip install ../../DisPatch_Voice` line above): uv reads the `[tool.uv.sources]` table in
+  `pyproject.toml` and installs `packages/forge-voice-core` from the same checkout. Nothing extra to type.
+* **From a built archive or a git URL** (what pip and a URL install see): the table is not read, so name the core too.
+  Core first or in the same command:
+
+  ```sh
+  uv pip install --python .venv/bin/python ./packages/forge-voice-core .
+  ```
+
+* **DisPatch's Dockerfile with `VOICE=1`** (stage "Optional: voice chat" in the DisPatch_Chat `Dockerfile`) installs both
+  packages with one `uv pip install`:
+
+  ```sh
+  # VOICE_SRC=local  (--build-context voice-src=<DisPatch_Voice checkout>)
+  uv pip install --python /app/.venv/bin/python /voice-src/packages/forge-voice-core /voice-src
+  # VOICE_SRC=github (default; ${ref} is refs/heads/<branch> or refs/tags/<tag>)
+  uv pip install --python /app/.venv/bin/python     "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/${ref}.tar.gz#subdirectory=packages/forge-voice-core"     "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/${ref}.tar.gz"
+  ```
+
+  Everything else in that stage (ffmpeg and libopus in the runtime image, models downloaded into the data volume, not
+  baked in) stays as it is.
+
 ### Upgrade and uninstall
 
 | Method | Upgrade | Uninstall (models and voices are kept) |
@@ -294,7 +330,7 @@ On an older DisPatch the newer buttons are simply not available or the socket is
 
 Quality check (2026-10-09): 20 renders across 10 lines, transcribed back with Parakeet. 19 were word-perfect. The miss was "Mm." rendered as "Mm-hmm", so the filler now *is* "Mm-hmm.". The speaker-match score separates voices clearly: clone vs reference 0.91, an unrelated male voice 0.54, a female voice 0.43.
 
-**Sampling matters.** Resemble's ONNX example decodes greedily, and on a cloned voice that looped the reference clip's words for ten seconds. The engine samples the way Resemble's own PyTorch code does (temperature 0.8, top-p 0.95, top-k 1000, repetition penalty 1.2), and caps output length by word count. `tests/test_models.py::test_no_runaway_or_reference_replay` guards this.
+**Sampling matters.** Resemble's ONNX example decodes greedily, and on a cloned voice that looped the reference clip's words for ten seconds. The engine samples the way Resemble's own PyTorch code does (temperature 0.8, top-p 0.95, top-k 1000, repetition penalty 1.2), and caps output length by word count. `packages/forge-voice-core/tests/test_models.py::test_no_runaway_or_reference_replay` guards this.
 
 Models are pinned to a Hugging Face commit (`MODEL_REVISION` in `engine.py`) and to revisions with sha256 checksums for the speech models (`host/download.py`), so a re-download can't change what you tested. They live in plain directories, not the HF cache: onnxruntime refuses external-data files reached through the cache's symlinks.
 
@@ -437,6 +473,7 @@ Chatterbox has no built-in voice, so dispatch-voice ships one: `stock-host`, "St
 
 ```sh
 uv run pytest -q                 # Python; model-backed tests skip when the models are absent
+uv run pytest -q packages/forge-voice-core/tests   # the host-independent engines (also imports without dispatch_voice / fastapi)
 npm install && npm test          # client modules (node --test; jsdom for the DOM suites)
 python3 scripts/check-locales.py # locale bundles
 ```
