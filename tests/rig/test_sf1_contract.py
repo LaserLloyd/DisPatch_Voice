@@ -73,7 +73,7 @@ def _literal(tree: ast.Module, name: str):
 def test_golden_table_matches_the_speechforge_source():
     """Read SpeechForge's protocol.py as text: its constants, error codes and the
     client-frame table must equal the golden data the add-on is tested against."""
-    tree = ast.parse((SPEECHFORGE / "src" / "speechforge" / "protocol.py").read_text())
+    tree = ast.parse((SPEECHFORGE / "src" / "speechforge" / "protocol.py").read_text(encoding="utf-8"))
     c = GOLDEN["constants"]
     for name in ("MAGIC", "KIND_MIC", "KIND_TTS", "MIC_RATE", "TTS_RATE", "MIC_FRAME_SAMPLES",
                  "TTS_FRAME_SAMPLES", "U16", "U32"):

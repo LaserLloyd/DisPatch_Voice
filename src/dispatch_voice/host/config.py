@@ -62,6 +62,7 @@ import threading
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
+from .. import fsperm
 from ..rt.settings import RtSettings
 from .rig import RigSettings, clean_rig
 
@@ -486,7 +487,7 @@ def clean_rt(raw) -> dict:
     return out
 
 
-_PREFS_CACHE: tuple[float, dict] | None = None
+_PREFS_CACHE: tuple[tuple[int, int], dict] | None = None
 _PREFS_LOCK = threading.Lock()
 #: Serialises the read-modify-write of voice.yaml: two PATCHes at once used
 #: to drop each other's key. (A save keeps only known keys; comments and
@@ -574,7 +575,10 @@ def load_prefs() -> dict:
     global _PREFS_CACHE
     p = prefs_path()
     try:
-        mtime = p.stat().st_mtime
+        st = p.stat()
+        # (mtime_ns, size): two writes inside one filesystem clock tick (15 ms on Windows)
+        # share an mtime, and a hand edit that changes the text changes the size.
+        mtime = (st.st_mtime_ns, st.st_size)
     except OSError:
         return {}
     with _PREFS_LOCK:
@@ -582,7 +586,7 @@ def load_prefs() -> dict:
             return dict(_PREFS_CACHE[1])
     try:
         import yaml
-        prefs = clean_prefs(yaml.safe_load(p.read_text()) or {})
+        prefs = clean_prefs(yaml.safe_load(p.read_text(encoding="utf-8")) or {})
     except Exception:
         log.warning("voice: %s is unreadable; using the defaults", p)
         prefs = {}
@@ -617,8 +621,8 @@ def _write_prefs(prefs: dict) -> dict:
     p = prefs_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".yaml.tmp")
-    tmp.write_text(yaml.safe_dump(prefs, sort_keys=True))
-    os.chmod(tmp, 0o600)
+    tmp.write_text(yaml.safe_dump(prefs, sort_keys=True), encoding="utf-8")
+    fsperm.ensure_private(tmp)
     os.replace(tmp, p)
     with _PREFS_LOCK:
         _PREFS_CACHE = None

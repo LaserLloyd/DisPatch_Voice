@@ -30,8 +30,8 @@ from rt.conftest import (
 pytestmark = [pytest.mark.models]
 
 FIXTURES = Path(__file__).parent / "fixtures"
-META = json.loads((FIXTURES / "clips" / "meta.json").read_text())
-BASELINE = json.loads((FIXTURES / "transcripts.json").read_text())
+META = json.loads((FIXTURES / "clips" / "meta.json").read_text(encoding="utf-8"))
+BASELINE = json.loads((FIXTURES / "transcripts.json").read_text(encoding="utf-8"))
 FRAME = 512
 
 need_stt = pytest.mark.skipif(not (have_speech_models() and have_onnx_asr()),
@@ -64,8 +64,8 @@ def clip(name: str, band: str = "16k") -> np.ndarray:
 
 def profile_line() -> str:
     try:
-        prof = Path("/sys/firmware/acpi/platform_profile").read_text().strip()
-        mhz = int(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read_text()) // 1000
+        prof = Path("/sys/firmware/acpi/platform_profile").read_text(encoding="utf-8").strip()
+        mhz = int(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read_text(encoding="utf-8")) // 1000
     except OSError:
         prof, mhz = "?", 0
     return f"platform_profile={prof} max_mhz={mhz}"

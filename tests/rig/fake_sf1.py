@@ -26,8 +26,9 @@ import time
 from pathlib import Path
 
 import numpy as np
+from settling import pause
 
-GOLDEN = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "sf1" / "protocol.json").read_text())
+GOLDEN = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "sf1" / "protocol.json").read_text(encoding="utf-8"))
 C = GOLDEN["constants"]
 HEADER = struct.Struct(C["HEADER"])
 PORTS = range(19100, 19110)
@@ -386,7 +387,7 @@ class FakeRig:
             if not c.stalled and c.paused_since is None:
                 c.stalls += 1
             c.stalled = True
-            await asyncio.sleep(0.005)
+            await pause(0.005)
             if c.cancelled:
                 return False
         c.stalled = False

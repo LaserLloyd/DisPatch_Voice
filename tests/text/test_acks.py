@@ -278,7 +278,7 @@ def test_flavour_lines_come_first_in_every_cycle():
 
 def test_flavour_by_alias_and_operator_override_by_bot_id(tmp_path):
     f = tmp_path / "voice-acks.yaml"
-    f.write_text("bots:\n  advisor:\n    question: [\"Let me consult the oracle.\"]\n")
+    f.write_text("bots:\n  advisor:\n    question: [\"Let me consult the oracle.\"]\n", encoding="utf-8")
     pools = load_pools(f)
     own, _ = pools.lines("question", bot_id="advisor", voice="v")
     assert own == ("Let me consult the oracle.",)
@@ -289,7 +289,7 @@ def test_flavour_by_alias_and_operator_override_by_bot_id(tmp_path):
 def test_yaml_flavour_picks_a_style_per_bot_and_names_can_match(tmp_path, caplog):
     f = tmp_path / "voice-acks.yaml"
     f.write_text("bots:\n  nova: {flavour: Bright}\n  rae: {flavour: trainer, wait_5s: [\"Hold on, boss.\"]}\n"
-                 "  odd: {flavour: pirate}\n")
+                 "  odd: {flavour: pirate}\n", encoding="utf-8")
     p = load_pools(f)
     assert p.lines("request", bot_id="nova", voice="v")[0] == ack_lines.FLAVOUR["bright"]["request"]
     assert p.lines("wait_5s", bot_id="rae", voice="v")[0] == ("Hold on, boss.",)
@@ -325,7 +325,7 @@ def test_a_small_pool_never_starves_and_never_repeats_back_to_back(tmp_path, poo
     """review-T5 #6: the no-repeat window shrinks for a small pool instead of
     silencing it for good once every line has been said."""
     f = tmp_path / "voice-acks.yaml"
-    f.write_text("default:\n  statement: [" + ", ".join(f'"{x}"' for x in pool) + "]\n")
+    f.write_text("default:\n  statement: [" + ", ".join(f'"{x}"' for x in pool) + "]\n", encoding="utf-8")
     sel = AckSelector(load_pools(f), mode="often", rng=random.Random(seed))
     sel.rng.random = lambda: 0.99                       # never skip
     said = [sel.pick("statement", bot_id="x", voice="v", now=100.0 * i, last_turn_at=None,
@@ -384,7 +384,7 @@ def test_operator_tool_rules_come_first_and_stay_out_of_the_shipped_table(tmp_pa
         "  - {match: '^imagesrv__', say: Working on the picture}\n"
         "  - {match: '(', say: Searching}\n"          # not a pattern: skipped
         "  - {match: '^x', say: 'Say 2 things'}\n"     # digits: not a valid line
-        "  - just a string\n")
+        "  - just a string\n", encoding="utf-8")
     pools = load_pools(f)
     assert [line for _rx, line in pools.tool_rules] == ["Checking your cards", "Working on the picture"]
     assert tool_status_line("decksrv__calendar_sync", pools.tool_rules) == "Checking your cards"
@@ -396,7 +396,7 @@ def test_operator_tool_rules_come_first_and_stay_out_of_the_shipped_table(tmp_pa
 
 def test_custom_tool_line_is_rendered_and_said(tmp_path):
     f = tmp_path / "voice-acks.yaml"
-    f.write_text("tools:\n  - {match: '^decksrv__', say: Looking through your decks}\n")
+    f.write_text("tools:\n  - {match: '^decksrv__', say: Looking through your decks}\n", encoding="utf-8")
     pools = load_pools(f)
     assert "Looking through your decks" in pools.all_texts()
     assert tool_status_line("decksrv__find", pools.tool_rules) == "Looking through your decks"
@@ -555,7 +555,7 @@ def test_load_pools_validates_and_skips_bad_lines(tmp_path, caplog):
         "bots:\n"
         "  trainer-bot:\n"
         "    request: [\"On it, boss.\", \"Done, boss.\"]\n"
-        "  broken: \"not a mapping\"\n")
+        "  broken: \"not a mapping\"\n", encoding="utf-8")
     p = load_pools(f)
     assert p.default["statement"] == ("Mm-hm.", "Right.")
     assert p.default["question"] == ack_lines.DEFAULT["question"]      # untouched intent
@@ -569,9 +569,9 @@ def test_load_pools_caps_twenty_lines_and_survives_garbage(tmp_path):
     words = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India",
              "Juliet", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa", "Quebec", "Romeo",
              "Sierra", "Tango", "Uniform", "Victor"]
-    f.write_text("default:\n  question: [" + ", ".join(f'"{w}."' for w in words) + "]\n")
+    f.write_text("default:\n  question: [" + ", ".join(f'"{w}."' for w in words) + "]\n", encoding="utf-8")
     assert len(load_pools(f).default["question"]) == 20
-    f.write_text(": : not yaml : [")
+    f.write_text(": : not yaml : [", encoding="utf-8")
     assert load_pools(f).default == default_pools().default
     assert load_pools(tmp_path / "missing.yaml").default == default_pools().default
 
@@ -580,7 +580,7 @@ def test_pools_file_hot_reloads_on_mtime(tmp_path):
     f = tmp_path / "voice-acks.yaml"
     pf = PoolsFile(f, check_every_s=0)
     assert pf.get().default["wait_5s"] == ack_lines.DEFAULT["wait_5s"]
-    f.write_text("default:\n  wait_5s: [\"Hold tight.\"]\n")
+    f.write_text("default:\n  wait_5s: [\"Hold tight.\"]\n", encoding="utf-8")
     os.utime(f, (time.time() + 5, time.time() + 5))
     assert pf.get().default["wait_5s"] == ("Hold tight.",)
 

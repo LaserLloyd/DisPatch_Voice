@@ -128,7 +128,7 @@ def _ensure_locked(store, d: Path, build: bool, model_dir: Path | None) -> str |
             "fillers": "pending",
             "default": False,
         }
-        (tmp / "profile.json").write_text(json.dumps(meta, indent=1, sort_keys=True))
+        (tmp / "profile.json").write_text(json.dumps(meta, indent=1, sort_keys=True), encoding="utf-8")
         os.replace(tmp, d)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -149,6 +149,6 @@ def render_extras(store, pid: str = STOCK_ID, *, fillers: bool = True) -> None:
         os.replace(tmp, d / "audition.wav")
     if not fillers:
         return
-    meta = json.loads((d / "profile.json").read_text())
+    meta = json.loads((d / "profile.json").read_text(encoding="utf-8"))
     if meta.get("fillers") != "ready":
         store.render_fillers(pid)

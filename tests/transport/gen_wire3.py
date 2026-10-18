@@ -140,12 +140,12 @@ def main() -> int:
     data = build()
     text = json.dumps(data, indent=1) + "\n"
     if "--check" in sys.argv:
-        cur = json.loads(OUT.read_text())
+        cur = json.loads(OUT.read_text(encoding="utf-8"))
         same = {k: v for k, v in cur.items() if k not in ("up", "down", "libopus")} == \
                {k: v for k, v in data.items() if k not in ("up", "down", "libopus")}
         print("framing vectors unchanged" if same else "wire3.json would change")
         return 0 if same else 1
-    OUT.write_text(text)
+    OUT.write_text(text, encoding="utf-8")
     print(f"wrote {OUT} ({len(text)} chars, {len(data['up'])} up, {len(data['down'])} down, "
           f"{len(data['bad_up'])} bad up, {len(data['bad_down'])} bad down)")
     return 0

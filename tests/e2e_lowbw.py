@@ -157,7 +157,7 @@ def wer(hyp: str, ref: str) -> float:
 
 
 def known_text(clip: Path = CLIP) -> str:
-    return json.loads(TRANSCRIPTS.read_text())["16k"][clip.stem]
+    return json.loads(TRANSCRIPTS.read_text(encoding="utf-8"))["16k"][clip.stem]
 
 
 def spoken_words(content: str) -> list[str]:
@@ -1122,6 +1122,8 @@ def write_pin(path: Path) -> str:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(pin)
+    from dispatch_voice import fsperm
+    fsperm.ensure_private(path)            # Windows: the ACL (the mode above means nothing there)
     return pin
 
 
@@ -1135,7 +1137,7 @@ def start_scratch_dispatch(a, out_dir: Path):
     if a.fixed_reply == "split":
         fixed = SPLIT_REPLY
     elif a.fixed_reply:
-        fixed = Path(a.fixed_reply[1:]).read_text().strip() if a.fixed_reply.startswith("@") else a.fixed_reply
+        fixed = Path(a.fixed_reply[1:]).read_text(encoding="utf-8").strip() if a.fixed_reply.startswith("@") else a.fixed_reply
     llm = StubLLM(port=a.llm_port, delay_s=1.2, reply="long", tokens_per_s=8.0, fixed_reply=fixed).start()
     data = out_dir / "dispatch-data"
     proc = start_dispatch(a.server_port, data, a.start_dispatch, llm.base_url, online=a.online, kokoro=a.kokoro,
@@ -1254,7 +1256,7 @@ async def main_async(a) -> int:
                               timeout_s=a.timeout, judge=judge, send_after=not a.no_after)
             results.append(r)
             print(summary_line(r), flush=True)
-            (out_dir / "e2e_lowbw.json").write_text(json.dumps(results, indent=1, default=str))
+            (out_dir / "e2e_lowbw.json").write_text(json.dumps(results, indent=1, default=str), encoding="utf-8")
             await asyncio.sleep(1.0)
     finally:
         if proc is not None:
@@ -1273,7 +1275,7 @@ async def main_async(a) -> int:
 
 def read_pin(a) -> str | None:
     if a.pin_file:
-        return Path(a.pin_file).read_text().strip() or None
+        return Path(a.pin_file).read_text(encoding="utf-8").strip() or None
     return os.environ.get("DISPATCH_PIN") or None
 
 

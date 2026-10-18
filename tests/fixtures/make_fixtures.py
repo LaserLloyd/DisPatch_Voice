@@ -76,7 +76,7 @@ def derive() -> None:
         "$about": "Band-limited copies: 8 kHz capture (low-pass 3.6 kHz, decimate) then linear "
                   "upsampling to 16 kHz, as the mic worklet does for an SCO context. "
                   "Built by make_fixtures.py derive.",
-        "clips": meta}, indent=1) + "\n")
+        "clips": meta}, indent=1) + "\n", encoding="utf-8")
     print(f"clips-8k: {len(meta)} files")
 
 
@@ -106,7 +106,7 @@ def addendum() -> None:
             "first_end_s": round(len(parts[0]) / SR, 3),
             "second_start_s": round((len(parts[0]) + len(gap)) / SR, 3),
             "gap_s": ADDENDUM_GAP_S, "seconds": round(len(x) / SR, 2), "voice": "kokoro am_michael"}
-    (HERE / "addendum.json").write_text(json.dumps(info, indent=1) + "\n")
+    (HERE / "addendum.json").write_text(json.dumps(info, indent=1) + "\n", encoding="utf-8")
     print("addendum.wav", info)
 
 

@@ -33,6 +33,7 @@ from dispatch_voice.host.session import feed_canonical, split_reply
 from dispatch_voice.host.vad_turn import SpeechStart, TurnEnd
 from dispatch_voice.text.speech_text import SentenceSplitter
 from dispatch_voice.transport import CommitCursor, opus, wire3
+from settling import pause as real_pause
 from session.test_session import settle, wait_until
 from session.test_session_resume import as_turn, done, make, says, start
 from session.test_session_s2 import frame
@@ -263,7 +264,7 @@ async def _first_audio_after(ws, gen: int, t0: float, limit: float = 6.0) -> flo
     while loop.time() - t0 < limit:
         if [b for b in binaries(ws) if b[2] == gen]:
             return loop.time() - t0
-        await asyncio.sleep(0.01)
+        await real_pause(0.01)
     return None
 
 

@@ -8,6 +8,7 @@ measured on the box (ProfileReleased ≈ 1 s after a screen-power daemon's Set) 
 exercised by the model-backed session test; nothing here touches it."""
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -127,9 +128,12 @@ def test_release_all_ends_the_hold_whatever_the_count():
     assert ph.state == "off" and ph.sessions == 0 and proc.poll() == 0
 
 
-def test_holder_argv_is_fixed_and_points_at_the_system_python():
+def test_holder_argv_is_fixed_and_points_at_the_right_interpreter():
     argv = power.holder_argv()
-    assert argv == ["/usr/bin/python3", str(power.HOLDER), "performance"]
+    # Linux with a system python (it carries gi): that one; anywhere else: this interpreter.
+    want = "/usr/bin/python3" if sys.platform.startswith("linux") and os.access("/usr/bin/python3", os.X_OK)         else sys.executable
+    assert argv == [want, str(power.HOLDER), "performance"]
+    assert power.holder_argv(python="/x/py") == ["/x/py", str(power.HOLDER), "performance"]
     assert power.HOLDER.name == "power_hold.py" and power.HOLDER.exists()
 
 
@@ -152,6 +156,13 @@ def test_platform_facts_shape():
 def test_holder_env_is_minimal_and_carries_no_secrets():
     src = {"PATH": "/weird:/usr/bin", "LANG": "en_GB.UTF-8", "DISPATCH_API_KEY": "nope",
            "EXAMPLE_SERVICE_PIN": "nope", "HOME": "/var/home/x", "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/x"}
+    if os.name == "nt":
+        # A Windows interpreter needs its system folder; no secret is passed.
+        got = power.holder_env({**src, "SYSTEMROOT": r"C:\Windows"})
+        assert got["SYSTEMROOT"] == r"C:\Windows" and got["PATH"] == "/weird:/usr/bin"
+        assert "DISPATCH_API_KEY" not in got and "EXAMPLE_SERVICE_PIN" not in got and "HOME" not in got
+        assert power.holder_env({})["LANG"] == "C.UTF-8"
+        return
     assert power.holder_env(src) == {"PATH": "/usr/bin:/bin", "LANG": "en_GB.UTF-8",
                                      "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/x"}
     assert power.holder_env({}) == {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
@@ -180,7 +191,7 @@ def test_the_child_runs_with_the_minimal_env(monkeypatch):
 def test_a_crashing_child_reports_its_last_stderr_line(tmp_path, caplog):
     crash = tmp_path / "crash.py"
     crash.write_text("import sys\nprint('about to die', file=sys.stderr)\n"
-                     "raise SystemExit('holder crashed: no bus')\n")
+                     "raise SystemExit('holder crashed: no bus')\n", encoding="utf-8")
     ph = power.PowerHold(argv=[sys.executable, str(crash)])
     assert ph.acquire() == "unavailable" and ph._proc is None
     assert "holder said: holder crashed: no bus" in caplog.text
@@ -194,8 +205,16 @@ def test_a_noisy_child_never_blocks_on_a_full_stderr_pipe(tmp_path):
                      "sys.stderr.write('x' * 300000); sys.stderr.flush()\n"     # > a pipe buffer
                      "print(json.dumps({'event': 'held', 'profile': 'performance'}), flush=True)\n"
                      "sys.stdin.read()\n"
-                     "print(json.dumps({'event': 'exit'}), flush=True)\n")
+                     "print(json.dumps({'event': 'exit'}), flush=True)\n", encoding="utf-8")
     ph = power.PowerHold(argv=[sys.executable, str(noisy)])
     assert ph.acquire() == "held"
     assert ph.release() == "off" and ph.events[-1]["event"] == "exit"
     assert len(ph.stderr_tail) == 1 and len(ph.stderr_tail[0]) == 200    # capped tail
+
+
+def test_the_default_hold_is_unavailable_with_a_reason_off_linux(monkeypatch, caplog):
+    monkeypatch.setattr(power, "SUPPORTED", False)
+    ph = power.PowerHold()                       # the default argv: no test double
+    assert ph.acquire() == "unavailable" and ph._proc is None
+    assert "needs Linux" in caplog.text
+    assert ph.release() == "off"

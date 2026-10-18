@@ -134,7 +134,7 @@ def test_no_provider_rejects_builtin_voices_without_crashing(tmp_path, monkeypat
     assert c.patch("/api/voice/settings", json={"default_voice": "builtin:af_heart"}).status_code == 422
     assert c.get("/api/voice/preview", params={"voice": "builtin:af_heart"}).status_code == 422
     # A saved 2.1 choice degrades: the setting is kept, but nothing reports it.
-    ctx.paths.voice_yaml.write_text("kokoro_voice: am_michael\nkokoro_speed: 1.2\n")
+    ctx.paths.voice_yaml.write_text("kokoro_voice: am_michael\nkokoro_speed: 1.2\n", encoding="utf-8")
     r = c.get("/api/voice/settings").json()
     assert r == {"enabled": False, "forced": None, "default_voice": "", "speed": 1.2,
                  "voice_turn_thinking": "off", "merge_window_s": 1.8, "hard_silence_s": 1.4,
@@ -246,14 +246,14 @@ def test_plugin_choice_is_saved_with_the_new_names_and_applied_live(tmp_path, mo
     r = c.patch("/api/voice/settings", json={"default_voice": "builtin:am_michael", "speed": 0.9})
     assert r.status_code == 200, r.text
     assert r.json()["default_voice"] == "builtin:am_michael"
-    assert yaml.safe_load(ctx.paths.voice_yaml.read_text()) == {"builtin_voice": "am_michael", "speed": 0.9}
+    assert yaml.safe_load(ctx.paths.voice_yaml.read_text(encoding="utf-8")) == {"builtin_voice": "am_michael", "speed": 0.9}
     assert fb.applied[-1] == ("am_michael", 0.9)
 
 
 def test_saved_builtin_voice_the_provider_no_longer_lists_falls_back_to_its_default(tmp_path, monkeypatch):
     fake_plugin(Eng("fallback"), [])
     c, ctx = mounted(tmp_path, monkeypatch, "fake_builtin_ext:setup")
-    ctx.paths.voice_yaml.write_text("builtin_voice: zz_gone\n")
+    ctx.paths.voice_yaml.write_text("builtin_voice: zz_gone\n", encoding="utf-8")
     assert c.get("/api/voice/settings").json()["default_voice"] == "builtin:af_heart"
 
 
@@ -295,10 +295,10 @@ def test_voice_yaml_aliases_and_new_names_win():
 def test_saving_migrates_a_2_1_voice_yaml(host_env):
     p = host_env.paths.voice_yaml
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("kokoro_voice: af_bella\nkokoro_speed: 1.3\n")
+    p.write_text("kokoro_voice: af_bella\nkokoro_speed: 1.3\n", encoding="utf-8")
     assert vconfig.load_settings().speed == 1.3
     vconfig.save_prefs({"voice_turn_thinking": "low"})
-    assert yaml.safe_load(p.read_text()) == {"builtin_voice": "af_bella", "speed": 1.3,
+    assert yaml.safe_load(p.read_text(encoding="utf-8")) == {"builtin_voice": "af_bella", "speed": 1.3,
                                              "voice_turn_thinking": "low"}
 
 
@@ -307,7 +307,7 @@ def test_no_kokoro_or_dispatch_import_anywhere_in_the_add_on():
     root = pathlib.Path(__file__).resolve().parents[2] / "src" / "dispatch_voice"
     hits = []
     for f in root.rglob("*.py"):
-        text = f.read_text()
+        text = f.read_text(encoding="utf-8")
         for needle in ("import kokoro", "from kokoro", "from app import", "from app.", "import app.", "import app\n"):
             if needle in text:
                 hits.append((str(f.relative_to(root)), needle))

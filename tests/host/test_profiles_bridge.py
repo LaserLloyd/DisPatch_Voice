@@ -50,7 +50,7 @@ def make_profile(st, pid: str, default: bool = False) -> None:
     from dispatch_voice.engine import VoiceTensors
     VoiceTensors(np.zeros((1, 2, 4), np.float32), np.zeros((1, 3), np.int64),
                  np.zeros((1, 192), np.float32), np.zeros((1, 5, 80), np.float32)).save(d / "voice.npz")
-    (d / "profile.json").write_text(json.dumps({"id": pid, "name": pid, "default": default}))
+    (d / "profile.json").write_text(json.dumps({"id": pid, "name": pid, "default": default}), encoding="utf-8")
     (d / "fillers").mkdir()
     import soundfile as sf
     sf.write(d / "fillers" / "0.wav", np.full(480, 0.1, np.float32), 24000)

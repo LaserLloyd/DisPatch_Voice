@@ -42,7 +42,6 @@ import os
 import queue
 import re
 import secrets
-import stat
 import struct
 import threading
 import time
@@ -55,6 +54,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import numpy as np
+
+from .. import fsperm
 
 log = logging.getLogger("dispatch.voice")
 
@@ -229,6 +230,8 @@ class Token:
         return f"Token(source={self.source!r}, set={bool(self.value)}, problem={self.problem!r})"
 
 
+#: One warning per process when the token file's permissions cannot be read.
+_WARNED_PERMS: list[bool] = []
 _ENV_LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 
@@ -243,10 +246,14 @@ def read_token() -> Token:
         st = p.stat()
     except OSError:
         return Token()
-    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        log.warning("voice: %s is readable by other users; the rig token in it is ignored "
-                    "(chmod 600 it)", p)
+    readable = fsperm.others_can_read(p)
+    if readable:
+        log.warning("voice: %s is readable by other users; the rig token in it is ignored (%s)", p,
+                    "chmod 600 it" if not fsperm.IS_WINDOWS else "remove Everyone/Users from its permissions")
         return Token(problem="permissions")
+    if readable is None and not _WARNED_PERMS:
+        _WARNED_PERMS.append(True)
+        log.warning("voice: cannot check who can read %s on this filesystem; make sure only you can", p)
     try:
         text = p.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -318,6 +325,35 @@ def _pct(xs, q: float) -> int | None:
         return None
     s = sorted(xs)
     return int(round(s[min(len(s) - 1, max(0, int(round(q * (len(s) - 1)))))]))
+
+
+_CPU_PREV: list[tuple[int, int]] = []
+
+
+def box_load() -> float | None:
+    """This box's CPU load for the rig's ``ping.box_load``: the 1-minute load average per
+    core where the OS has one, else (Windows) the share of CPU time busy since the last
+    call (0..1; the first call reads 0.0). None when neither can be read."""
+    with contextlib.suppress(Exception):
+        return round(os.getloadavg()[0] / max(1, os.cpu_count() or 1), 2)
+    if os.name != "nt":
+        return None
+    with contextlib.suppress(Exception):
+        import ctypes
+        from ctypes import wintypes
+        idle, kern, user = (wintypes.FILETIME() for _ in range(3))
+        if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kern), ctypes.byref(user)):
+            return None
+        q = lambda ft: (ft.dwHighDateTime << 32) | ft.dwLowDateTime       # noqa: E731
+        busy_total = (q(kern) + q(user), q(idle))                           # kernel time includes idle
+        prev = _CPU_PREV[-1] if _CPU_PREV else None
+        _CPU_PREV[:] = [busy_total]
+        if prev is None:
+            return 0.0
+        total = busy_total[0] - prev[0]
+        idle_d = busy_total[1] - prev[1]
+        return round(max(0.0, min(1.0, (total - idle_d) / total)), 2) if total > 0 else 0.0
+    return None
 
 
 class RigMetrics:
@@ -1178,9 +1214,7 @@ class RigConnection:
             return
         t = self.clock()
         self._outstanding.append(t)
-        load = None
-        with contextlib.suppress(Exception):
-            load = round(os.getloadavg()[0] / max(1, os.cpu_count() or 1), 2)
+        load = box_load()
         msg: dict = {"type": "ping", "t": t}
         if load is not None:
             msg["box_load"] = load

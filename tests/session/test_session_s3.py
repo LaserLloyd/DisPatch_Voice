@@ -34,6 +34,8 @@ from dispatch_voice.rt.stt_stream import Partial
 from dispatch_voice.transport import wire3
 from session.test_session import THREAD, _NoSkip, kit_with_lines, settings, settle
 from session.test_session_s2 import frame, reply
+from settling import pause as real_pause
+from settling import wait_until
 
 QUESTION = "What's on my calendar this afternoon?"
 REPLY = "You have two things this afternoon. A dentist appointment at three. Want a reminder?"
@@ -689,6 +691,7 @@ async def test_a_real_interruption_cuts_notes_and_becomes_the_next_turn():
     ws.push_json({"type": "heard", "gen": s.gen, "seq": 2, "played_ms": 400, "source": "server"})
     await settle(3)
     await speak(ws, 2, wait=60)
+    assert await wait_until(lambda: "submit" in host.names())      # the chain: abort, note_heard, submit
     assert ws.json_of("barge_in")
     assert host.names().index("abort") < host.names().index("note_heard") < host.names().index("submit")
     submit = host.of("submit")[0]
@@ -899,7 +902,7 @@ async def test_a_gated_listener_stays_unlocked_but_a_silent_socket_extends_nothi
     # 11 minutes of a gated mic (no audio at all), pinging every 2 s: touched every 30 s.
     for _ in range(330):
         clock.t += 2.0
-        ws.push_json({"type": "ping", "t": 1}); await asyncio.sleep(0.002)
+        ws.push_json({"type": "ping", "t": 1}); await real_pause(0.002)
     await settle(5)
     assert len(touches) - n0 >= 20 and not ws.json_of("locked")
     # The client goes silent (half-open): within 10 s nothing is touched any more.
@@ -944,6 +947,7 @@ async def test_a_stale_heard_of_the_previous_reply_never_annotates_the_next():
     await play(s, ws, "Bravo one. Bravo two.", mid="b1", prov="run:b")
     assert s.speaking
     await speak(ws, 2, wait=60)                                          # cut B: no exact heard comes
+    assert await wait_until(lambda: host.of("note_heard"))
     notes = host.of("note_heard")
     assert notes and all("Alpha" not in n[3] and "Alpha" not in n[4] for n in notes)
     assert "Bravo" in notes[-1][4]
@@ -963,6 +967,7 @@ async def test_heard_text_spans_the_provisional_to_row_id_switch():
     assert [m["message_id"] for m in says] == ["run:1", "run:1", "m1"]
     ws.push_json({"type": "heard", "gen": s.gen, "seq": 3, "played_ms": 200}); await settle(3)
     await speak(ws, 2, wait=60)
+    assert await wait_until(lambda: host.of("note_heard"))
     note = host.of("note_heard")[0]
     assert note[1] == "a-partial"
     assert note[3].startswith("You have two things this afternoon. A dentist appointment at three.")
@@ -1546,7 +1551,7 @@ async def test_a_chat_nobody_speaks_in_is_ended_by_the_server_and_stops_touching
     async def ping_for(seconds: float) -> None:
         for _ in range(int(seconds / 2)):
             clock.t += 2.0
-            ws.push_json({"type": "ping", "t": 1}); await asyncio.sleep(0.002)
+            ws.push_json({"type": "ping", "t": 1}); await real_pause(0.002)
 
     await ping_for(500)
     assert not task.done() and touches

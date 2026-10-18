@@ -115,7 +115,7 @@ DEFAULT_BACKEND = Path.home() / "Projects/dispatch-chat/backend"
 SPEECH_MODELS = Path.home() / ".local/share/dispatch-voice-models"
 DEFAULT_OUT = ADDON / ".e2e-out" / "browser"
 DEFAULT_SHOTS = DEFAULT_OUT / "shots"
-EN = json.loads((ADDON / "src/dispatch_voice/static/locales/en.json").read_text())
+EN = json.loads((ADDON / "src/dispatch_voice/static/locales/en.json").read_text(encoding="utf-8"))
 # A light and a dark palette of DisPatch's theme package (the dark one is the app's default).
 THEMES = {"dark": "glacier", "light": "daylight"}
 CHROME_ARGS = [
@@ -392,16 +392,16 @@ def start_scratch_dispatch(port: int, llm_port: int, out: Path, backend: Path, *
     (data / "config.yaml").write_text(json.dumps({"bots": [{
         "id": "voicetest", "name": "Voice Test", "emoji": "🎙", "order": 0, "visible": True, "safe": False,
         "api": {"provider": "openai", "base_url": llm.base_url, "model": "stub", "api_key": "not-a-key"},
-    }]}, ensure_ascii=False))
+    }]}, ensure_ascii=False), encoding="utf-8")
     os.chmod(data / "config.yaml", 0o600)
     (data / "tools.yaml").write_text("tools:\n- {id: voice-cloning, kind: builtin, enabled: true}\n"
-                                     "- {id: voice-lab, kind: builtin, enabled: true}\n")
+                                     "- {id: voice-lab, kind: builtin, enabled: true}\n", encoding="utf-8")
     # A scratch run never holds the performance profile (BRIEF heat rules): that hold is
     # for the live box and is verified by e2e_voice_roundtrip.py, not here.
     vy: dict = {"rt": {"power_hold": "off"}}
     if not forced:                       # the Settings switch decides, starting OFF
         vy["enabled"] = False
-    (data / "voice.yaml").write_text(json.dumps(vy) + "\n")
+    (data / "voice.yaml").write_text(json.dumps(vy) + "\n", encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if k not in ("DISPATCH_VOICE_MODELS", "DISPATCH_VOICE")}
     if forced:
         env["DISPATCH_VOICE"] = "1"
@@ -442,14 +442,14 @@ def start_livelike_dispatch(port: int, llm_port: int, out: Path, backend: Path, 
     (data / "config.yaml").write_text(json.dumps({"bots": [{
         "id": "voicetest", "name": "Voice Test", "emoji": "🎙", "order": 0, "visible": True, "safe": False,
         "api": {"provider": "openai", "base_url": llm.base_url, "model": "stub", "api_key": "not-a-key"},
-    }]}, ensure_ascii=False))
+    }]}, ensure_ascii=False), encoding="utf-8")
     os.chmod(data / "config.yaml", 0o600)
     (data / "tools.yaml").write_text("tools:\n- {id: voice-cloning, kind: builtin, enabled: true}\n"
                                      "- {id: voice-builtin, kind: builtin, enabled: true}\n"
-                                     "- {id: voice-lab, kind: builtin, enabled: true}\n")
-    (data / "voice.yaml").write_text(json.dumps({"enabled": True, "rt": {"power_hold": "off"}}) + "\n")
+                                     "- {id: voice-lab, kind: builtin, enabled: true}\n", encoding="utf-8")
+    (data / "voice.yaml").write_text(json.dumps({"enabled": True, "rt": {"power_hold": "off"}}) + "\n", encoding="utf-8")
     pin = "".join(secrets.choice("123456789") for _ in range(6))
-    (data / "security.yaml").write_text(f'pin: "{pin}"\nlock_timeout_seconds: {int(lock_s)}\n')
+    (data / "security.yaml").write_text(f'pin: "{pin}"\nlock_timeout_seconds: {int(lock_s)}\n', encoding="utf-8")
     os.chmod(data / "security.yaml", 0o600)
     kokoro = KOKORO_SRC if ((KOKORO_SRC / "pyproject.toml").is_file()
                             and (SPEECH_MODELS / "kokoro" / "voices-v1.0.bin").is_file()) else None
@@ -1663,7 +1663,7 @@ def theme_shots(pw, a, c: Checks, base: str, via: str, ref: RefTarget) -> dict:
                 br.close()
             out[tag] = res
     # A source scan: the add-on's stylesheet names no colour of its own.
-    css = (ADDON / "src/dispatch_voice/static/voice.css").read_text()
+    css = (ADDON / "src/dispatch_voice/static/voice.css").read_text(encoding="utf-8")
     body = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     lit = re.findall(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\(", body)
     named = re.findall(r"(?<![-\w])(?:white|black|red|green|blue|gray|grey)(?![-\w])", body)
@@ -1672,7 +1672,7 @@ def theme_shots(pw, a, c: Checks, base: str, via: str, ref: RefTarget) -> dict:
     # (pills 999px, avatars/inputs 10px, handles 2-3px, circles 50%); every other radius and
     # every font family is a theme token.
     static = a.backend.parent / "frontend/static"
-    host_css = "\n".join(f.read_text() for f in [static / "app.css", *sorted((static / "ui-theme").glob("*.css"))]
+    host_css = "\n".join(f.read_text(encoding="utf-8") for f in [static / "app.css", *sorted((static / "ui-theme").glob("*.css"))]
                          if f.is_file())
     host_radii = set(re.findall(r"border-radius:\s*([0-9.]+(?:px|%))\s*[;}]", host_css))
     radii = re.findall(r"border-radius:\s*([^;}]+)", body)
@@ -1728,7 +1728,7 @@ def locale_pages(pw, a, c: Checks, base: str, via: str, ref: RefTarget) -> dict:
         p = br.page
         try:
             if open_voice_chat(br, tid, c, tag, ready_timeout=30):
-                bundle = json.loads((ADDON / f"src/dispatch_voice/static/locales/{lang}.json").read_text())
+                bundle = json.loads((ADDON / f"src/dispatch_voice/static/locales/{lang}.json").read_text(encoding="utf-8"))
                 tip = br.ev("() => { const n = document.querySelector('.drive-tip'); return n && !n.hidden ? n.textContent : null; }")
                 c.ok(f"{tag}: the first open says voice chat is English-only, in {lang}", tip == bundle["drive"]["english_only"], tip)
                 br.shot(a.shots, f"v2-390-{lang}-listening")
@@ -2604,7 +2604,7 @@ def main(argv=None) -> int:
     n_pass = sum(r["status"] == "PASS" for r in c.rows)
     n_skip = sum(r["status"] == "SKIP" for r in c.rows)
     results["summary"] = {"pass": n_pass, "fail": len(c.failed), "skip": n_skip}
-    (a.out / "e2e_browser.json").write_text(json.dumps(results, indent=1, default=str))
+    (a.out / "e2e_browser.json").write_text(json.dumps(results, indent=1, default=str), encoding="utf-8")
     print(f"\n{n_pass} passed, {len(c.failed)} failed, {n_skip} skipped  →  {a.out / 'e2e_browser.json'}")
     return 1 if c.failed else 0
 

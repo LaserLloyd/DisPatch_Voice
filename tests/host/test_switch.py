@@ -55,12 +55,12 @@ def rt_status_out(power_hold="performance"):
 
 def voice_yaml(ctx) -> dict:
     p = ctx.paths.voice_yaml
-    return yaml.safe_load(p.read_text()) if p.exists() else {}
+    return yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 def write_yaml(ctx, text: str) -> None:
     ctx.paths.voice_yaml.parent.mkdir(parents=True, exist_ok=True)
-    ctx.paths.voice_yaml.write_text(text)
+    ctx.paths.voice_yaml.write_text(text, encoding="utf-8")
 
 
 async def _noop_apply(was_on, settings):

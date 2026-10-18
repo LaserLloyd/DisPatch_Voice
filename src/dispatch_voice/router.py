@@ -131,12 +131,12 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
     if ui:
         @r.get("/ui", response_class=HTMLResponse)
         def ui_page() -> HTMLResponse:
-            html = resources.files("dispatch_voice").joinpath("standalone/voices.html").read_text()
+            html = resources.files("dispatch_voice").joinpath("standalone/voices.html").read_text(encoding="utf-8")
             return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
         @r.get("/ui/voices.js")
         def ui_js() -> Response:
-            js = resources.files("dispatch_voice").joinpath("standalone/voices.js").read_text()
+            js = resources.files("dispatch_voice").joinpath("standalone/voices.js").read_text(encoding="utf-8")
             return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-store"})
 
     @r.get("/consent-kinds")

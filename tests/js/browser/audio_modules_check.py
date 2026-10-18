@@ -214,7 +214,7 @@ def main() -> int:
     finally:
         srv.shutdown()
         shutil.rmtree(prof, ignore_errors=True)
-    (run / "page-result.json").write_text(json.dumps(res, indent=1))
+    (run / "page-result.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
     checks: list[tuple[str, bool, str]] = []
 
     def check(name, ok, detail=""):
@@ -327,14 +327,14 @@ def stt(checks, run: Path, src: np.ndarray, sco: np.ndarray) -> None:
     models = Path(os.environ.get("DISPATCH_SPEECH_MODELS", str(Path.home() / ".local/share/dispatch-voice-models")))
     eng = ParakeetSTT(models / "parakeet-tdt-0.6b-v2", threads=4)
     base = eng.transcribe(src)
-    want = json.loads(TRANSCRIPTS.read_text())["16k"]["medium"]
+    want = json.loads(TRANSCRIPTS.read_text(encoding="utf-8"))["16k"]["medium"]
     out = {"pcm_via_mic_worklet": base}
     for kbps in (16, 12):
         out[f"opus{kbps}"] = eng.transcribe(np.load(run / f"uplink_decoded_{kbps}.npy"))
     norm = lambda s: " ".join("".join(c.lower() if c.isalnum() or c == " " else " " for c in s).split())  # noqa: E731
     ok = all(norm(v) == norm(want) for v in out.values())
     checks.append(("Parakeet: mic-worklet PCM and both Opus uplinks transcribe like the fixture", ok, json.dumps(out)))
-    want8 = json.loads(TRANSCRIPTS.read_text())["8k"]["medium"]
+    want8 = json.loads(TRANSCRIPTS.read_text(encoding="utf-8"))["8k"]["medium"]
     got8 = eng.transcribe(sco)
     checks.append(("Parakeet: the 8 kHz (SCO) mic-worklet path matches the 8 kHz fixture baseline",
                    norm(got8) == norm(want8), json.dumps({"sco_8k": got8})))
@@ -344,7 +344,7 @@ def report(checks, res, run: Path) -> int:
     width = max(len(c[0]) for c in checks)
     for name, ok, detail in checks:
         print(f"{'PASS' if ok else 'FAIL'}  {name.ljust(width)}  {detail}")
-    (run / "checks.json").write_text(json.dumps([{"name": n, "ok": o, "detail": d} for n, o, d in checks], indent=1))
+    (run / "checks.json").write_text(json.dumps([{"name": n, "ok": o, "detail": d} for n, o, d in checks], indent=1), encoding="utf-8")
     print(f"{sum(c[1] for c in checks)}/{len(checks)} passed; ua {res.get('ua', '?')}")
     return 0 if all(c[1] for c in checks) else 1
 

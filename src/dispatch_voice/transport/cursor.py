@@ -36,6 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .. import fsperm
 from .wire3 import U32, u32_diff
 
 log = logging.getLogger("dispatch_voice.transport.cursor")
@@ -91,25 +92,33 @@ class CommitCursor:
     # ------------------------------------------------------------- storage #
     def _connect(self, target: str) -> sqlite3.Connection:
         db = sqlite3.connect(target, check_same_thread=False, isolation_level=None, timeout=2.0)
-        if target != ":memory:":
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("PRAGMA synchronous=NORMAL")
-        db.execute(_SCHEMA)
-        cols = {r[1] for r in db.execute("PRAGMA table_info(cursor)")}
-        if "open_from" not in cols:                 # a file from before Amendment T6-1
-            db.execute("ALTER TABLE cursor ADD COLUMN open_from INTEGER")
-        db.execute("SELECT count(*) FROM cursor").fetchone()
+        try:
+            if target != ":memory:":
+                db.execute("PRAGMA journal_mode=WAL")
+                db.execute("PRAGMA synchronous=NORMAL")
+            db.execute(_SCHEMA)
+            cols = {r[1] for r in db.execute("PRAGMA table_info(cursor)")}
+            if "open_from" not in cols:                 # a file from before Amendment T6-1
+                db.execute("ALTER TABLE cursor ADD COLUMN open_from INTEGER")
+            db.execute("SELECT count(*) FROM cursor").fetchone()
+        except BaseException:
+            db.close()          # a handle left open stops Windows moving a corrupt file aside
+            raise
         return db
 
     def _open(self) -> sqlite3.Connection:
         if self.path is None:
             return self._connect(":memory:")
         try:
+            made_dir = not self.path.parent.exists()
             self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if made_dir:
+                fsperm.ensure_private(self.path.parent, directory=True)     # Windows: the ACL, not the mode
             fresh = not self.path.exists()
             if fresh:
                 # create it 0600 before sqlite does (its WAL/SHM files copy these bits)
                 os.close(os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600))
+                fsperm.ensure_private(self.path)
             try:
                 db = self._connect(str(self.path))
             except sqlite3.DatabaseError as e:
@@ -121,6 +130,7 @@ class CommitCursor:
                     if side.exists():
                         side.unlink()
                 os.close(os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600))
+                fsperm.ensure_private(self.path)
                 db = self._connect(str(self.path))
             self.persistent = True
             return db

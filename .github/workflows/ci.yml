@@ -61,6 +61,32 @@ jobs:
           DISPATCH_VOICE_REQUIRE_FFMPEG: "1"
         run: uv run pytest -q
 
+  test-windows:
+    name: Python tests (Windows, 3.12)
+    needs: privacy
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - name: Install ffmpeg
+        # Decodes uploaded clips (audio.decode). libopus has no package on the runner, so the
+        # Opus wire tests skip here; Linux covers them.
+        shell: bash
+        run: choco install ffmpeg --no-progress -y
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Sync dependencies
+        run: uv sync --frozen --python 3.12
+      - name: Run the test suite
+        # The same suite as Linux: file-mode checks become ACL checks (src/dispatch_voice/fsperm.py),
+        # every text file is read as UTF-8, waits are real time (tests/settling.py).
+        shell: bash
+        env:
+          DISPATCH_VOICE_REQUIRE_FFMPEG: "1"
+        run: uv run pytest -q
+
   client:
     name: Client tests
     needs: privacy

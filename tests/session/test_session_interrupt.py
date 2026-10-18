@@ -15,6 +15,7 @@ from fakes import FakeSTT, FakeTTS, FakeWS, ScriptedDetector, utterance
 from dispatch_voice.host.config import VoiceSettings
 from dispatch_voice.host.session import VoiceHost, VoiceSession
 from dispatch_voice.host.vad_turn import Endpointer, EndpointerConfig, SpeechStart, TurnDetector
+from settling import pause, settle
 
 pytestmark = pytest.mark.interrupt_default
 THREAD = "t-int"
@@ -66,16 +67,12 @@ def make(detector, stt_text="what's the weather"):
     return s, ws, stt, submitted, aborted
 
 
-async def settle(n=30):
-    for _ in range(n):
-        await asyncio.sleep(0.005)
-
 
 async def push(ws, x: np.ndarray, chunk_s: float = 0.1):
     step = int(chunk_s * SR)
     for i in range(0, len(x), step):
         ws.push_audio(pcm(x[i:i + step]))
-        await asyncio.sleep(0.002)
+        await pause(0.002)
     await settle(20)
 
 

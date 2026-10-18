@@ -25,13 +25,26 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
 log = logging.getLogger("dispatch.voice")
 
-#: The system interpreter that has ``gi`` (the uv venv does not).
+#: The system interpreter that has ``gi`` (the uv venv does not): used on Linux when it exists.
 SYSTEM_PYTHON = "/usr/bin/python3"
+#: The hold talks to power-profiles-daemon over D-Bus: Linux only.
+SUPPORTED = sys.platform.startswith("linux")
+
+
+def holder_python() -> str:
+    """The interpreter the holder child runs under: the system one on a Linux box that
+    has it (it carries ``gi``; a uv venv does not), else this interpreter. Nothing is
+    hard-wired to a path that exists on one OS only."""
+    if SUPPORTED and os.access(SYSTEM_PYTHON, os.X_OK):
+        return SYSTEM_PYTHON
+    return sys.executable
+
 HOLDER = Path(__file__).with_name("power_hold.py")
 #: How long the first "held"/"unavailable" line may take (the bus call + GLib start).
 START_TIMEOUT_S = 8.0
@@ -39,9 +52,9 @@ START_TIMEOUT_S = 8.0
 STOP_TIMEOUT_S = 3.0
 
 
-def holder_argv(profile: str = "performance", *, python: str = SYSTEM_PYTHON) -> list[str]:
+def holder_argv(profile: str = "performance", *, python: str | None = None) -> list[str]:
     """The fixed argv of the holder child (no shell, ever)."""
-    return [python, str(HOLDER), profile]
+    return [python or holder_python(), str(HOLDER), profile]
 
 
 #: What the holder child is allowed to see of our environment: the DisPatch
@@ -54,7 +67,12 @@ def holder_env(source: dict | None = None) -> dict:
     """A minimal environment for the child: a fixed PATH, the locale, and the
     system-bus address only when the box sets one (names only, nothing secret)."""
     src = os.environ if source is None else source
-    env = {"PATH": "/usr/bin:/bin"}
+    if os.name == "nt":
+        # A Windows interpreter cannot start without its system folder; PATH and the
+        # locale are not secrets. (The hold itself is Linux only: see SUPPORTED.)
+        env = {k: src[k] for k in ("PATH", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP") if src.get(k)}
+    else:
+        env = {"PATH": "/usr/bin:/bin"}
     for k in HOLDER_ENV_PASS:
         v = src.get(k)
         if v:
@@ -123,6 +141,10 @@ class PowerHold:
     # -- internals ---------------------------------------------------------- #
 
     def _start_locked(self) -> None:
+        if self._argv is None and not SUPPORTED:
+            self._unavailable("the power-profile hold needs Linux (power-profiles-daemon); "
+                              "this system runs voice at its current profile")
+            return
         argv = self._argv or holder_argv(self.profile)
         if not os.access(argv[0], os.X_OK):
             self._unavailable(f"no interpreter at {argv[0]}")
@@ -287,7 +309,7 @@ def platform_facts() -> dict:
     (SPEC §4.11); empty values where the files do not exist."""
     out: dict = {"platform_profile": None, "max_mhz": None}
     with contextlib.suppress(OSError, ValueError):
-        out["platform_profile"] = Path("/sys/firmware/acpi/platform_profile").read_text().strip()
+        out["platform_profile"] = Path("/sys/firmware/acpi/platform_profile").read_text(encoding="utf-8").strip()
     with contextlib.suppress(OSError, ValueError):
-        out["max_mhz"] = int(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read_text()) // 1000
+        out["max_mhz"] = int(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read_text(encoding="utf-8")) // 1000
     return out
