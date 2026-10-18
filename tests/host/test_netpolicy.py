@@ -102,3 +102,19 @@ def test_a_name_that_resolves_to_a_metadata_address_is_refused(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", boom)
     assert N.check_resolved("ws://nope.local:1/x").ok          # unreachable is the connection's business
+
+
+@pytest.mark.parametrize("host", ["2852039166", "0xa9fea9fe", "0251.0376.0251.0376", "169.254.43518", "0xa9.0xfe.0xa9.0xfe"])
+def test_numeric_shorthand_for_an_ipv4_address_is_canonicalised(host):
+    """The OS resolver (inet_aton) reads a single decimal, a hex word or octal octets as an IPv4
+    address; the policy must see the same address, not a 'LAN name' with no dot in it."""
+    assert N.classify_host(host) == "metadata"
+    v = verdict(f"ws://{host}/x")
+    assert not v.ok and v.code == "url_blocked_metadata"
+    assert not N.check_url_policy(f"http://{host}/", schemes=("http", "https")).ok
+
+
+def test_numeric_shorthand_for_an_allowed_address_keeps_its_kind():
+    assert N.classify_host("2130706433") == "loopback"            # 127.0.0.1
+    assert N.classify_host("167772161") == "private"              # the first host of the 10/8 range  # scrub-ok: address-range fixture
+    assert N.classify_host("rig") == "lan_name" and N.classify_host("cafe") == "lan_name"
