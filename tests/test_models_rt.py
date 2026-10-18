@@ -9,6 +9,7 @@ Every threshold here is the measured one from SPEC §4 / design-realtime §2, ta
 """
 from __future__ import annotations
 
+import importlib.util
 import itertools
 import json
 import os
@@ -19,13 +20,16 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from rt.conftest import (
-    have_chatterbox,
-    have_onnx_asr,
-    have_smart_turn,
-    have_speech_models,
-    speech_models_dir,
-)
+
+
+# The model probes live with the engines they probe: the forge-voice-core suite's rt/conftest.py (no relative imports).
+_spec = importlib.util.spec_from_file_location(
+    "core_rt_conftest", Path(__file__).resolve().parents[1] / "packages" / "forge-voice-core" / "tests" / "rt" / "conftest.py")
+_core_rt = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_core_rt)
+have_chatterbox, have_onnx_asr, have_smart_turn, have_speech_models, speech_models_dir = (
+    _core_rt.have_chatterbox, _core_rt.have_onnx_asr, _core_rt.have_smart_turn, _core_rt.have_speech_models,
+    _core_rt.speech_models_dir)
 
 pytestmark = [pytest.mark.models]
 

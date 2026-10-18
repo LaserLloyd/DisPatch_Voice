@@ -43,7 +43,7 @@ OWNED = {
            "docs/voice-chat/host.md", "THIRD_PARTY_NOTICES.md", "README.md"],
     "T4": [*[f"src/dispatch_voice/rt/{n}.py" for n in (
                "__init__", "stt_stream", "endpoint", "speculate", "tts_stream", "backchannel", "heard")],
-           "src/dispatch_voice/engine.py", "src/dispatch_voice/audio.py", "tests/rt/conftest.py",
+           "src/dispatch_voice/engine.py", "src/dispatch_voice/audio.py", "packages/forge-voice-core/tests/rt/conftest.py",
            "tests/test_models_rt.py", "tests/latency_harness.py", "tests/fixtures/clips",
            "tests/fixtures/clips-8k", "docs/voice-chat/turn-taking.md"],
     "T5": [*[f"src/dispatch_voice/text/{n}.py" for n in ("__init__", "persona", "acks", "speech_text", "ack_lines")],

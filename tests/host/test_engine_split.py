@@ -304,11 +304,13 @@ def test_saving_migrates_a_2_1_voice_yaml(host_env):
 
 def test_no_kokoro_or_dispatch_import_anywhere_in_the_add_on():
     import pathlib
-    root = pathlib.Path(__file__).resolve().parents[2] / "src" / "dispatch_voice"
+    base = pathlib.Path(__file__).resolve().parents[2]
     hits = []
-    for f in root.rglob("*.py"):
-        text = f.read_text(encoding="utf-8")
-        for needle in ("import kokoro", "from kokoro", "from app import", "from app.", "import app.", "import app\n"):
-            if needle in text:
-                hits.append((str(f.relative_to(root)), needle))
+    for root in (base / "src" / "dispatch_voice", base / "packages" / "forge-voice-core" / "src" / "forge_voice_core"):
+        assert root.is_dir(), root
+        for f in root.rglob("*.py"):
+            text = f.read_text(encoding="utf-8")
+            for needle in ("import kokoro", "from kokoro", "from app import", "from app.", "import app.", "import app\n"):
+                if needle in text:
+                    hits.append((str(f.relative_to(root)), needle))
     assert hits == []

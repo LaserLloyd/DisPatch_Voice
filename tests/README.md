@@ -2,6 +2,8 @@
 
 ```
 uv run pytest -q                 # Python (model-backed tests skip when the models are absent)
+uv run pytest -q packages/forge-voice-core/tests   # the engines package: rt/, rig/, vad_turn, tts, models, settings schema,
+                                                   # and the guard that it imports without dispatch_voice / fastapi / starlette
 npm install && npm test          # client modules (node --test; jsdom for the DOM suites)
 npm run test:ci                  # same, but a missing jsdom FAILS (CI)
 python3 scripts/check-locales.py # locale bundles
@@ -20,7 +22,7 @@ every test passed); `DISPATCH_VOICE_TEST_HARD_EXIT=0` turns that off.
 
 **Windows.** The suite runs on Windows (CI has a job for it). Three rules keep it that way:
 file-mode assertions go through `fakes.assert_private` / `make_private` (a POSIX mode on Linux, the
-ACL on Windows: `src/dispatch_voice/fsperm.py`); every text file is read and written with
+ACL on Windows: `packages/forge-voice-core/src/forge_voice_core/fsperm.py`); every text file is read and written with
 `encoding="utf-8"`; and tests never wait with `asyncio.sleep(<15 ms)` - the event loop fires a
 timer shorter than the clock tick (15.6 ms on Windows) immediately, so such a wait returns at
 once. Use `settling.pause` / `settle` for real time, and `settling.wait_until(cond)` wherever the
@@ -105,3 +107,5 @@ then deletes the legacy copy.
 
 Model-backed runs (Parakeet, Smart Turn, Chatterbox, Kokoro, the latency harness) load
 gigabytes; on a shared machine serialise them behind one lock (`flock <lockfile> <cmd>`).
+
+**Where the tests live.** The engines and their tests moved to `packages/forge-voice-core/` (its own `conftest.py`, `settling.py`, `helpers.py` and sf.1 fixtures). `tests/host/test_rig_session.py` and `tests/test_models_rt.py` still import that suite's fake rig and model probes by path. `tests/host/test_core_bridge.py` pins the deprecated import aliases and DisPatch's host link.

@@ -14,3 +14,7 @@ EXTENSION = {
     "setup": "dispatch_voice.host:setup",  # imported only after the handshake passes
     "env": ["DISPATCH_SPEECH_MODELS", "DISPATCH_VOICE_MODELS"],   # names copied into ctx.env
 }
+
+# Install DisPatch as the host of forge-voice-core (logger names and the host link; light, no engine is
+# imported). Must run before any ``forge_voice_core`` engine module is imported.
+from . import _core_bridge  # noqa: E402,F401

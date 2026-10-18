@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "sys_platform != 'darwin'",
@@ -304,16 +304,12 @@ version = "1.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "forge-voice-core", extra = ["speechforge"] },
     { name = "httpx" },
-    { name = "huggingface-hub" },
     { name = "numpy" },
-    { name = "onnx-asr" },
-    { name = "onnxruntime" },
-    { name = "pyloudnorm" },
     { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "soundfile" },
-    { name = "tokenizers" },
     { name = "websockets" },
 ]
 
@@ -343,19 +339,15 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "forge-voice-core", extras = ["speechforge"], editable = "packages/forge-voice-core" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "huggingface-hub", specifier = ">=0.25" },
     { name = "librosa", marker = "extra == 'watermark'", specifier = ">=0.10" },
     { name = "numpy", specifier = ">=1.26" },
-    { name = "onnx-asr", specifier = ">=0.12" },
-    { name = "onnxruntime", specifier = ">=1.20" },
-    { name = "pyloudnorm", specifier = ">=0.1.1" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "resemble-perth", marker = "extra == 'watermark'", specifier = ">=1.0.1" },
     { name = "setuptools", marker = "extra == 'watermark'", specifier = "<81" },
     { name = "soundfile", specifier = ">=0.12" },
-    { name = "tokenizers", specifier = ">=0.20" },
     { name = "torch", marker = "extra == 'watermark'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchaudio", marker = "extra == 'watermark'", specifier = ">=2.6", index = "https://download.pytorch.org/whl/cpu" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'serve'", specifier = ">=0.30.0" },
@@ -405,6 +397,45 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/2d/d2a548598be01649e2d46231d151a6c56d10b964d94043a335ae56ea2d92/flatbuffers-25.12.19-py2.py3-none-any.whl", hash = "sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4", size = 26661, upload-time = "2025-12-19T23:16:13.622Z" },
 ]
+
+[[package]]
+name = "forge-voice-core"
+version = "0.1.0"
+source = { editable = "packages/forge-voice-core" }
+dependencies = [
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "onnx-asr" },
+    { name = "onnxruntime" },
+    { name = "pyloudnorm" },
+    { name = "soundfile" },
+    { name = "tokenizers" },
+]
+
+[package.optional-dependencies]
+speechforge = [
+    { name = "websockets" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "huggingface-hub", specifier = ">=0.25" },
+    { name = "librosa", marker = "extra == 'watermark'", specifier = ">=0.10" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "onnx-asr", specifier = ">=0.12" },
+    { name = "onnxruntime", specifier = ">=1.20" },
+    { name = "pyloudnorm", specifier = ">=0.1.1" },
+    { name = "resemble-perth", marker = "extra == 'watermark'", specifier = ">=1.0.1" },
+    { name = "setuptools", marker = "extra == 'watermark'", specifier = "<81" },
+    { name = "soundfile", specifier = ">=0.12" },
+    { name = "tokenizers", specifier = ">=0.20" },
+    { name = "torch", marker = "extra == 'watermark'", specifier = ">=2.6" },
+    { name = "torchaudio", marker = "extra == 'watermark'", specifier = ">=2.6" },
+    { name = "websockets", marker = "extra == 'speechforge'", specifier = ">=13.0" },
+]
+provides-extras = ["speechforge", "watermark"]
 
 [[package]]
 name = "fsspec"
@@ -1637,13 +1668,13 @@ resolution-markers = [
     "sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx" },
-    { name = "setuptools" },
-    { name = "sympy" },
-    { name = "typing-extensions" },
+    { name = "filelock", marker = "sys_platform == 'darwin'" },
+    { name = "fsspec", marker = "sys_platform == 'darwin'" },
+    { name = "jinja2", marker = "sys_platform == 'darwin'" },
+    { name = "networkx", marker = "sys_platform == 'darwin'" },
+    { name = "setuptools", marker = "sys_platform == 'darwin'" },
+    { name = "sympy", marker = "sys_platform == 'darwin'" },
+    { name = "typing-extensions", marker = "sys_platform == 'darwin'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.14.1-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:9cf3082d25560efb1eef921871595227c0cf305abb7761ca45b6b988ef6cdd45", upload-time = "2026-09-30T19:50:32Z" },
@@ -1662,13 +1693,13 @@ resolution-markers = [
     "sys_platform != 'darwin'",
 ]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx" },
-    { name = "setuptools" },
-    { name = "sympy" },
-    { name = "typing-extensions" },
+    { name = "filelock", marker = "sys_platform != 'darwin'" },
+    { name = "fsspec", marker = "sys_platform != 'darwin'" },
+    { name = "jinja2", marker = "sys_platform != 'darwin'" },
+    { name = "networkx", marker = "sys_platform != 'darwin'" },
+    { name = "setuptools", marker = "sys_platform != 'darwin'" },
+    { name = "sympy", marker = "sys_platform != 'darwin'" },
+    { name = "typing-extensions", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp312-cp312-linux_s390x.whl", hash = "sha256:6b06a7f6275c5fdecaf1dbf5546f0820b024a97785575bb99e3d9930d83cd86b", upload-time = "2026-09-30T19:47:30Z" },

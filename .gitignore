@@ -10,15 +10,21 @@ models/
 scripts/scrub-rules.local.txt
 # audio and model artefacts: only the synthetic stock reference clip is tracked
 *.wav
-!src/dispatch_voice/stock/*.wav
+!packages/forge-voice-core/src/forge_voice_core/stock/*.wav
 *.onnx
 *.onnx_data
 # test fixtures: synthetic speech (Kokoro / the stock voice) checked in on purpose (v3 contracts §G)
 !tests/fixtures/*.wav
 !tests/fixtures/clips/*.wav
 !tests/fixtures/clips-8k/*.wav
+!packages/forge-voice-core/tests/fixtures/*.wav
+!packages/forge-voice-core/tests/fixtures/clips/*.wav
+!packages/forge-voice-core/tests/fixtures/clips-8k/*.wav
 # node test tooling (jsdom); installed by `npm install`, never committed
 node_modules/
 package-lock.json
 # browser / low-bandwidth e2e output (screenshots, JSON results)
 .e2e-out/
+
+# test scratch folders
+.scratch-data/

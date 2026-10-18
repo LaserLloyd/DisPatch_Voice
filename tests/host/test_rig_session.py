@@ -6,12 +6,17 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import sys
+from pathlib import Path
 
 import httpx
 import numpy as np
 import pytest
-from rig.conftest import wait_for
-from rig.fake_sf1 import TOKEN, FakeRig
+
+# The fake sf.1 rig and its helpers live with the engine that speaks the protocol: the forge-voice-core suite.
+sys.path.append(str(Path(__file__).resolve().parents[2] / "packages" / "forge-voice-core" / "tests"))
+from rig.conftest import wait_for  # noqa: E402
+from rig.fake_sf1 import TOKEN, FakeRig  # noqa: E402
 
 from dispatch_voice.host import config as vconfig
 from dispatch_voice.host import power, rig, routes, vad_turn
