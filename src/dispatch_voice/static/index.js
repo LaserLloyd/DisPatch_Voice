@@ -22,7 +22,7 @@
 // (feasibility M7), and every file is ONE module instance: the siblings
 // import each other through their own `import.meta.url` query, which is this one.
 
-export const EXT = { id: 'voice', api: [1, 1], version: '1.5.0' };  // = dispatch_voice.__version__ (pinned by tests/host/test_setup.py)
+export const EXT = { id: 'voice', api: [1, 1], version: '1.6.0' };  // = dispatch_voice.__version__ (pinned by tests/host/test_setup.py)
 
 /** The query every sibling is imported with: the server's assets hash. */
 export function versionQuery(opts, selfUrl = import.meta.url) {
@@ -96,6 +96,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
   let toolOpen = null;        // { id, close, root }
   let stopped = false;
   let statusSeq = 0;
+  let pendingCharacter = null;  // a Bots-tab pill asked for this character's voice rows
 
   // ---- the microphone button in the chat header ---------------------------
   const button = el('button', {
@@ -147,6 +148,14 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     if (shell.settings && shell.settings.open) shell.settings.open('voice');
   }
 
+  // The Bots tab's Voice pill is a link to Settings → Voice → Voices per character.
+  function openCharacter(botId) {
+    pendingCharacter = botId;
+    openSettings();
+    // The pane is already rendered when it was open before; otherwise onShow renders it.
+    setTimeout(() => { if (pendingCharacter && paneRoot && DS.focusCharacter(paneRoot, pendingCharacter)) pendingCharacter = null; }, 0);
+  }
+
   function cloningReady() {
     const p = status && status.plugins && status.plugins.cloning;
     return !!(cloningTool && p && p.ready);
@@ -156,9 +165,11 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     if (!paneRoot || stopped) return;
     // The page rebuilds from scratch; keep the keyboard where it was.
     const focus = focusPath(paneRoot);
+    if (typeof paneRoot.paneDispose === 'function') { try { paneRoot.paneDispose(); } catch { /* keep going */ } }
     DS.mountDriveSettings(paneRoot, {
       status, loading,
       bots: () => roster,
+      setRoster: (bots) => { if (Array.isArray(bots) && bots.length) roster = bots; },
       setEnabled,
       cloning: cloningReady(),
       openCloning: () => {
@@ -172,6 +183,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
       toast,
     });
     restoreFocus(paneRoot, focus);
+    if (pendingCharacter && DS.focusCharacter(paneRoot, pendingCharacter)) pendingCharacter = null;
   }
 
   async function setEnabled(on) {
@@ -262,9 +274,9 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     if (typeof view.voice !== 'string' && typeof mine.voice === 'string') view.voice = mine.voice;
     if (typeof view.voice_rp !== 'string' && typeof mine.voice_rp === 'string') view.voice_rp = mine.voice_rp;
     h.host.replaceChildren(DS.botVoicePill(view, status, (patch) => {
-      Object.assign(h.edits, patch);   // until Save, only the shell and this row know
+      Object.assign(h.edits, patch);
       h.onChange(patch);
-    }, { notify: (m) => toast(m, true) }));
+    }, { openCharacter }));
     h.host.hidden = false;
   }
   function paintPills() {
@@ -362,6 +374,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
       stopped = true;
       if (prefetchTimer && prefetchTimer !== true) clearTimeout(prefetchTimer);
       closeTool();
+      if (paneRoot && typeof paneRoot.paneDispose === 'function') { try { paneRoot.paneDispose(); } catch { /* gone */ } }
       for (const fn of disposers.splice(0).reverse()) { try { fn(); } catch { /* keep going */ } }
       paneRoot = null;
       if (shellMod.getShell() === shell) shellMod.bindShell(prevShell);

@@ -7,6 +7,7 @@ import os
 
 import pytest
 import yaml
+from fakes import make_private
 
 from dispatch_voice import cli
 from dispatch_voice.host import config as vconfig
@@ -17,11 +18,13 @@ URL = "ws://192.0.2.7:1236/v1/realtime"
 
 
 @pytest.fixture(autouse=True)
-def _isolated_token(monkeypatch, tmp_path):
+def _isolated_token(monkeypatch, tmp_path, host_env):
     rig._MISCONFIGURED.clear()
     rig._LAST.clear()
     rig.METRICS.reset()
     monkeypatch.delenv(rig.TOKEN_ENV, raising=False)
+    # URL below is a TEST-NET address: a public one, so the admin allow-list has to name it.
+    monkeypatch.setenv("DISPATCH_VOICE_RIG_ALLOW", "192.0.2.0/24")
     path = tmp_path / "local-chat" / "speechforge.env"
     monkeypatch.setattr(rig, "token_path", lambda: path)
     yield path
@@ -30,8 +33,8 @@ def _isolated_token(monkeypatch, tmp_path):
 
 def write_token(path, body: str, mode: int = 0o600):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body)
-    os.chmod(path, mode)
+    path.write_text(body, encoding="utf-8")
+    make_private(path, private=mode == 0o600)
 
 
 # ------------------------------------------------------------------ settings
@@ -53,7 +56,7 @@ def test_voice_yaml_rig_tree_merges_and_loads(host_env):
     vconfig.save_prefs({"rig": {"ahead_ms": 4000}})                  # merged key by key
     st = vconfig.load_settings().rig
     assert (st.enabled, st.url, st.ahead_ms, st.stt_final_deadline_ms) == (True, URL, 4000, 350)
-    text = host_env.paths.voice_yaml.read_text()
+    text = host_env.paths.voice_yaml.read_text(encoding="utf-8")
     assert yaml.safe_load(text)["rig"] == {"enabled": True, "url": URL, "ahead_ms": 4000}
     assert "token" not in text.lower()
 
@@ -72,7 +75,8 @@ def test_a_world_readable_token_file_is_refused(_isolated_token, caplog):
     write_token(_isolated_token, f"{rig.TOKEN_ENV}={SECRET}\n", mode=0o644)
     t = rig.read_token()
     assert t.value == "" and t.problem == "permissions"
-    assert SECRET not in caplog.text and "chmod 600" in caplog.text
+    assert SECRET not in caplog.text
+    assert ("Everyone" if os.name == "nt" else "chmod 600") in caplog.text
 
 
 # ------------------------------------------------------------------ routes

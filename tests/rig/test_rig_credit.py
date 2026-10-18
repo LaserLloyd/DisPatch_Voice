@@ -126,7 +126,8 @@ async def test_credit_is_refreshed_every_250_ms_and_frozen_by_a_pause(live):
     paused = [c["played_ms"] for c in fake.of("credit") if "played_ms" in c]
     assert all(v == frozen for v in paused[paused.index(frozen):])      # a pause freezes playback
     eng.resume()
-    await asyncio.sleep(0.3)
+    # The next 250 ms credit tick carries the advanced clock: wait for it, not for a fixed time.
+    assert await wait_for(lambda: any(c.get("played_ms", 0) > frozen for c in fake.of("credit")), timeout=3)
     after = [c["played_ms"] for c in fake.of("credit") if "played_ms" in c]
     assert after[-1] > frozen
     # Never past the audio the phone has.

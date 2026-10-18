@@ -26,6 +26,7 @@
 const Q = new URL(import.meta.url).search;
 const { el, railIcon, iconPaths, t, has, listFormat, language, isMobile, sentences } = await import(`./shell.js${Q}`);
 const { pickVoice, ringCursorFrom } = await import(`./bridge.js${Q}`);
+const sections = await import(`./voice-sections.js${Q}`);
 
 export const DRIVE_KEY = 'dispatch-drive';
 export const LEGACY_PATIENCE_KEY = 'dispatch-drive-patience';
@@ -1046,13 +1047,6 @@ export function mountDriveSettings(host, ctx) {
     host.replaceChildren(lead, group('drive.group_status', [r]));
     return;
   }
-  const groups = [switchGroup(st, ctx)];
-  if (state !== 'on') {
-    const missing = Array.isArray(st.missing) ? st.missing : [];
-    if (state === 'setup' || (state === 'off' && missing.length)) groups.push(needsGroup(st, state));
-    host.replaceChildren(lead, ...groups);
-    return;
-  }
   const s = loadDriveSettings(storage());
   const set = (patch) => saveDriveSettings(storage(), patch);
   const notify = (m) => ctx.toast && ctx.toast(m, true);
@@ -1072,6 +1066,24 @@ export function mountDriveSettings(host, ctx) {
     return true;
   };
 
+  const groups = [switchGroup(st, ctx)];
+  const paneDisposers = [];
+  if (state !== 'on') {
+    const missing = Array.isArray(st.missing) ? st.missing : [];
+    if (state === 'setup' || (state === 'off' && missing.length)) {
+      groups.push(needsGroup(st, state));
+      // Download the models from here instead of a terminal.
+      groups.push(sections.modelsSection(helpers(), st, { ...ctx, toast: ctx.toast, saved: ctx.saved }));
+      // A remote recogniser or server needs no local models: choose it here, before anything is downloaded.
+      if (state === 'setup') {
+        const sctx = { ...ctx, voiceRows: [], listeningRows: [], extensions: null };
+        groups.push(sections.sttSection(helpers(), st, save, sctx), sections.ttsSection(helpers(), st, save, sctx));
+      }
+    }
+    host.replaceChildren(lead, ...groups);
+    host.paneDispose = () => groups.forEach((g) => g.dispose && g.dispose());
+    return;
+  }
   // ---- Voices (server)
   const voiceRows = [];
   const builtins = Array.isArray(st.builtin_voices) ? st.builtin_voices : [];
@@ -1139,8 +1151,6 @@ export function mountDriveSettings(host, ctx) {
   narratorRow.hidden = rpMode !== 'dialogue_narrator';
   rpSel.classList.add('drive-select-wide');   // its longest choice is a sentence
   voiceRows.push(row(t('drive.rp_speech'), t('drive.rp_speech_hint'), [rpSel], { id: 'drive-rp' }), narratorRow);
-  const rig = rigRow(st, save);
-  if (rig) voiceRows.push(rig);
 
   if (ctx.cloning) {
     const open = el('button', { type: 'button', class: 'btn-secondary', id: 'dev-voices-open' }, [
@@ -1151,20 +1161,34 @@ export function mountDriveSettings(host, ctx) {
     r.classList.add('dev-row-action');
     voiceRows.push(r);
   }
-  groups.push(group('drive.group_voices', voiceRows, { id: 'drive-group-voices', hint: t('drive.group_server_hint') }));
-
-  // ---- Listening (device)
-  groups.push(group('drive.group_listening', [
+  // ---- The four sections, in the order of the brief: 1 speech to text, 2 text to speech,
+  // 3 input and devices (with a mic test), 4 voices per character. The server-wide voice rows
+  // built above live in section 2; the device's listening rows in section 3.
+  const pickSpeaker = canPickSpeaker() && !isMobile();
+  const listeningRows = [
     row(t('drive.patience'), t('drive.patience_hint'),
       [segmented(t('drive.patience'), patienceOptions(), s.patience, (v) => set({ patience: v }))], { block: true, id: 'drive-patience' }),
     row(t('drive.barge_in'), t('drive.barge_in_hint'),
       [switchInput(s.bargeIn, t('drive.barge_in'), (v) => set({ bargeIn: v }))], { id: 'drive-barge-in' }),
     sensitivityRow(s, set),
-    row(t('drive.auto_listen'), t('drive.auto_listen_hint'),
-      [switchInput(s.autoListen, t('drive.auto_listen'), (v) => set({ autoListen: v }))], { id: 'drive-auto-listen' }),
-    typedInputRow(s, set),
     micRow(s, set),
-  ], { id: 'drive-group-listening' }));
+  ];
+  if (pickSpeaker) {
+    const spk = selectInput(t('drive.speaker'), [{ value: '', label: t('drive.device_default') }], s.sinkId, (v) => set({ sinkId: v }));
+    deviceOptions('audiooutput').then((o) => fillSelect(spk, o, o.some((x) => x.value === s.sinkId) ? s.sinkId : ''));
+    listeningRows.push(row(t('drive.speaker'), t('drive.speaker_hint'), [spk], { id: 'drive-speaker' }));
+  }
+  const H = helpers();
+  const sctx = { ...ctx, saved: ctx.saved, toast: ctx.toast, voiceRows, listeningRows, extensions: null };
+  const sttG = sections.sttSection(H, st, save, sctx);
+  const ttsG = sections.ttsSection(H, st, save, sctx);
+  const inG = sections.inputSection(H, st, s, set, sctx);
+  const charG = sections.charactersSection(H, st, ctx.bots ? ctx.bots() : [], {
+    ...sctx, setRoster: ctx.setRoster || null,
+  });
+  const modelsG = sections.modelsSection(H, st, sctx);
+  groups.push(sttG, ttsG, inG, charG, modelsG);
+  paneDisposers.push(...[sttG, ttsG, inG, charG, modelsG].map((g) => g && g.dispose).filter(Boolean));
 
   // ---- Replies (device)
   groups.push(group('drive.group_replies', [
@@ -1195,11 +1219,6 @@ export function mountDriveSettings(host, ctx) {
 
   // ---- Status (collapsed): everything an owner reads rather than changes.
   const statusRows = [row(t('vtools.lab_engine'), engineLine(st), [], { id: 'drive-engine' })];
-  if (canPickSpeaker() && !isMobile()) {
-    const spk = selectInput(t('drive.speaker'), [{ value: '', label: t('drive.device_default') }], s.sinkId, (v) => set({ sinkId: v }));
-    deviceOptions('audiooutput').then((o) => fillSelect(spk, o, o.some((x) => x.value === s.sinkId) ? s.sinkId : ''));
-    statusRows.push(row(t('drive.speaker'), t('drive.speaker_hint'), [spk], { id: 'drive-speaker' }));
-  }
   const levels = Array.isArray(st.thinking_levels) && st.thinking_levels.length ? st.thinking_levels : THINKING_LEVELS;
   const thinkSel = selectInput(t('drive.thinking'), levels.map((v) => ({ value: v, label: t(`drive.thinking_${v}`) })),
     THINKING_LEVELS.includes(st.voice_turn_thinking) ? st.voice_turn_thinking : 'off', (v) => save({ voice_turn_thinking: v }));
@@ -1223,6 +1242,20 @@ export function mountDriveSettings(host, ctx) {
   groups.push(foldGroup('drive.group_status', statusRows, { id: 'drive-group-status' }));
 
   host.replaceChildren(lead, ...groups);
+  host.paneDispose = () => paneDisposers.forEach((fn) => fn());
+}
+
+/** The row/switch/select helpers the section builders (voice-sections.js) are handed: one look, no import cycle. */
+function helpers() {
+  return {
+    el, t, row, group, switchInput, selectInput, segmented, fillSelect, previewButton, addHint,
+    voiceOptions, rpOptions, narratorOptions, voiceJson, patchVoiceSettings, saveErrorText, rigRow, rigStatusLine,
+  };
+}
+
+/** Open (and scroll to) one character in Settings → Voice → Voices per character. */
+export function focusCharacter(root, botId) {
+  return sections.focusCharacter(root, botId);
 }
 
 /** Connection: when the link is slow, and the phone voice (§5.4, §7.1). */
@@ -1287,122 +1320,26 @@ function phoneVoiceRow(s, set, voices, android) {
  * popover's footnote says which is which.
  */
 /**
- * Keep an anchored popover inside the box that clips it (review M2): the
- * nearest ancestor that scrolls or clips horizontally — the Bots tab's pane
- * scrolls, so anything past its edge is unreachable — intersected with the
- * viewport, less an 8 px gutter. The popover hangs from the anchor's end
- * edge by default (voice.css); this shifts it sideways, and narrows it when
- * the box is narrower than the popover. Physical left/right in the inline
- * style beat the stylesheet's logical inset in both writing directions.
+ * The Voice pill on a Bots-tab card (1.6.0): it shows the character's voice and is a LINK to
+ * Settings → Voice → Voices per character, where the voice, role-play speech, locked-device voice
+ * and the two flags are edited and saved at once. (Through 1.5.0 it opened a popover whose voice
+ * choices waited for the Bots tab's Save.) `openCharacter(botId)` opens that page.
  */
-export const POPOVER_GUTTER = 8;
-export function placePopover(pop, anchor) {
-  if (!pop || !anchor || !pop.isConnected) return;
-  const doc = anchor.ownerDocument;
-  const win = doc.defaultView;
-  if (!win || typeof pop.getBoundingClientRect !== 'function') return;
-  pop.style.left = ''; pop.style.right = ''; pop.style.maxWidth = '';
-  let lo = 0;
-  let hi = win.innerWidth || doc.documentElement.clientWidth || 0;
-  for (let n = anchor.parentElement; n && n !== doc.body && n !== doc.documentElement; n = n.parentElement) {
-    const ox = win.getComputedStyle(n).overflowX;
-    if (ox && ox !== 'visible') {
-      const r = n.getBoundingClientRect();
-      if (r.width > 0) { lo = Math.max(lo, r.left); hi = Math.min(hi, r.right); }
-      break;
-    }
-  }
-  const avail = hi - lo - 2 * POPOVER_GUTTER;
-  if (!(avail > 0)) return;
-  let pr = pop.getBoundingClientRect();
-  if (pr.width > avail) { pop.style.maxWidth = `${avail}px`; pr = pop.getBoundingClientRect(); }
-  let x = pr.left;
-  if (pr.right > hi - POPOVER_GUTTER) x -= pr.right - (hi - POPOVER_GUTTER);
-  if (x < lo + POPOVER_GUTTER) x = lo + POPOVER_GUTTER;
-  if (Math.abs(x - pr.left) < 0.5) return;
-  const ar = anchor.getBoundingClientRect();
-  pop.style.left = `${Math.round(x - ar.left)}px`;
-  pop.style.right = 'auto';
-}
-
-export function botVoicePill(bot, status, onChange, { saveBotSettings = (id, patch) => patchVoiceSettings({ bots: { [id]: patch } }), notify = null } = {}) {
+export function botVoicePill(bot, status, onChange, { openCharacter = null } = {}) {
   const st = status || {};
-  let voice = typeof bot.voice === 'string' ? bot.voice : '';
-  let rp = typeof bot.voice_rp === 'string' ? bot.voice_rp : '';
-  const per = (st.bots && st.bots[bot.id]) || {};
+  const voice = typeof bot.voice === 'string' ? bot.voice : '';
+  const rp = typeof bot.voice_rp === 'string' ? bot.voice_rp : '';
   const wrap = el('span', { class: 'bm-voice-wrap' });
-  const word = el('span', { class: 'bm-voice-word' });
+  const word = el('span', { class: 'bm-voice-word', text: voice ? voiceName(st, voice) : t('drive.bot_voice_badge') });
   const pill = el('button', {
     type: 'button', class: 'bm-safe-btn bm-voice-pill', title: t('drive.bot_voice_title'),
-    'aria-label': t('drive.bot_voice_aria', { name: bot.name }), 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+    'aria-label': t('drive.bot_voice_aria', { name: bot.name }),
   }, [railIcon(MIC_ICON), word]);
-  const paint = () => {
-    word.textContent = voice ? voiceName(st, voice) : t('drive.bot_voice_badge');
-    pill.classList.toggle('on', !!voice || !!rp);
-  };
-  paint();
-  let pop = null;
-  const onDoc = (e) => { if (pop && !wrap.contains(e.target)) close(); };
-  const onKey = (e) => { if (e.key === 'Escape' && pop) { e.stopPropagation(); close(); pill.focus(); } };
-  const onResize = () => { if (pop) placePopover(pop, wrap); };
-  function close() {
-    if (!pop) return;
-    pop.remove(); pop = null;
-    pill.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('pointerdown', onDoc, true);
-    globalThis.removeEventListener && globalThis.removeEventListener('resize', onResize);
-  }
-  function open() {
-    const voiceSel = selectInput(t('drive.voice'), voiceOptions(st, { withDefault: true, current: voice }), voice, (v) => {
-      voice = v; paint(); onChange({ voice: v });
-    });
-    const rpSel = selectInput(t('drive.rp_speech'), rpOptions({ withServerDefault: true }), rp, (v) => {
-      rp = v; paint(); onChange({ voice_rp: v });
-    });
-    const saveFlag = (key, cb) => async (v) => {
-      cb.disabled = true;
-      try { await saveBotSettings(bot.id, { [key]: v }); per[key] = v; }
-      catch (e) { cb.checked = !v; if (notify) notify(saveErrorText(e)); }
-      cb.disabled = false;
-    };
-    const bc = switchInput(per.backchannel === true, t('drive.bot_backchannel'), () => {});
-    bc.addEventListener('change', () => saveFlag('backchannel', bc)(bc.checked));
-    const fu = switchInput(per.follow_up !== false, t('drive.bot_follow_up'), () => {});
-    fu.addEventListener('change', () => saveFlag('follow_up', fu)(fu.checked));
-    // "Voice on locked devices": the add-on's own per-bot setting (voice.yaml
-    // `bots.<id>.locked_voice`), saved at once. "Same as standard" (value "") is first.
-    let lockedVoice = typeof per.locked_voice === 'string' ? per.locked_voice : '';
-    const lockedOpts = [{ value: '', label: t('drive.bot_locked_voice_same') },
-      ...voiceOptions(st, { current: lockedVoice })];
-    const lockedSel = selectInput(t('drive.bot_locked_voice'), lockedOpts, lockedVoice, async (v) => {
-      lockedSel.disabled = true;
-      try { await saveBotSettings(bot.id, { locked_voice: v }); lockedVoice = v; per.locked_voice = v; }
-      catch (e) { lockedSel.value = lockedVoice; if (notify) notify(saveErrorText(e)); }
-      lockedSel.disabled = false;
-    });
-    pop = el('div', {
-      class: 'menu bm-voice-pop', role: 'dialog', 'aria-label': t('drive.bot_voice_aria', { name: bot.name }),
-    }, [el('div', { class: 'dev-group-body' }, [
-      row(t('drive.voice'), '', [voiceSel, previewButton(() => voiceSel.value || st.default_voice || '', notify)], { id: `bm-voice-${bot.id}` }),
-      row(t('drive.rp_speech'), '', [rpSel], { id: `bm-rp-${bot.id}` }),
-      row(t('drive.bot_locked_voice'), t('drive.bot_locked_voice_hint'),
-        [lockedSel, previewButton(() => lockedSel.value || voiceSel.value || st.default_voice || '', notify)],
-        { id: `bm-locked-voice-${bot.id}` }),
-      row(t('drive.bot_backchannel'), t('drive.bot_backchannel_hint'), [bc]),
-      row(t('drive.bot_follow_up'), t('drive.bot_follow_up_hint'), [fu]),
-    ]), el('p', { class: 'dev-group-hint bm-voice-note', text: t('drive.pop_save_note') })]);
-    pop.addEventListener('keydown', onKey);
-    pop.addEventListener('click', (e) => e.stopPropagation());
-    wrap.append(pop);
-    placePopover(pop, wrap);
-    pill.setAttribute('aria-expanded', 'true');
-    document.addEventListener('pointerdown', onDoc, true);
-    globalThis.addEventListener && globalThis.addEventListener('resize', onResize);
-    try { voiceSel.focus({ preventScroll: true }); } catch { voiceSel.focus(); }
-    try { pop.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch { /* jsdom */ }
-  }
-  pill.addEventListener('click', (e) => { e.stopPropagation(); if (pop) close(); else open(); });
+  pill.classList.toggle('on', !!voice || !!rp);
+  pill.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (openCharacter) openCharacter(bot.id);
+  });
   wrap.append(pill);
-  wrap.closePopover = close;
   return wrap;
 }

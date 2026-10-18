@@ -1,6 +1,6 @@
 # dispatch-voice
 
-**DisPatch Voice**: voice chat for [DisPatch Chat](https://github.com/LaserLloyd/DisPatch_Chat), as an add-on. You talk to a DisPatch bot hands-free; it listens, answers in its own voice and can be interrupted. Everything runs on the CPU of the machine DisPatch runs on; by default nothing is sent anywhere (the optional MiniMax and HQ engines, `DISPATCH_VOICE_TTS=minimax` / `DISPATCH_VOICE_HQ_URL`, send the reply text to that service to be spoken).
+**DisPatch Voice**: voice chat for [DisPatch Chat](https://github.com/LaserLloyd/DisPatch_Chat), as an add-on. You talk to a DisPatch bot hands-free; it listens, answers in its own voice and can be interrupted. Everything runs on the CPU of the machine DisPatch runs on; by default nothing is sent anywhere. What you switch on does send data: the **GPU rig** receives your microphone audio and the reply text, an **OpenAI-compatible server** (speech to text, or the HQ voice) receives the audio or the reply text, and the optional **MiniMax** engine receives the reply text. Each is off until you set it up, each address is checked against a network policy (below), and nothing else leaves the machine.
 
 DisPatch runs fully without it. With the add-on installed, DisPatch gains a microphone button in each chat and a Settings → Voice page. The add-on is the whole feature: the speech pipeline (Silero VAD + Smart Turn v3.2 for turn taking, Parakeet TDT 0.6B for recognition), the voice session, the voices (cloned voices and a stock synthetic voice on Chatterbox-Turbo ONNX; optional built-in voices through a plugin), the settings routes and its own frontend assets. DisPatch keeps only a small, stable extension host and the page that explains how to install this when it is absent.
 
@@ -10,7 +10,18 @@ Docs: [docs/voice-chat/](docs/voice-chat/index.md) (install and setup, the host 
 
 ## Install, for DisPatch
 
-DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatch version](#which-dispatch-version)). Three steps; details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
+DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatch version](#which-dispatch-version)). Python 3.12 or later. Linux and Windows are tested in CI (the suite runs on both); macOS is expected to work but is not tested. Details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
+
+**System programs.** pip installs every Python dependency (including `websockets`, which the GPU-rig client needs), but two pieces come from the operating system:
+
+| Program | For | Install |
+|---|---|---|
+| `ffmpeg` | decoding the clip you upload to clone a voice | `sudo apt install ffmpeg` / `sudo dnf install ffmpeg-free` / `brew install ffmpeg` / `winget install Gyan.FFmpeg` |
+| `libopus` | the compact Opus wire on a slow link (optional; without it the link stays PCM16) | `sudo apt install libopus0` / `sudo dnf install opus` / `brew install opus` / Windows: put `opus.dll` next to `python.exe` |
+
+`dispatch-voice doctor` checks both and prints the command for your system; `GET /api/voice/status` lists what is missing under `system` and `health`. They are declared in `pyproject.toml` (`[tool.dispatch-voice.system-requirements]`).
+
+**One page, no terminal.** With the add-on installed and DisPatch restarted once, everything else is Settings → Voice: switch it on, **Download** the models (about 1.4 GB, with progress and Cancel), pick the speech-to-text and text-to-speech providers, test the microphone. The commands below remain for servers configured as code.
 
 ```sh
 # 1. the add-on on DisPatch's environment: an editable overlay on the line that starts DisPatch
@@ -21,7 +32,8 @@ uv run --offline --with-editable <dispatch-voice> uvicorn app.main:app …      
 #    or a bare-metal install into DisPatch's venv (`v1` follows the latest 1.x release)
 uv pip install --python .venv/bin/python "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1"
 
-# 2. the models (~1.4 GB: Silero VAD, Smart Turn, Parakeet, Chatterbox-Turbo, the stock voice)
+# 2. the models (~1.4 GB: Silero VAD, Smart Turn, Parakeet, Chatterbox-Turbo, the stock voice) -
+#    or press Download in Settings → Voice (the same code, with progress and Cancel)
 dispatch-voice fetch-models
 
 # 3. restart DisPatch, then Settings → Voice → switch it on
@@ -30,7 +42,7 @@ dispatch-voice fetch-models
 **On a server you keep running**, point the overlay at a release checkout that nobody develops in, and start DisPatch through its launcher, which falls back to DisPatch without voice (instead of a restart loop) when the overlay cannot be resolved or crashes on import:
 
 ```sh
-git -C <dispatch-voice> worktree add --detach <release-dir> v1.5.0     # later releases: git -C <release-dir> checkout --detach <tag>
+git -C <dispatch-voice> worktree add --detach <release-dir> v1.6.0     # later releases: git -C <release-dir> checkout --detach <tag>
 cd <dispatch-chat>/backend
 uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm once, online, after every release
 <dispatch-chat>/scripts/local-chat-launch --uv "$(command -v uv)" --with-editable <release-dir> \
@@ -41,7 +53,9 @@ uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm o
 
 `dispatch-voice doctor` prints the DisPatch handshake, which models are present, the engines and plugins, the switch, and whether the add-on the running server loaded is the one in this checkout (`--unit <name>` reads the voice settings and backend directory of a systemd `--user` unit; `--backend DIR` also checks DisPatch's venv and that the overlay resolves offline; `--check-update` compares with the latest release). `dispatch-voice fetch-models --verify` checks every model file against its checksum.
 
-Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro` (`DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
+Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro`: install it and switch it on under Settings → Voice → *Provider plugins* (it registers through the `dispatch_voice.providers` entry-point group; the old `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup` still works and is deprecated). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
+
+The models live in ONE folder (DisPatch's `models_dir`) with a `speech/` and a `chatterbox/` subfolder. An install from before 1.6.0 keeps working where its files are; `dispatch-voice migrate-models` (dry run) and `--apply`, or the Move button, bring the old two folders into the new layout.
 
 Voice chat understands and speaks English only for now. It works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with (the `safe` ones); every turn from a locked device, spoken or typed, runs with DisPatch's locked rules, and the voice settings stay unlocked-only. Since 1.3.4 a bot can use a different voice for locked devices: `bots.<id>.locked_voice` in `voice.yaml`, or the "Voice on locked devices" picker in the Bots-tab Voice popover. Empty (the default) means the bot's standard voice. The server picks it from the socket's locked flag, and a locked device cannot read the setting.
 
@@ -55,6 +69,8 @@ Voice chat understands and speaks English only for now. It works on an unlocked 
 | Voice on a `safe` bot, for an unlocked device | 1.3.1 | 2.3.1 |
 | Voice on locked devices | 1.3.3 | 2.3.4 |
 | Per-bot `locked_voice` | 1.3.4 | 2.3.4 |
+| Interrupt sensitivity | 1.5.0 | 2.2.0 |
+| One Settings → Voice page (providers, model download, rig address and token), provider plugins | 1.6.0 | 2.2.0 |
 
 On an older DisPatch the newer buttons are simply not available or the socket is refused, as the [changelog](CHANGELOG.md) notes per release.
 
@@ -94,6 +110,67 @@ mkdir -p ~/.config/local-chat && (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '
 ```
 
 Then Settings → Voice → *Use the GPU rig when available*. This computer stays in charge of the conversation and takes over the speech work whenever the rig is slow, busy or away: a turn only starts on a rig that answered recently, a dead rig is noticed in under a second, and the words in flight replay into the local recogniser. Only voice conditionals go to the rig, never the reference clip. Details: [docs/voice-chat/rig.md](docs/voice-chat/rig.md).
+
+## Settings and environment variables
+
+Every setting has ONE definition ([`host/settings_schema.py`](src/dispatch_voice/host/settings_schema.py)): its type, default, range, whether it is a server, device or per-character setting, basic or advanced, secret or not, and its environment names. `GET /api/voice/settings/schema` serves the table; the Settings page, `PATCH /api/voice/settings` and `voice.yaml` are all generated from it.
+
+**Order of precedence: the environment, then `voice.yaml`, then the default** (1.5.0 let `voice.yaml` beat every variable except `DISPATCH_VOICE`). `GET /api/voice/settings` reports `sources` (`env`, `file` or `default` for each key) and `env` (the variable that is winning); Settings → Voice shows "set by environment" next to such a setting and disables it. A value saved over a variable is kept in `voice.yaml` for when the variable goes (`overridden` in the PATCH answer says so). The environment is not range-limited (the app limits people, not the operator), except `DISPATCH_VOICE_MAX_SESSIONS`.
+
+The table below is generated from the schema (`python -m dispatch_voice.host.settings_schema --write-readme`); a test fails when it is stale.
+
+<!-- env-table:start -->
+| Environment variable | Setting | Default | Notes |
+|---|---|---|---|
+| `DISPATCH_VOICE` | `enabled` | False | Turns voice chat on. DISPATCH_VOICE=1/0 forces it (the switch is then locked). |
+| `DISPATCH_VOICE_STT_PROVIDER` | `stt_provider` | cpu | cpu (this computer), openai (an OpenAI-compatible server), or a plugin's id. The GPU rig is switched with rig.enabled. |
+| `DISPATCH_VOICE_STT_URL` | `stt_url` | - | A server with POST /v1/audio/transcriptions (whisper.cpp, faster-whisper-server, ...). |
+| `DISPATCH_VOICE_STT_MODEL` | `stt_model` | - | Transcription model |
+| `DISPATCH_VOICE_STT_TIMEOUT` | `stt_timeout_s` | 20.0 | Transcription timeout (s) |
+| `DISPATCH_VOICE_STT_API_KEY` | `stt_api_key` | (unset) | Only ever read from the environment. |
+| `DISPATCH_VOICE_STT` | `rt.stt_engine` | parakeet | Which recogniser hears you. Parakeet is the default; Moonshine is an optional extra (it falls back to Parakeet when missing). |
+| `DISPATCH_VOICE_THREADS` | `threads` | 6 | onnxruntime intra-op threads. |
+| `DISPATCH_VOICE_TTS_PROVIDER` | `tts_provider` | auto | auto (an OpenAI-compatible server when hq_url is set, else this computer), cpu (never the remote server), openai, or a plugin's id. The GPU rig is switched with rig.enabled. |
+| `DISPATCH_VOICE_TTS` | `tts_engine` | auto | auto, chatterbox, minimax, or the name a plugin registered (kokoro). |
+| `DISPATCH_VOICE_BUILTIN_VOICE` | `builtin_voice` | - | Changed with default_voice (it also accepts a cloned-voice profile). |
+| `DISPATCH_VOICE_KOKORO_VOICE` | `builtin_voice` | - | older name of `DISPATCH_VOICE_BUILTIN_VOICE` |
+| `DISPATCH_VOICE_SPEED` | `speed` | 1.05 | Engines that support a speed (a cloned voice keeps its own pace). |
+| `DISPATCH_VOICE_KOKORO_SPEED` | `speed` | 1.05 | older name of `DISPATCH_VOICE_SPEED` |
+| `DISPATCH_VOICE_TTS_THREADS` | `tts_threads` | 8 | ONNX threads (speech synthesis) |
+| `DISPATCH_VOICE_HQ_URL` | `hq_url` | - | A server with POST /v1/audio/speech; the reply text is sent to it, and any failure falls back to this computer's voice. |
+| `DISPATCH_VOICE_HQ_MODEL` | `hq_model` | - | Speech server model |
+| `DISPATCH_VOICE_HQ_TIMEOUT` | `hq_timeout_s` | 4.0 | Speech server timeout (s) |
+| `DISPATCH_VOICE_HQ_API_KEY` | `hq_api_key` | (unset) | Only ever read from the environment. |
+| `DISPATCH_VOICE_MINIMAX_MODEL` | `minimax_model` | speech-2.8-turbo | MiniMax model |
+| `DISPATCH_VOICE_MINIMAX_VOICE` | `minimax_voice` | Wise_Woman | MiniMax voice |
+| `DISPATCH_VOICE_MINIMAX_BASE_URL` | `minimax_base_url` | https://api.minimax.io | MiniMax address |
+| `MINIMAX_API_KEY` | `minimax_api_key` | (unset) | Only ever read from the environment. |
+| `DISPATCH_VOICE_MERGE_WINDOW` | `merge_window_s` | 1.8 | Turn merge window (s) |
+| `DISPATCH_VOICE_HARD_SILENCE` | `hard_silence_s` | 1.4 | Silence that ends a turn regardless of the turn-taking model. |
+| `DISPATCH_VOICE_THINKING` | `voice_turn_thinking` | off | Thinking during voice turns |
+| `DISPATCH_VOICE_SILENCE` | `no_smart_turn_silence_s` | 0.8 | End-of-turn silence without Smart Turn (s) |
+| `DISPATCH_VOICE_PATIENCE` | `patience` | 1.0 | Server patience multiplier |
+| `DISPATCH_VOICE_BARGE_ABORT` | `barge_abort_turn` | True | Barge-in also aborts the agent turn |
+| `DISPATCH_VOICE_POWER_HOLD` | `rt.power_hold` | performance | Hold the performance power profile while a chat is open (Linux only). |
+| `DISPATCH_VOICE_OPUS` | `opus` | auto | Opus codec |
+| `DISPATCH_VOICE_MAX_SESSIONS` | `max_sessions` | 3 | Voice chats at once |
+| `DISPATCH_VOICE_PREWARM` | `prewarm` | True | Load the models at start-up |
+| `DISPATCH_VOICE_RIG_ENABLED` | `rig.enabled` | False | Use the GPU rig |
+| `DISPATCH_VOICE_RIG_URL` | `rig.url` | - | ws:// or wss:// address of the speech server. Checked against a host allow-list. |
+| `DISPATCH_VOICE_RIG_STT_FINAL_DEADLINE_MS` | `rig.stt_final_deadline_ms` | 350 | Rig: final-transcript deadline (ms) |
+| `DISPATCH_VOICE_RIG_TTS_START_DEADLINE_MS` | `rig.tts_start_deadline_ms` | 800 | Rig: first-audio deadline (ms) |
+| `DISPATCH_VOICE_RIG_AHEAD_MS` | `rig.ahead_ms` | 3000 | Rig: audio rendered ahead (ms) |
+| `DISPATCH_VOICE_RIG_FIRST_CHUNK_TOKENS` | `rig.first_chunk_tokens` | 15 | Rig: first chunk (tokens) |
+| `DISPATCH_VOICE_RIG_ALLOW` | `rig.allow` | - | Hosts, *.suffixes or CIDRs a PUBLIC rig address may be. Private, tailnet and loopback addresses need no entry; link-local and metadata addresses are never allowed. |
+| `SPEECHFORGE_TOKEN` | `rig.token` | (unset) | Write-only: saved to a private file, never shown, never logged. |
+| `DISPATCH_VOICE_EXTENSIONS` | `extensions` | - | Entry-point names from the dispatch_voice.providers group (or legacy module:setup targets). |
+| `DISPATCH_SPEECH_MODELS` | `models_root` | - | Speech-model folder |
+| `DISPATCH_VOICE_MODELS` | `chatterbox_models` | - | Chatterbox model folder |
+| `DISPATCH_VOICE_MODEL_REVISION` | `model_revision` | - | Chatterbox model revision |
+| `DISPATCH_DATA_DIR` | `data_dir` | - | Data folder |
+| `XDG_DATA_HOME` | `data_dir` | - | Data folder |
+| `DISPATCH_VOICE_ACK_RENDER` | `ack_render` | True | Pre-render acknowledgement lines |
+<!-- env-table:end -->
 
 ## Standalone use
 

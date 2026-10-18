@@ -66,7 +66,7 @@ test('mount wires every slot: header button before the thread menu, Settings →
       // Settings → Voice: the add-on's page replaced DisPatch's absent page.
       assert.equal(fs.paneHost.querySelector('.voice-absent'), null);
       assert.ok(fs.paneHost.querySelector('#drive-group-switch'));
-      assert.ok(fs.paneHost.querySelector('#drive-group-voices'));
+      assert.ok(fs.paneHost.querySelector('#drive-group-tts'));
       assert.ok(fs.paneHost.querySelector('#drive-manage-voices'), 'cloning installed + tool on → Manage voices');
       // Bots: a pill for every bot, the Safe-Mode one included (1.3.1).
       const extra = fs.log.rowExtras[0].fn;
@@ -111,7 +111,7 @@ test('voice off: the button hides, the pane shows the switch, no pill; turning i
       assert.deepEqual(fetch.calls.find((c) => c.method === 'PATCH').body, { enabled: true });
       assert.ok(fs.log.toasts.some((x) => /Voice is on/.test(x.text)));
       assert.equal(btn.hidden, false, 'voice came on: the button shows');
-      assert.ok(fs.paneHost.querySelector('#drive-group-listening'), 'the everyday settings appear');
+      assert.ok(fs.paneHost.querySelector('#drive-group-input'), 'the everyday settings appear');
       assert.equal(slot.hidden, false, 'the same Settings session: the slot shows');
       assert.ok(slot.querySelector('.bm-voice-pill'), 'the pill is there without a re-render');
       // And back off: the pill goes away again.
@@ -137,7 +137,7 @@ test('a failing /api/voice/status does not fail the mount: the pane says so and 
       fail = false;
       fs.paneHost.querySelector('#drive-status-retry').click();
       await settle(20);
-      assert.ok(fs.paneHost.querySelector('#drive-group-voices'));
+      assert.ok(fs.paneHost.querySelector('#drive-group-tts'));
     } finally { h.unmount(); }
   }, { fetch });
 });
@@ -259,12 +259,12 @@ test('onLocale re-renders the pane and the button in the new words', dom, async 
       const before = fs.paneHost.firstChild;
       h.onLocale();
       assert.notEqual(fs.paneHost.firstChild, before, 'rebuilt');
-      assert.ok(fs.paneHost.querySelector('#drive-group-voices'));
+      assert.ok(fs.paneHost.querySelector('#drive-group-tts'));
     } finally { h.unmount(); }
   }, { fetch: routes() });
 });
 
-test('Bots pill: an unsaved popover edit survives a status repaint; a forced refresh re-reads the roster (review M1/L6)', dom, async () => {
+test('Bots pill: a link to the character in Settings → Voice; a status repaint keeps it; a forced refresh re-reads the roster (review M1/L6)', dom, async () => {
   const fetch = routes();
   await withDom(async () => {
     const fs = fakeShell({ thread: { id: 't1', bot_id: 'nova', title: 'Evening' }, bots: BOTS });
@@ -274,22 +274,16 @@ test('Bots pill: an unsaved popover edit survives a status repaint; a forced ref
     try {
       const rosterReads = () => fetch.calls.filter((c) => c.method === 'GET' && c.path === '/api/bots/all').length;
       const n0 = rosterReads();
-      const changes = [];
-      const slot = fs.log.rowExtras[0].fn({ ...BOTS[0] }, (p) => changes.push(p));
+      const slot = fs.log.rowExtras[0].fn({ ...BOTS[0] }, () => {});
       document.body.append(slot);
+      const opened = fs.log.settingsOpened ? fs.log.settingsOpened.length : 0;
       slot.querySelector('.bm-voice-pill').click();
-      const sel = slot.querySelector('.bm-voice-pop select');
-      sel.value = 'p1'; sel.dispatchEvent(new Event('change'));
-      assert.deepEqual(changes, [{ voice: 'p1' }], 'handed to the shell (waits for Save)');
-      slot.querySelector('.bm-voice-pill').click();      // close the popover
+      assert.equal(slot.querySelector('.bm-voice-pop'), null, 'no popover');
+      if (fs.log.settingsOpened) assert.equal(fs.log.settingsOpened.length, opened + 1, 'Settings → Voice opened');
       await app.refreshStatus({ force: true });
       await settle(5);
       assert.ok(rosterReads() > n0, 'a forced refresh re-reads /api/bots/all');
-      assert.match(slot.querySelector('.bm-voice-pill').textContent, /Robin/, 'the unsaved choice is still shown after the repaint');
-      // An open popover is never torn down by a background repaint.
-      slot.querySelector('.bm-voice-pill').click();
-      await app.refreshStatus({ force: true });
-      assert.ok(slot.querySelector('.bm-voice-pop'), 'still open');
+      assert.ok(slot.querySelector('.bm-voice-pill'), 'the pill survives the repaint');
     } finally { app.stop(); }
   }, { fetch });
 });

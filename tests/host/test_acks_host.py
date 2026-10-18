@@ -39,7 +39,7 @@ def test_pools_bind_the_context_bots_and_hot_reload(host_env):
     lines = hacks.lines_for("nova", "builtin:af_heart")
     assert set(hacks.NOTICE_TEXTS) <= set(lines) and set(hacks.TOOL_LINES) <= set(lines)
     # An operator file is picked up (hot reload is PoolsFile's; the path is the context's).
-    host_env.paths.acks_yaml.write_text("default:\n  question: ['Right, let me check.']\n")
+    host_env.paths.acks_yaml.write_text("default:\n  question: ['Right, let me check.']\n", encoding="utf-8")
     hacks.reset()
     assert "Right, let me check." in hacks.pools().default["question"]
 
@@ -169,7 +169,7 @@ def test_prewarm_ensures_every_bot_in_its_resolved_voice(host_env, monkeypatch):
     voices = [{"id": "builtin:af_heart", "name": "Heart", "lang": "en-us", "default": True}]
     registry.set_builtin_voices_provider(lambda settings=None: voices)
     monkeypatch.setattr(routes, "_dv", lambda: None)
-    host_env.paths.acks_yaml.write_text("bots:\n  nova:\n    flavour: gruff\n")
+    host_env.paths.acks_yaml.write_text("bots:\n  nova:\n    flavour: gruff\n", encoding="utf-8")
     hacks.reset()
     try:
         eng = Eng()

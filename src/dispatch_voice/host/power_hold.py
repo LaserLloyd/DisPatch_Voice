@@ -43,6 +43,8 @@ MIN_REHOLD_GAP_S = 10.0
 #: How often the holder double-checks that its hold still exists.
 CHECK_EVERY_S = 10.0
 HOLDABLE = ("power-saver", "performance")
+#: SIGHUP does not exist on Windows (the fake-bus child is exercised there by the tests).
+_SIGNALS = tuple(getattr(signal, n) for n in ("SIGTERM", "SIGINT", "SIGHUP") if hasattr(signal, n))
 
 
 def emit(event: str, **fields) -> None:
@@ -258,7 +260,7 @@ def _run_glib(bus, profile: str) -> int:
 
     GLib.io_add_watch(sys.stdin.fileno(), GLib.PRIORITY_DEFAULT,
                       GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, on_stdin)
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    for sig in _SIGNALS:
         _signal_add(GLib, GLib.PRIORITY_HIGH, sig, quit_)
     try:
         loop.run()
@@ -285,6 +287,37 @@ def _signal_add(GLib, priority: int, signum: int, handler) -> None:
         GLib.unix_signal_add(priority, signum, handler)
 
 
+def _stdin_waiter(fd: int, tick_s: float):
+    """``wait() -> bool``: block up to ``tick_s`` for input on ``fd``; True once it hits EOF.
+    POSIX polls the pipe with select(); Windows cannot select() on a pipe, so a reader
+    thread does the blocking read and sets an event."""
+    if os.name != "nt":
+        def wait() -> bool:
+            ready, _, _ = select.select([fd], [], [], tick_s)
+            if not ready:
+                return False
+            try:
+                return not os.read(fd, 4096)
+            except OSError:
+                return True
+        return wait
+
+    import threading
+    eof = threading.Event()
+
+    def reader() -> None:
+        while True:
+            try:
+                if not os.read(fd, 4096):
+                    break
+            except OSError:
+                break
+        eof.set()
+
+    threading.Thread(target=reader, daemon=True, name="power-hold-stdin").start()
+    return lambda: eof.wait(tick_s)
+
+
 def _run_select(bus, profile: str, *, tick_s: float = 0.2) -> int:
     """The same protocol without GLib (the fake bus has no signals): hold,
     periodic check, end on stdin EOF. Lets the pipe protocol be tested on
@@ -297,21 +330,15 @@ def _run_select(bus, profile: str, *, tick_s: float = 0.2) -> int:
     def on_signal(*_a):
         stopping["now"] = True
 
-    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    for sig in _SIGNALS:
         signal.signal(sig, on_signal)
-    fd = sys.stdin.fileno()
+    wait_stdin = _stdin_waiter(sys.stdin.fileno(), tick_s)
     next_check = time.monotonic() + CHECK_EVERY_S
     rehold_at: float | None = None
     try:
         while not stopping["now"]:
-            ready, _, _ = select.select([fd], [], [], tick_s)
-            if ready:
-                try:
-                    data = os.read(fd, 4096)
-                except OSError:
-                    data = b""
-                if not data:
-                    break
+            if wait_stdin():                       # EOF: the add-on closed the pipe
+                break
             now = time.monotonic()
             if rehold_at is not None and now >= rehold_at:
                 rehold_at = None

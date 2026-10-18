@@ -55,12 +55,12 @@ def rt_status_out(power_hold="performance"):
 
 def voice_yaml(ctx) -> dict:
     p = ctx.paths.voice_yaml
-    return yaml.safe_load(p.read_text()) if p.exists() else {}
+    return yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 def write_yaml(ctx, text: str) -> None:
     ctx.paths.voice_yaml.parent.mkdir(parents=True, exist_ok=True)
-    ctx.paths.voice_yaml.write_text(text)
+    ctx.paths.voice_yaml.write_text(text, encoding="utf-8")
 
 
 async def _noop_apply(was_on, settings):
@@ -547,8 +547,8 @@ def test_a_builtin_provider_describes_itself_and_releases(host_env, monkeypatch)
     assert "bogus" not in registry.builtin_info()
     routes.release_models()
     assert released == [1]
-    assert registry.ExtensionAPI(None, None).api_version == 3
-    assert registry.ExtensionAPI().api_version == 3
+    assert registry.ExtensionAPI(None, None).api_version == 4
+    assert registry.ExtensionAPI().api_version == 4
 
 
 def test_cache_tags_are_plain_names_and_old_ones_are_pruned(host_env):

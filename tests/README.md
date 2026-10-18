@@ -18,6 +18,15 @@ loaded models exits through `os._exit` with pytest's own status once the report 
 (ONNX Runtime's thread pools could abort the interpreter's teardown with exit 134 after
 every test passed); `DISPATCH_VOICE_TEST_HARD_EXIT=0` turns that off.
 
+**Windows.** The suite runs on Windows (CI has a job for it). Three rules keep it that way:
+file-mode assertions go through `fakes.assert_private` / `make_private` (a POSIX mode on Linux, the
+ACL on Windows: `src/dispatch_voice/fsperm.py`); every text file is read and written with
+`encoding="utf-8"`; and tests never wait with `asyncio.sleep(<15 ms)` - the event loop fires a
+timer shorter than the clock tick (15.6 ms on Windows) immediately, so such a wait returns at
+once. Use `settling.pause` / `settle` for real time, and `settling.wait_until(cond)` wherever the
+test can say WHAT it waits for. Settings tests set `DISPATCH_VOICE_*` through `monkeypatch`
+only: the environment now beats `voice.yaml`.
+
 The browser harnesses use Playwright's own Chromium unless `--chrome PATH` or
 `DISPATCH_E2E_CHROME` names another; results and screenshots go to `.e2e-out/`
 (git-ignored) unless `--out` / `--shots` say otherwise. `e2e_browser.py --target

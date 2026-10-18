@@ -98,7 +98,7 @@ async def test_a_fixture_clip_is_heard_answered_and_spoken(real_env):
         await asyncio.sleep(0.1)
     await ctx.drain()
     transcripts = ws.json_of("transcript")
-    baseline = json.loads((FIXTURES / "transcripts.json").read_text())["16k"]["short"]
+    baseline = json.loads((FIXTURES / "transcripts.json").read_text(encoding="utf-8"))["16k"]["short"]
     assert transcripts and transcripts[0]["text"] == baseline
     rows = ctx.db().messages("t-voice-1")
     assert rows[0].role == "user" and rows[0].metadata == {"voice": True} and rows[0].content == baseline

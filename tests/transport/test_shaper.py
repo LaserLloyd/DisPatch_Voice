@@ -7,6 +7,7 @@ import pytest
 import shaper
 
 from .conftest import free_ports
+from settling import pause
 
 
 class Sink:
@@ -62,7 +63,7 @@ async def test_rate_and_delay_are_honoured():
         w.write(b"\x00" * 25_000)                       # 25 KB at 200 kbps + 134 B/1280 B overhead
         await w.drain()
         while sink.total < 25_000:
-            await asyncio.sleep(0.01)
+            await pause(0.01)
         took = time.monotonic() - t0
         expect = (25_000 + 134 * 20) * 8 / 200_000 + 0.1
         assert took == pytest.approx(expect, rel=0.12), took
@@ -79,7 +80,7 @@ async def test_stall_holds_bytes_then_delivers_them():
         w.write(b"x" * 1000)
         await w.drain()
         while sink.total < 1000:
-            await asyncio.sleep(0.01)
+            await pause(0.01)
         assert time.monotonic() - t0 >= 0.55            # held for the stall, then delivered
         w.close()
 
@@ -120,7 +121,7 @@ async def test_blackout_refuses_new_connections_and_loses_what_a_closed_socket_q
         for _ in range(100):
             if sink.total >= 10:
                 break
-            await asyncio.sleep(0.01)
+            await pause(0.01)
         assert sink.total == 10
         w3.close()
 
@@ -140,7 +141,7 @@ async def test_an_aborted_full_connection_does_not_starve_the_next_one():
                 for _ in range(200):
                     writer.write(b"A" * 4096)
                     await writer.drain()
-                    await asyncio.sleep(0.01)
+                    await pause(0.01)
         else:
             writer.write(b"UPGRADE\n")
             await writer.drain()
@@ -164,7 +165,7 @@ async def test_an_aborted_full_connection_does_not_starve_the_next_one():
         for _ in range(100):
             if proxy.down.queued == 0:
                 break
-            await asyncio.sleep(0.02)
+            await pause(0.02)
         assert proxy.down.queued == 0                 # nothing phantom left on the shared link
         r2, w2 = await asyncio.open_connection("127.0.0.1", pport)
         t1 = time.monotonic()

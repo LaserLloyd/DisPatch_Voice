@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from fakes import assert_private
+
 from dispatch_voice.transport.cursor import FILENAME, CommitCursor
 
 SRC = str(Path(__file__).resolve().parents[2] / "src")
@@ -100,8 +102,8 @@ def test_file_is_private(tmp_path):
     state = tmp_path / "ext" / "voice"
     c = CommitCursor(state)
     c.set("k", 1)
-    assert stat.S_IMODE(os.stat(state).st_mode) == 0o700
-    assert stat.S_IMODE(os.stat(state / FILENAME).st_mode) == 0o600
+    assert_private(state, directory=True)
+    assert_private(state / FILENAME)
 
 
 def test_set_costs_at_most_a_millisecond(tmp_path):
@@ -151,7 +153,7 @@ def test_corrupt_file_is_moved_aside(tmp_path, caplog):
 
 def test_unwritable_location_falls_back_to_memory(tmp_path):
     blocker = tmp_path / "file"
-    blocker.write_text("x")
+    blocker.write_text("x", encoding="utf-8")
     c = CommitCursor(blocker / "sub")                   # parent is a file: cannot mkdir
     c.set("k", 9)
     assert c.get("k") == 9 and not c.persistent

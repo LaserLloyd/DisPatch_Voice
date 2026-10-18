@@ -18,6 +18,7 @@ from dispatch_voice.host import power, rig, routes, vad_turn
 from dispatch_voice.host import ws as ws_mod
 from dispatch_voice.host.engines import chatterbox
 from dispatch_voice.host.engines.rig_tts import ReplyEngine
+from settling import pause, settle
 
 THREAD = "t-voice-1"
 
@@ -47,10 +48,6 @@ async def fake_rig():
     finally:
         await r.stop()
 
-
-async def settle(n=30):
-    for _ in range(n):
-        await asyncio.sleep(0.005)
 
 
 @pytest.fixture

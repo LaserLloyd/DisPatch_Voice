@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -142,10 +143,10 @@ def test_doctor_all_good_is_zero(env, monkeypatch, capsys):
 def test_doctor_reads_ext_api_from_a_backend_dir_without_importing_it(env, capsys):
     backend = env / "backend"
     (backend / "app").mkdir(parents=True)
-    (backend / "app" / "extensions.py").write_text("import nothing_importable\nEXT_API = 1   # handshake\n")
+    (backend / "app" / "extensions.py").write_text("import nothing_importable\nEXT_API = 1   # handshake\n", encoding="utf-8")
     d = cli.probe_dispatch_import(backend)
     assert d == {"importable": False, "ext_api": 1, "compatible": True, "source": "file"}
-    (backend / "app" / "extensions.py").write_text("EXT_API = 7\n")
+    (backend / "app" / "extensions.py").write_text("EXT_API = 7\n", encoding="utf-8")
     assert cli.probe_dispatch_import(backend)["compatible"] is False
     assert cli.probe_dispatch_import(env / "nowhere") == {"importable": False, "ext_api": None,
                                                            "compatible": None, "source": None}
@@ -201,7 +202,7 @@ def test_doctor_backend_probes_use_fixed_argv_offline_and_without_sync(env, monk
     assert out["overlay_resolvable_offline"]["ok"] is False
     assert "network unreachable" in out["overlay_resolvable_offline"]["detail"]
     for argv, cwd in seen:
-        assert cwd == env / "backend" and argv[0].endswith("uv")
+        assert cwd == env / "backend" and Path(argv[0]).stem == "uv"
         assert argv[1:5] == ["run", "--offline", "--no-sync"] or argv[1:4] == ["run", "--offline", "--no-sync"]
         assert "python" in argv and "-c" in argv
     assert any("--with-editable" in argv and str(env / "checkout") in argv for argv, _ in seen)
@@ -263,7 +264,7 @@ def test_doctor_loads_a_plugin_that_mounts_routes(env, monkeypatch, capsys, tmp_
                    "    r = APIRouter()\n"
                    "    @r.get('/ping')\n"
                    "    def ping(): return {'ok': True}\n"
-                   "    api.include_router(r, prefix='/xyz')\n")
+                   "    api.include_router(r, prefix='/xyz')\n", encoding="utf-8")
     monkeypatch.syspath_prepend(str(tmp_path))
     sys.modules.pop("doctor_plugin_xyz", None)
     monkeypatch.setenv("DISPATCH_VOICE_EXTENSIONS", "doctor_plugin_xyz:setup")

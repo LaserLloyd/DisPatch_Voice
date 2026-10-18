@@ -13,6 +13,7 @@ import pytest
 
 from dispatch_voice import transport
 from dispatch_voice.transport import RelayIndicator, Transport, gen_older, opus, wire3
+from settling import pause
 
 needs_opus = pytest.mark.skipif(not opus.available(), reason="libopus not installed")
 RACE = Path(__file__).with_name("race_close.py")
@@ -100,7 +101,7 @@ async def test_close_is_bounded_when_a_send_is_stuck(monkeypatch):
     ws = StuckWS()
     t = Transport(ws, proto=3, codec_out="pcm16")
     sender = asyncio.create_task(t.send_audio(kind="reply", gen=0, seq=1, pcm16=tone(0.2), t_ms=0))
-    await asyncio.sleep(0.02)
+    await pause(0.02)
     t0 = time.monotonic()
     await t.close()
     assert time.monotonic() - t0 < 1.0

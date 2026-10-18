@@ -1,7 +1,7 @@
 // Voice chat settings (owner: track T7): the device blob and its migration
 // (C-§F.3), the `start` frame (C-§C.3), Settings → Voice (SPEC §7.1: 19 rows
 // in 6 groups + a collapsed Status), the quick sheet (§7.3), the Bots-tab
-// popover (§7.4) and the add-on's locale bundles (C-§E.3, the rename).
+// Bots-tab pill (§7.4, a link to Voices per character since 1.6.0) and the add-on's locale bundles (C-§E.3, the rename).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ import {
   normalizeDriveSettings, onDriveSettings, startPayload, cursorFrom, clampSpeed, parseVoice, voiceName,
   voiceOptions, engineLine, voiceTabState, setupSteps, phoneVoiceRowMode, hasPhoneVoice, rpOptions,
   narratorOptions, sessionLines, mountDriveSettings, buildQuickSheet, botVoicePill, setBotVoice,
-  RP_MODES, VOICE_REPO_URL, mergeInto, saveErrorText, placePopover, followUpValue, POPOVER_GUTTER,
+  RP_MODES, VOICE_REPO_URL, mergeInto, saveErrorText, followUpValue, focusCharacter,
 } from '../../src/dispatch_voice/static/drive-settings.js';
 import { bindShell } from '../../src/dispatch_voice/static/shell.js';
 
@@ -268,6 +268,7 @@ test('every literal key the client uses exists in all 8 bundles (dynamic familie
   for (const s of ['off', 'sometimes', 'often']) used.add(`drive.acks_${s}`);
   for (const s of RP_MODES) used.add(`drive.rp_${s}`);
   for (const s of ['parakeet', 'moonshine']) used.add(`vtools.stt_${s}`);
+  for (const s of ["auto", "chatterbox", "minimax"]) used.add(`drive.tts_${s}`);
   for (const lang of langs) {
     const keys = new Set(flat(loadBundle(lang)).map(([k]) => k));
     const missing = [...used].filter((k) => !keys.has(k));
@@ -293,7 +294,7 @@ function rowsOf(host, groupSel = 'section.dev-group') {
   }));
 }
 
-test('Settings → Voice: 21 rows in 6 groups + a collapsed Status (SPEC §7.1, 1.2.0: + Type instead of talking, 1.5.0: + Interrupt sensitivity)', dom, () => withDom(async () => {
+test('Settings → Voice (1.6.0): switch, then 1 speech to text, 2 text to speech, 3 input and devices, 4 voices per character, then models and the device groups, and a collapsed Status', dom, () => withDom(async () => {
   const { shell } = fakeShell();
   const prev = bindShell(shell);
   try {
@@ -303,22 +304,24 @@ test('Settings → Voice: 21 rows in 6 groups + a collapsed Status (SPEC §7.1, 
     const voices = [{ name: 'Alex', lang: 'en-US', localService: true, voiceURI: 'alex' }];
     mountDriveSettings(host, { status: ON_STATUS(), cloning: true, bots: () => [], voices, android: false, setEnabled: async () => true });
     const groups = rowsOf(host);
-    assert.equal(groups.length, 6, groups.map((g) => g.id).join());
-    assert.deepEqual(groups.map((g) => g.id), ['drive-group-switch', 'drive-group-voices', 'drive-group-listening',
-      'drive-group-replies', 'drive-group-connection', 'drive-group-device']);
-    const total = groups.reduce((n, g) => n + g.rows.length, 0);
-    assert.equal(total, 21, JSON.stringify(groups));
-    assert.deepEqual(groups[2].rows, ['drive-patience', 'drive-barge-in', 'drive-interrupt-sensitivity', 'drive-auto-listen',
-      'drive-typed-input', 'drive-mic']);
-    assert.deepEqual(groups[1].rows, ['drive-default-voice', 'drive-speed', 'drive-rp', 'drive-narrator', 'drive-manage-voices']);
-    assert.deepEqual(groups[3].rows, ['drive-reply-length', 'drive-follow-up', 'drive-reactions', 'drive-tones']);
-    assert.deepEqual(groups[4].rows, ['drive-slow', 'drive-phone-voice']);
-    assert.deepEqual(groups[5].rows, ['drive-screen-on', 'drive-captions', 'drive-hangup-quiet']);
+    assert.deepEqual(groups.map((g) => g.id), ['drive-group-switch', 'drive-group-stt', 'drive-group-tts', 'drive-group-input',
+      'drive-group-characters', 'drive-group-models', 'drive-group-replies', 'drive-group-connection', 'drive-group-device']);
+    const byId = Object.fromEntries(groups.map((g) => [g.id, g.rows]));
+    assert.deepEqual(byId['drive-group-stt'].slice(0, 2), ['drive-stt-provider-row', 'drive-stt-engine-row']);
+    assert.deepEqual(byId['drive-group-tts'].slice(0, 2), ['drive-tts-provider-row', 'drive-tts-engine-row']);
+    assert.deepEqual(byId['drive-group-tts'].slice(2), ['drive-default-voice', 'drive-speed', 'drive-rp', 'drive-narrator',
+      'drive-manage-voices', 'drive-plugins-row']);
+    assert.deepEqual(byId['drive-group-input'], ['drive-input-mode', 'drive-patience', 'drive-barge-in',
+      'drive-interrupt-sensitivity', 'drive-mic', 'drive-mic-test-row']);
+    assert.deepEqual(byId['drive-group-replies'], ['drive-reply-length', 'drive-follow-up', 'drive-reactions', 'drive-tones']);
+    assert.deepEqual(byId['drive-group-connection'], ['drive-slow', 'drive-phone-voice']);
+    assert.deepEqual(byId['drive-group-device'], ['drive-screen-on', 'drive-captions', 'drive-hangup-quiet']);
     const status = host.querySelector('details#drive-group-status');
     assert.ok(status, 'Status is a <details>');
     assert.equal(status.open, false, 'collapsed');
     const statusRows = [...status.querySelectorAll('.dev-row')].map((r) => r.id);
     for (const id of ['drive-engine', 'drive-thinking', 'drive-show-timings', 'drive-expressive', 'drive-sessions']) assert.ok(statusRows.includes(id), id);
+    assert.equal(statusRows.includes('drive-speaker'), false, 'the speaker picker moved to Input and devices');
     assert.match(host.querySelector('#drive-sessions').textContent, /1 of 3 open/);
     // The switch row says the engines are English-only (H3).
     assert.match(host.querySelector('#drive-switch').textContent, /English only/);
@@ -495,39 +498,111 @@ test('setBotVoice refuses an unknown bot', async () => {
   try { await assert.rejects(setBotVoice('zz', 'p1')); } finally { globalThis.fetch = saved; }
 });
 
-// ------------------------------------------------------------ Bots popover ---
+// ------------------------------------------------- Bots pill and characters ---
 
-test('Bots popover: voice and role-play text wait for Save (onChange); the two switches save at once to voice.yaml', dom, async () => {
+test('Bots pill (1.6.0): shows the voice and is a link to Voices per character; no popover', dom, () => withDom(async () => {
+  const { shell } = fakeShell();
+  const prev = bindShell(shell);
+  try {
+    const opened = [];
+    const pill = botVoicePill({ id: 'atlas', name: 'Atlas', voice: 'p1', voice_rp: '' }, ON_STATUS(), () => {},
+      { openCharacter: (id) => opened.push(id) });
+    document.body.append(pill);
+    const btn = pill.querySelector('.bm-voice-pill');
+    assert.match(btn.textContent, /Robin/);
+    assert.equal(btn.hasAttribute('aria-haspopup'), false);
+    assert.equal(btn.hasAttribute('aria-expanded'), false);
+    btn.click();
+    assert.deepEqual(opened, ['atlas']);
+    assert.equal(pill.querySelector('.bm-voice-pop'), null, 'nothing opens in place');
+    const unset = botVoicePill({ id: 'b', name: 'B', voice: '', voice_rp: '' }, ON_STATUS(), () => {});
+    assert.equal(unset.querySelector('.bm-voice-pill').classList.contains('on'), false);
+    unset.querySelector('.bm-voice-pill').click();   // no handler: harmless
+  } finally { bindShell(prev); }
+}));
+
+const CHAR_BOTS = () => [{ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '', visible: true }];
+
+test('Voices per character: every row saves at once — voice and role-play text through the bot route, the rest to voice.yaml', dom, async () => {
+  const roster = [{ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '' }, { id: 'zed', name: 'Zed', voice: 'p1', voice_rp: '' }];
+  const fetch = fakeFetch({
+    'PATCH /api/voice/settings': (req) => req.body,
+    'GET /api/bots/all': { bots: roster },
+    'PUT /api/bots/order': (req) => ({ bots: req.body.bots }),
+  });
+  await withDom(async () => {
+    const { shell } = fakeShell();
+    const prev = bindShell(shell);
+    try {
+      const host = document.createElement('div');
+      document.body.append(host);
+      const st = { ...ON_STATUS(), bots: { atlas: { backchannel: false, follow_up: true } } };
+      mountDriveSettings(host, { status: st, bots: () => CHAR_BOTS(), voices: [], android: false, setRoster: () => {} });
+      const card = host.querySelector('#drive-char-atlas');
+      assert.ok(card, 'one card per character, in the fourth section');
+      assert.equal(host.querySelector('#drive-group-characters').contains(card), true);
+      const voiceSel = card.querySelector('#drive-char-atlas-voice select');
+      const rpSel = card.querySelector('#drive-char-atlas-rp select');
+      voiceSel.value = 'p1'; voiceSel.dispatchEvent(new Event('change'));
+      await settle();
+      let put = fetch.calls.find((c) => c.method === 'PUT');
+      assert.deepEqual(put.body.bots, [{ id: 'atlas', order: 0, voice: 'p1' }, { id: 'zed', order: 1 }]);
+      rpSel.value = 'skip_actions'; rpSel.dispatchEvent(new Event('change'));
+      await settle();
+      put = fetch.calls.filter((c) => c.method === 'PUT')[1];
+      assert.deepEqual(put.body.bots[0], { id: 'atlas', order: 0, voice_rp: 'skip_actions' });
+      const [bc] = card.querySelectorAll('#drive-char-atlas-bc input.dev-switch');
+      bc.checked = true; bc.dispatchEvent(new Event('change'));
+      await settle();
+      assert.deepEqual(fetch.calls.find((c) => c.method === 'PATCH').body, { bots: { atlas: { backchannel: true } } });
+    } finally { bindShell(prev); }
+  }, { fetch });
+});
+
+test('Voices per character: "Voice on locked devices" starts on Same as standard, saves at once, and clears with ""', dom, async () => {
   const fetch = fakeFetch({ 'PATCH /api/voice/settings': (req) => req.body });
   await withDom(async () => {
     const { shell } = fakeShell();
     const prev = bindShell(shell);
     try {
-      const changes = [];
+      const host = document.createElement('div');
+      document.body.append(host);
       const st = { ...ON_STATUS(), bots: { atlas: { backchannel: false, follow_up: true } } };
-      const pill = botVoicePill({ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '' }, st, (p) => changes.push(p));
-      document.body.append(pill);
-      const btn = pill.querySelector('.bm-voice-pill');
-      assert.equal(btn.getAttribute('aria-expanded'), 'false');
-      btn.click();
-      const pop = pill.querySelector('.bm-voice-pop');
-      assert.ok(pop);
-      const [voiceSel, rpSel] = pop.querySelectorAll('select');
-      voiceSel.value = 'p1'; voiceSel.dispatchEvent(new Event('change'));
-      rpSel.value = 'skip_actions'; rpSel.dispatchEvent(new Event('change'));
-      assert.deepEqual(changes, [{ voice: 'p1' }, { voice_rp: 'skip_actions' }]);
-      assert.equal(fetch.calls.length, 0, 'nothing saved yet: the Bots tab Save sends them');
-      assert.match(btn.textContent, /Robin/);
-      const [bc] = pop.querySelectorAll('input.dev-switch');
-      bc.checked = true; bc.dispatchEvent(new Event('change'));
+      mountDriveSettings(host, { status: st, bots: () => CHAR_BOTS(), voices: [], android: false });
+      const row = host.querySelector('#drive-char-atlas-locked');
+      const sel = row.querySelector('select');
+      assert.ok(sel, 'the picker is in the character card');
+      assert.equal(sel.value, '', 'default: Same as standard');
+      assert.equal(sel.options[0].value, '');
+      assert.equal(sel.options[0].textContent, EN_LOCKED_SAME);
+      assert.ok(sel.options.length > 2, 'then the normal voice list');
+      assert.ok(row.querySelector('.drive-preview'), 'with a preview button');
+      sel.value = 'p1'; sel.dispatchEvent(new Event('change'));
       await settle();
-      assert.deepEqual(fetch.calls[0].body, { bots: { atlas: { backchannel: true } } });
-      // Escape closes it.
-      pop.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      assert.equal(pill.querySelector('.bm-voice-pop'), null);
+      assert.deepEqual(fetch.calls[0].body, { bots: { atlas: { locked_voice: 'p1' } } });
+      sel.value = ''; sel.dispatchEvent(new Event('change'));
+      await settle();
+      assert.deepEqual(fetch.calls[1].body, { bots: { atlas: { locked_voice: '' } } });
     } finally { bindShell(prev); }
   }, { fetch });
 });
+
+test('Voices per character: a saved locked voice is shown selected; focusCharacter opens the card', dom, () => withDom(async () => {
+  const { shell } = fakeShell();
+  const prev = bindShell(shell);
+  try {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const st = { ...ON_STATUS(), bots: { atlas: { locked_voice: 'p1' } } };
+    mountDriveSettings(host, { status: st, bots: () => CHAR_BOTS(), voices: [], android: false });
+    assert.equal(host.querySelector('#drive-char-atlas-locked select').value, 'p1');
+    const card = host.querySelector('#drive-char-atlas');
+    assert.equal(card.open, false);
+    assert.equal(focusCharacter(host, 'atlas'), true);
+    assert.equal(card.open, true, 'the pill lands on an open card');
+    assert.equal(focusCharacter(host, 'nobody'), false);
+  } finally { bindShell(prev); }
+}));
 
 // ------------------------------------------------------ review fixes ---
 
@@ -595,59 +670,6 @@ test('save errors name the server\'s reason for a refusal, cut to length (review
   } finally { bindShell(prev); }
 }));
 
-test('Bots popover: kept inside the scrolling pane — shifted right at phone width, narrowed when needed (review M2)', dom, () => withDom(async () => {
-  const { shell } = fakeShell();
-  const prev = bindShell(shell);
-  try {
-    // jsdom has no layout: give the pane, the pill and the popover the boxes
-    // the real shell measured at 390 px (popover −246…94, pane 0…390).
-    const pane = document.createElement('div');
-    pane.style.overflowY = 'auto'; pane.style.overflowX = 'auto';
-    document.body.append(pane);
-    const pill = botVoicePill({ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '' }, ON_STATUS(), () => {});
-    pane.append(pill);
-    const box = (l, r) => () => ({ left: l, right: r, width: r - l, top: 0, bottom: 10, height: 10, x: l, y: 0 });
-    pane.getBoundingClientRect = box(0, 390);
-    pill.getBoundingClientRect = box(60, 94);
-    let pop = null;
-    const origAppend = pill.append.bind(pill);
-    pill.append = (...nodes) => {
-      for (const n of nodes) if (n.classList && n.classList.contains('bm-voice-pop')) {
-        pop = n;
-        n.getBoundingClientRect = () => {
-          const maxW = parseFloat(n.style.maxWidth) || 340;
-          const w = Math.min(340, maxW);
-          const a = pill.getBoundingClientRect();
-          const left = n.style.left ? a.left + parseFloat(n.style.left) : a.right - w;
-          return { left, right: left + w, width: w, top: 0, bottom: 300, height: 300, x: left, y: 0 };
-        };
-      }
-      return origAppend(...nodes);
-    };
-    pill.querySelector('.bm-voice-pill').click();
-    assert.ok(pop, 'opened');
-    const r = pop.getBoundingClientRect();
-    assert.equal(r.left, POPOVER_GUTTER, 'pinned to the pane\'s left gutter');
-    assert.ok(r.right <= 390 - POPOVER_GUTTER, `right ${r.right}`);
-    assert.equal(pop.style.right, 'auto');
-    // A pane narrower than the popover: it narrows to fit.
-    pill.querySelector('.bm-voice-pill').click();
-    pane.getBoundingClientRect = box(0, 300);
-    pill.querySelector('.bm-voice-pill').click();
-    const r2 = pop.getBoundingClientRect();
-    assert.equal(r2.width, 300 - 2 * POPOVER_GUTTER);
-    assert.equal(r2.left, POPOVER_GUTTER);
-    // Plenty of room (desktop): left where the stylesheet put it.
-    pill.querySelector('.bm-voice-pill').click();
-    pane.getBoundingClientRect = box(0, 1366);
-    pill.getBoundingClientRect = box(900, 934);
-    pop = null;
-    pill.querySelector('.bm-voice-pill').click();
-    assert.equal(pop.style.left, '');
-    assert.equal(typeof placePopover, 'function');
-  } finally { bindShell(prev); }
-}));
-
 test('phone voice labels spell the region out: "English (United States)" (SPEC §5.4)', async () => {
   const { langLabel } = await import('../../src/dispatch_voice/static/drive-settings.js');
   assert.equal(langLabel('en_US', 'en'), 'English (United States)');
@@ -681,8 +703,9 @@ test('Settings → Voice: every control is described by its hint; server-wide gr
     const groupHint = (id) => host.querySelector(`#${id} > .dev-group-hint`);
     const EN = loadBundle('en');
     assert.equal(groupHint('drive-group-switch').textContent, EN.drive.group_server_hint);
-    assert.equal(groupHint('drive-group-voices').textContent, EN.drive.group_server_hint);
-    assert.equal(groupHint('drive-group-listening'), null, 'device groups carry no server hint');
+    assert.equal(groupHint('drive-group-tts').textContent, EN.drive.group_tts_hint);
+    assert.equal(groupHint('drive-group-input').textContent, EN.drive.group_input_hint);
+    assert.equal(groupHint('drive-group-replies'), null, 'device groups carry no server hint');
   } finally { bindShell(prev); }
 }));
 
@@ -700,47 +723,5 @@ test('quick sheet: without a phone voice the slow-link row shows what will reall
     }
     localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, slowLink: 'wait' }));
     assert.equal(chosen(buildQuickSheet({ status: ON_STATUS(), bot: null, voices: [], android: false, lang: 'en' })), 'wait');
-  } finally { bindShell(prev); }
-}));
-
-test('Bots popover: "Voice on locked devices" starts on Same as standard, saves at once to voice.yaml, and clears with ""', dom, async () => {
-  const fetch = fakeFetch({ 'PATCH /api/voice/settings': (req) => req.body });
-  await withDom(async () => {
-    const { shell } = fakeShell();
-    const prev = bindShell(shell);
-    try {
-      const changes = [];
-      const st = { ...ON_STATUS(), bots: { atlas: { backchannel: false, follow_up: true } } };
-      const pill = botVoicePill({ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '' }, st, (p) => changes.push(p));
-      document.body.append(pill);
-      pill.querySelector('.bm-voice-pill').click();
-      const pop = pill.querySelector('.bm-voice-pop');
-      const sel = pop.querySelector('#bm-locked-voice-atlas select');
-      assert.ok(sel, 'the picker is in the popover');
-      assert.equal(sel.value, '', 'default: Same as standard');
-      assert.equal(sel.options[0].value, '');
-      assert.equal(sel.options[0].textContent, EN_LOCKED_SAME);
-      assert.ok(sel.options.length > 2, 'then the normal voice list');
-      assert.ok(pop.querySelector('#bm-locked-voice-atlas .drive-preview'), 'with a preview button');
-      sel.value = 'p1'; sel.dispatchEvent(new Event('change'));
-      await settle();
-      assert.deepEqual(fetch.calls[0].body, { bots: { atlas: { locked_voice: 'p1' } } });
-      assert.deepEqual(changes, [], 'not a DisPatch bot field: it never waits for the Bots Save');
-      sel.value = ''; sel.dispatchEvent(new Event('change'));
-      await settle();
-      assert.deepEqual(fetch.calls[1].body, { bots: { atlas: { locked_voice: '' } } });
-    } finally { bindShell(prev); }
-  }, { fetch });
-});
-
-test('Bots popover: a saved locked voice is shown selected', dom, () => withDom(async () => {
-  const { shell } = fakeShell();
-  const prev = bindShell(shell);
-  try {
-    const st = { ...ON_STATUS(), bots: { atlas: { locked_voice: 'p1' } } };
-    const pill = botVoicePill({ id: 'atlas', name: 'Atlas', voice: '', voice_rp: '' }, st, () => {});
-    document.body.append(pill);
-    pill.querySelector('.bm-voice-pill').click();
-    assert.equal(pill.querySelector('#bm-locked-voice-atlas select').value, 'p1');
   } finally { bindShell(prev); }
 }));

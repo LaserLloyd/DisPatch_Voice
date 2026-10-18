@@ -159,8 +159,8 @@ def main() -> int:
     base = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
     model = os.environ.get("VOICE_META_MODEL", "MiniMax-M3")
     owner = a.owner
-    adv = (a.advisor_persona.read_text() if a.advisor_persona else ADVISOR_PERSONA).replace("{owner}", owner)
-    comp = (a.companion_persona.read_text() if a.companion_persona else COMPANION_PERSONA).replace("{owner}", owner)
+    adv = (a.advisor_persona.read_text(encoding="utf-8") if a.advisor_persona else ADVISOR_PERSONA).replace("{owner}", owner)
+    comp = (a.companion_persona.read_text(encoding="utf-8") if a.companion_persona else COMPANION_PERSONA).replace("{owner}", owner)
 
     common = {"profile_tags": False, "style": "normal", "extension_persona": None, "owner": owner}
     sys_v = build(Bot("advisor", "Sage", "advisor"), backend="advisor", follow_up=None,
@@ -208,7 +208,7 @@ def main() -> int:
         rows = list(ex.map(run, jobs))
     ok_rows = [r for r in rows if "reply" in r]
     if a.out:
-        a.out.write_text(json.dumps(rows, indent=1, ensure_ascii=False))
+        a.out.write_text(json.dumps(rows, indent=1, ensure_ascii=False), encoding="utf-8")
     if not ok_rows:
         print("no replies (all calls failed)", file=sys.stderr)
         return 2

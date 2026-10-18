@@ -481,8 +481,8 @@ body.drive-open .modal-backdrop { z-index: 1050; }
 .drive-timings { font-size: 12px; line-height: 1.4; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .drive-timings[hidden] { display: none; }
 
-/* The Voice pill on a Bots-tab card (.bm-safe-btn) and its popover, which is
-   the app's .menu surface holding ordinary .dev-row rows. */
+/* The Voice pill on a Bots-tab card (.bm-safe-btn): a link to Settings → Voice → Voices per
+   character since 1.6.0 (it used to open a popover). */
 /* The add-on's slot in a Bots-tab row: hidden while voice is off, otherwise
    transparent to the row's flex layout. */
 .bm-voice-host:not([hidden]) { display: contents; }
@@ -491,24 +491,43 @@ body.drive-open .modal-backdrop { z-index: 1050; }
 .bm-voice-pill .rail-icon { width: 12px; height: 12px; flex: none; }
 .bm-voice-word { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bm-voice-pill:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 2px; }
-.menu.bm-voice-pop {
-  top: calc(100% + 6px); inset-inline-end: 0; z-index: 70;
-  width: min(340px, calc(100vw - 32px)); padding: 0; overflow: visible;
+
+/* ------------------------------------------- Settings → Voice, 1.6.0 sections */
+/* "Set by environment (NAME)": the server's environment decides, so the control is disabled. */
+.drive-env-badge {
+  display: inline-block; margin-block-start: 4px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; line-height: 1.6; background: var(--accent-subtle); color: var(--accent-text);
+  border: 1px solid color-mix(in oklab, var(--accent-text) 35%, transparent); overflow-wrap: anywhere;
 }
-.bm-voice-pop > .dev-group-body { border: 0; border-radius: var(--radius-md) var(--radius-md) 0 0; }
-.bm-voice-pop .dev-row { padding: 10px 12px; }
-.bm-voice-pop .dev-row > .drive-select { flex: 1 1 auto; max-width: 60%; min-width: 0; }
-/* The popover is DisPatch's .menu, whose buttons are borderless menu items:
-   the ▶ keeps the Settings button's chrome, and a voice row wraps so its
-   select gets the full width instead of truncating the voice name (FR-ux L1). */
-.bm-voice-pop .drive-preview {
-  border: 1px solid var(--border-strong); background: var(--bg-tertiary); padding: 0;
-  display: inline-grid; place-items: center;
+.drive-env-locked input:disabled, .drive-env-locked select:disabled, .drive-env-locked button:disabled { cursor: not-allowed; opacity: .65; }
+/* Free-text fields (addresses, model names, the write-only token) with their Save button. */
+.drive-text {
+  flex: 1 1 14em; min-width: 0; max-width: 100%; min-height: 36px; padding: 0 10px; box-sizing: border-box;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--bg-input, var(--bg-secondary)); color: var(--text-primary); font: inherit; font-size: 13.5px;
 }
-.bm-voice-pop .dev-row:has(> .drive-select + .drive-preview) { flex-wrap: wrap; }
-.bm-voice-pop .dev-row:has(> .drive-select + .drive-preview) > .dev-row-text { flex-basis: 100%; }
-.bm-voice-pop .dev-row:has(> .drive-select + .drive-preview) > .drive-select { max-width: none; flex: 1 1 0; }
-.bm-voice-note { margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--border-strong); }
+.drive-text:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 1px; border-color: var(--accent); }
+.dev-row-action > .drive-text { order: 3; }
+.drive-save { min-height: 36px; }
+.drive-health { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-secondary); }
+.drive-health-down, .drive-health-unconfigured { color: var(--danger-text, var(--text-primary)); }
+.drive-health-degraded { color: var(--warning-text, var(--text-primary)); }
+.drive-health strong { font-weight: 600; }
+.drive-rig-details { margin: 6px 0 0; }
+.drive-rig-details > summary { cursor: pointer; padding: 10px 12px; font-size: 13.5px; font-weight: 600; color: var(--accent-text); }
+.drive-rig-shared { margin: 6px 12px; }
+.drive-plugins { display: block; margin-block-start: 6px; }
+.drive-plugins .dev-row { border: 0; padding-inline: 0; }
+.drive-plugins-restart[hidden] { display: none; }
+/* Download with progress; the microphone test's level bar. */
+.drive-progress, .drive-meter { display: block; width: 100%; max-width: 22em; height: 8px; margin-block-start: 6px; }
+.drive-progress[hidden] { display: none; }
+.drive-meter { flex: 0 0 8em; width: 8em; margin: 0; }
+/* Voices per character: one card per character, the same rows the old popover had. */
+.drive-char { border: 1px solid var(--border-strong); border-radius: var(--radius-md); margin-block: 6px; background: var(--bg-secondary); }
+.drive-char > summary { cursor: pointer; padding: 10px 12px; font-size: 14px; font-weight: 600; }
+.drive-char > summary:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: 2px; }
+.drive-char-body { border: 0; border-top: 1px solid var(--border-strong); border-radius: 0; }
 
 /* ----------------------------------------------------- Voices sub-pane */
 .voices-pane { padding-bottom: 18px; }
