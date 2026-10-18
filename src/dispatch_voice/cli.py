@@ -329,6 +329,8 @@ def doctor_report(*, backend: Path | None, url: str, check_update: bool) -> dict
     rep["switch"] = {"enabled": settings.switched_on, "forced": settings.forced,
                      "voice_yaml": str(context.paths().voice_yaml)}
     rep["rig"] = probe_rig(settings)
+    from .host import sysreq
+    rep["system"] = sysreq.check()
     rep["running"] = probe_running(url)
     if backend is not None:
         rep["backend"] = probe_backend(backend, checkout if editable else None)
@@ -387,6 +389,16 @@ def print_doctor(rep: dict) -> int:
         line, bad = rig_line(rep["rig"])
         print(line)
         problems += bad
+    warnings = 0
+    for s in rep.get("system", []):
+        if s["ok"]:
+            print(f"system program {s['id']}: ok")
+        else:
+            # Not a "problem": voice chat runs without them. They are what a feature needs.
+            kind = "optional" if s["optional"] else "needed"
+            print(f"system program {s['id']}: MISSING ({kind} for {s['required_for']})")
+            print(f"  install ({s['package_manager']}): {s['fix']}")
+            warnings += 1
     r = rep["running"]
     if not r["reachable"]:
         print(f"running server ({r['url']}): not reachable")
@@ -423,6 +435,8 @@ def print_doctor(rep: dict) -> int:
                   + (" (up to date)" if same else " (a newer release exists: `git pull` and restart)"))
         else:
             print(f"update check: could not read {VERSION_URL} ({u.get('error')})")
+    if warnings:
+        print(f"warnings: {warnings} (system programs above)")
     print(f"problems: {problems}")
     return 1 if problems else 0
 
