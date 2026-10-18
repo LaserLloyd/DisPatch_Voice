@@ -26,9 +26,10 @@ same way: restart DisPatch, open **Settings, Voice**, switch it on and press **D
 (about 1.4 GB, with progress and Cancel).
 
 **Ports:** none of its own. The add-on rides on DisPatch's port, `8765` (`/api/voice/*`, `/ext/voice/*`,
-`/ws/voice/{thread}`). The only listener this package can start is the standalone Voices page,
-`dispatch-voice serve` on `127.0.0.1:8769`. A GPU rig (SpeechForge, `1236`) is an optional outbound
-connection.
+`/ws/voice/{thread}`); the DisPatch image exposes it, on DisPatch's bind address (`BIND_ADDR` in DisPatch's
+`docker-compose.yml`). The only listener this package can start is the standalone Voices page,
+`dispatch-voice serve` on `127.0.0.1:8769`, which neither DisPatch nor its image starts. A GPU rig
+(SpeechForge, `1236`) is an optional outbound connection from the add-on to `rig.url`.
 
 **System programs** come from the operating system, not pip: `ffmpeg` (required to clone a voice) and
 `libopus` (optional). Each block below installs them; the DisPatch container image already includes both.
@@ -61,7 +62,10 @@ docker compose logs app | Select-String "SETUP TOKEN"
 Open <http://localhost:8765>, create the owner with that token, then Settings, Voice, which lists what is
 missing (the models, until you press Download). `ffmpeg -version` proves the system program is in the image. The default `VOICE_REF` installs the add-on
 from this repository's `refactor/prosumer-2026` branch; set `VOICE_REF=refs/tags/<tag>` in `.env` to pin a
-release.
+release. `VOICE_REF` takes a full ref (`refs/heads/<branch>`, `refs/tags/<tag>`) or a bare tag name. With
+`VOICE_SRC=local` and `--build-context voice-src=<dir>` the add-on is installed from a local directory
+instead. The speech models are not baked into the image; download them from Settings, Voice. DisPatch Chat's
+`docs/voice.md` and `docs/deploy-docker.md` have the rest.
 
 | Pros | Cons |
 | --- | --- |
@@ -436,6 +440,8 @@ uv run pytest -q                 # Python; model-backed tests skip when the mode
 npm install && npm test          # client modules (node --test; jsdom for the DOM suites)
 python3 scripts/check-locales.py # locale bundles
 ```
+
+`npm test` needs Node `^22.22.2 || ^24.15.0 || >=26`, the range jsdom 30 declares (`engines` in `package.json` says the same); on other versions `npm install` warns with EBADENGINE.
 
 See [tests/README.md](tests/README.md) for the layout, the DisPatch stand-in (`tests/fakes.py`), the fixtures, and how to run the model-backed and browser harnesses on a shared machine. The cross-repo contract test (`tests/contract/`) runs against a DisPatch checkout (`DISPATCH_BACKEND`); `tests/e2e_voice_roundtrip.py` walks a whole voice chat on a scratch server, with or without DisPatch.
 

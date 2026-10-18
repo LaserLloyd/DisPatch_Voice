@@ -167,7 +167,7 @@ def test_deleting_a_profile_deletes_its_conditionals_on_the_rig(host_env, monkey
     ({"enabled": True, "url_set": True, "url_ok": False}, "not a ws://", 1),
     ({"enabled": True, "url_set": True, "url_ok": True, "token": None, "token_problem": "permissions",
       "token_file": "/x/speechforge.env"}, "chmod 600", 1),
-    ({"enabled": True, "url_set": True, "url_ok": True, "token": None, "token_file": "/x/s.env"}, "no SPEECHFORGE_TOKEN", 1),
+    ({"enabled": True, "url_set": True, "url_ok": True, "token": None, "token_file": "/x/s.env"}, "no rig token found", 1),
     ({"enabled": False, "url_set": True, "url_ok": True, "token": "env", "health": None, "detail": "ConnectError"},
      "not reachable", 0),
     ({"enabled": True, "url_set": True, "url_ok": True, "token": "file", "health": 200, "ready": 401}, "refused the token", 1),

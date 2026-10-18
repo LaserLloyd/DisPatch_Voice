@@ -78,7 +78,8 @@ both feature-tested with `getattr(ctx, ..., None)` so an older DisPatch still wo
 [rig.md](rig.md)) and `ctx.settings_writer(namespace)` (the host calls
 `migrate_voice_yaml(writer, dry_run=False)` once its settings store exists). The
 add-on never imports `app.*`; `host/context.py` holds the context, and outside DisPatch (the CLI,
-`dispatch-voice serve`, tests) the paths come from `DISPATCH_DATA_DIR` instead.
+`dispatch-voice serve`, tests) the paths come from `DISPATCH_DATA_DIR` (else the legacy `LOCAL_CHAT_DATA_DIR`, the
+same order DisPatch uses) instead.
 
 ## A voice chat, end to end
 
@@ -439,7 +440,7 @@ nobody uses from holding the session open:
 | Render cache (acknowledgements, notices, tool lines — every voice with a `cache_tag`, cloned ones included) | `<data>/voice-cache/<engine tag>/<sha256(text)[:24]>.npy` |
 | Acknowledgement pools (operator overrides, hot-reloaded) | `<data>/voice-acks.yaml` (`ctx.paths.acks_yaml`; format in [persona-acks-rp.md](persona-acks-rp.md)) |
 | Models | ONE folder, `ctx.paths.models_dir`, with a subfolder per family: `speech/` (Silero, Smart Turn, Parakeet) and `chatterbox/` (the graphs and the stock voice tensors). DisPatch 3.0 names the folder `<data>/models` (the 2.x name `<data>/speech-models` also held Chatterbox, which confused support threads); DisPatch moves the old folder across once at start, and the add-on still finds and can move whatever remains in `<data>/speech-models`. An install that predates 1.6.0 keeps working where its files are (`<data>/speech-models` flat, `~/.local/share/dispatch-voice/models`) until `dispatch-voice migrate-models --apply` (or the Move button) moves them; `DISPATCH_SPEECH_MODELS` / `DISPATCH_VOICE_MODELS` still point a family at an explicit folder and that folder is never moved |
-| Rig token | read from, first found: `SPEECHFORGE_TOKEN`; the host's credential store (`ctx.secrets`, name `speechforge_token`); `<data>/ext/voice/speechforge.env` (0600; an owner-only ACL on Windows); the 1.6.0 file `~/.config/local-chat/speechforge.env`. `PUT /rig/token` writes the credential store, or the state-folder file when the host offers no store |
+| Rig token | read from, first found: `SPEECHFORGE_TOKEN`; the host's credential store (`ctx.secrets`, name `speechforge_token`); `<data>/ext/voice/speechforge.env` (0600; an owner-only ACL on Windows); the 1.6.0 file `~/.config/local-chat/speechforge.env`. (`dispatch-voice doctor`, which runs outside DisPatch and so has no `ctx.secrets`, also reads the host's file store `<data>/ext/voice/secrets.json` directly; it does not read an OS keyring.) `PUT /rig/token` writes the credential store, or the state-folder file when the host offers no store |
 | Add-on state | `<data>/ext/voice/` (0700): `cursor.sqlite` (0600), the commit cursor — what each voice chat's stream has submitted, so a reconnect or a restart never submits an utterance twice (LRU 256, 10 min) |
 
 `voice.yaml` keys: `enabled`, `builtin_voice`, `speed` (0.8–1.3), `voice_turn_thinking`

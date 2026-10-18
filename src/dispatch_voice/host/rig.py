@@ -220,10 +220,10 @@ def legacy_token_path() -> Path:
 def token_path() -> Path:
     """The token FILE: ``<state_dir>/speechforge.env`` (``<data>/ext/voice/``), so it lives with the
     rest of the add-on's state, survives an image update and works under a read-only root. Outside
-    DisPatch with no ``DISPATCH_DATA_DIR`` (the standalone page, a plain shell) it is the old
+    DisPatch with no ``DISPATCH_DATA_DIR`` / ``LOCAL_CHAT_DATA_DIR`` (the standalone page, a plain shell) it is the old
     home-folder file."""
     from . import context
-    if context.get_context() is not None or os.environ.get("DISPATCH_DATA_DIR", "").strip():
+    if context.get_context() is not None or context.data_dir_override():
         return context.paths().state_dir / "speechforge.env"
     return legacy_token_path()
 
@@ -333,6 +333,31 @@ def read_token() -> Token:
             return t
         first = first or t
     return first or Token()
+
+
+def host_secrets_file() -> Path:
+    """DisPatch's file-backed credential store for this add-on (``<data>/ext/voice/secrets.json``,
+    ``FileSecretProvider`` in DisPatch's ``agents/secrets.py``): where ``ctx.secrets`` keeps the token
+    on a host with no OS keyring (a container, a headless box)."""
+    from . import context
+    return context.paths().state_dir / "secrets.json"
+
+
+def read_host_secrets_file_token() -> Token:
+    """The rig token as DisPatch's file credential store holds it, read straight from the file, for
+    a process OUTSIDE DisPatch (``dispatch-voice doctor`` in the container shell has no
+    ``ctx.secrets``). Read-only: the runtime never calls it, so :func:`write_token` and
+    :func:`clear_token` keep their meaning. An OS-keyring store is not read from here."""
+    p = host_secrets_file()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return Token()
+    except (OSError, ValueError):
+        return Token(problem="unreadable")
+    v = data.get(TOKEN_SECRET) if isinstance(data, dict) else None
+    v = v.strip() if isinstance(v, str) else ""
+    return Token(v, "secret") if v else Token()
 
 
 TOKEN_MIN, TOKEN_MAX = 8, 512

@@ -1,5 +1,6 @@
 """dispatch-voice: fetch the models, check the install, run the Voices panel standalone, say a line.
 
+    dispatch-voice --version
     dispatch-voice fetch-models [--only speech|chatterbox] [--force] [--verify] [--no-stock]
     dispatch-voice migrate-models [--apply]
     dispatch-voice doctor [--unit local-chat] [--backend DIR] [--url http://127.0.0.1:8765] [--check-update] [--json]
@@ -16,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import audio
+from . import __version__, audio
 
 REPO_URL = "https://github.com/LaserLloyd/DisPatch_Voice"
 #: The moving tag the absent page installs from; its VERSION file says what the latest 1.x is.
@@ -231,9 +232,14 @@ def probe_rig(settings) -> dict:
     from .host import rig
     rs = settings.rig
     tok = rig.read_token()
+    if tok.source is None and tok.problem is None:
+        # Outside DisPatch there is no ctx.secrets; read the host's file store itself, which is where
+        # the token is when it was pasted in Settings > Voice on a host without an OS keyring.
+        tok = rig.read_host_secrets_file_token()
     out: dict = {"enabled": rs.enabled, "url_set": bool(rs.url), "url_ok": bool(rs.url) and rig.valid_url(rs.url),
                  "host": rig.host_of(rs.url), "token": tok.source, "token_problem": tok.problem,
-                 "token_file": str(rig.token_path())}
+                 "token_file": str(rig.token_path()),
+                 "secrets_file": str(rig.host_secrets_file())}
     if not (out["url_ok"] and tok.value):
         return out
     import httpx
@@ -269,7 +275,9 @@ def rig_line(r: dict) -> tuple[str, int]:
     if r.get("token_problem") == "permissions":
         return f"GPU rig: {r['token_file']} is readable by other users: chmod 600 it", 1
     if not r.get("token"):
-        line = f"GPU rig{where}: no SPEECHFORGE_TOKEN (set it in {r['token_file']}, mode 600)"
+        looked = ", ".join(x for x in ("SPEECHFORGE_TOKEN", r.get("secrets_file"), r["token_file"]) if x)
+        line = (f"GPU rig{where}: no rig token found (looked in: {looked}; paste it in Settings > Voice, "
+                f"or put SPEECHFORGE_TOKEN=... in {r['token_file']}, mode 600)")
         return line, 1 if r["enabled"] else 0
     if not r["url_set"]:
         return "GPU rig: a token is set but rig.url is not (voice.yaml)", 1 if r["enabled"] else 0
@@ -516,6 +524,7 @@ def cmd_doctor(a) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="dispatch-voice")
+    p.add_argument("--version", action="version", version=f"dispatch-voice {__version__}")
     p.add_argument("--models", help="Chatterbox model directory (default DISPATCH_VOICE_MODELS, else the "
                                     "chatterbox folder of the unified models folder)")
     p.add_argument("--dtype", default="q4", help="ONNX precision: q4 (default, fastest on CPU), q8, fp16, fp32")

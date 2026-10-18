@@ -4,6 +4,18 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Added
+- `dispatch-voice --version` prints `dispatch-voice <version>` (it was rejected as a missing subcommand).
+
+### Fixed
+- `dispatch-voice doctor` inside the DisPatch container read `~/.local/share/local-chat` and so
+  reported the models missing and the switch off: it now honours `LOCAL_CHAT_DATA_DIR` (the legacy
+  name DisPatch still answers to) after `DISPATCH_DATA_DIR`, the same order DisPatch uses. The rig
+  token file path follows the same rule.
+- `dispatch-voice doctor` reported "no SPEECHFORGE_TOKEN" for a token saved in the host's file
+  credential store (`<data>/ext/voice/secrets.json`); it now finds it there, and when it finds no
+  token the line names every place it looked.
+
 ## [1.6.0] — 2026-10-18
 
 One Settings → Voice page, one definition per setting, providers behind one interface, and the
