@@ -128,6 +128,42 @@ def test_two_sources_for_one_file_move_only_the_first(layout):
     assert (old / "silero_vad.onnx").read_bytes() == b"in-old"       # never overwritten, never deleted
 
 
+def _whole_chatterbox_set(d):
+    from dispatch_voice.engine import COMPONENTS, _filename
+    put(d / "tokenizer.json", b"tok")
+    put(d / "config.json", b"{}")
+    for c in COMPONENTS:
+        put(d / "onnx" / _filename(c, "q4"), b"g")
+        put(d / "onnx" / (_filename(c, "q4") + "_data"), b"w")
+
+
+def test_a_chatterbox_move_that_stopped_half_way_resumes_and_keeps_loading(layout, tmp_path, monkeypatch):
+    """Windows refuses to move a file in use (the engine holds its graphs): the move stopped
+    after config.json. The old code then took the half-filled new folder as THE models
+    folder (engine unavailable) and reported the rest "skip_exists" forever."""
+    import shutil
+    from dispatch_voice.host.engines import chatterbox
+    old_cb = tmp_path / "xdg" / "dispatch-voice" / "models"
+    _whole_chatterbox_set(old_cb)
+    real_move = shutil.move
+
+    def busy(src, dst, *a, **k):
+        if src.endswith("onnx"):
+            raise PermissionError("in use")
+        return real_move(src, dst, *a, **k)
+
+    monkeypatch.setattr(shutil, "move", busy)
+    rep = models.migrate(dry_run=False)
+    assert rep["errors"] and (layout / "chatterbox" / "config.json").exists()   # moved before onnx/ failed
+    assert models.chatterbox_dir() == old_cb and chatterbox.complete(models.chatterbox_dir())
+    assert models.legacy_present()                                   # still something to move
+    monkeypatch.setattr(shutil, "move", real_move)
+    rep = models.migrate(dry_run=False)                              # the retry finishes the job
+    assert rep["errors"] == [] and rep["moved"] == 1
+    assert models.chatterbox_dir() == layout / "chatterbox" and chatterbox.complete(layout / "chatterbox")
+    assert not models.legacy_present()
+
+
 def test_no_legacy_root_when_the_models_folder_is_the_old_name(host_env, monkeypatch, tmp_path):
     monkeypatch.setenv("DISPATCH_SPEECH_MODELS", str(tmp_path / "speech-models"))
     from dispatch_voice.host import context
