@@ -208,6 +208,20 @@ def test_ws_serves_a_safe_bot_since_1_3_1(voice_app, no_models):
     assert _close(c, "/ws/voice/t-safe").code == 1013
 
 
+def _hang_up(ws, ctx, timeout=10.0):
+    """Close the socket from the client and wait until the server has finished with it.
+
+    Leaving the ``with`` block right away sends the disconnect and then cancels the handler
+    task in the same breath; when the handler is still in its clean-up, the portal's future
+    is cancelled and the exit raises ``CancelledError`` (a race on 3.13 and Windows). The
+    server's last step is the power release, so waiting for it is waiting for the close."""
+    ws.close()
+    deadline = time.monotonic() + timeout
+    while "release" not in ctx.power_calls:
+        assert time.monotonic() < deadline, "the server never finished with the closed socket"
+        time.sleep(0.01)
+
+
 def test_ws_works_after_switching_on(live_app, monkeypatch):
     c, ctx = live_app
     monkeypatch.delenv("DISPATCH_VOICE", raising=False)
@@ -224,6 +238,7 @@ def test_ws_works_after_switching_on(live_app, monkeypatch):
             if "ready" in seen:
                 break
         assert "ready" in seen
+        _hang_up(ws, ctx)
 
 
 def test_spoken_turn_through_the_asgi_socket(live_app):
@@ -244,13 +259,10 @@ def test_spoken_turn_through_the_asgi_socket(live_app):
         assert "eot" in types and "transcript" in types and audio >= 1
         hdr = [f for f in seen if f["type"] == "audio" and f.get("kind") == "reply"]
         assert hdr and hdr[0]["text"].startswith("Two meetings today")
+        _hang_up(ws, ctx)                     # the server's finally has run when this returns
     rows = ctx.db().messages(THREAD)
     assert rows[0].role == "user" and rows[0].content == "what's the weather"
     assert rows[0].metadata == {"voice": True}
-    for _ in range(100):                      # the server's finally runs after the client closed
-        if "release" in ctx.power_calls:
-            break
-        time.sleep(0.02)
     assert ctx.power_calls == ["acquire", "release"]
 
 

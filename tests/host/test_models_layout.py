@@ -140,11 +140,15 @@ def _whole_chatterbox_set(d):
 def test_a_chatterbox_move_that_stopped_half_way_resumes_and_keeps_loading(layout, tmp_path, monkeypatch):
     """Windows refuses to move a file in use (the engine holds its graphs): the move stopped
     after config.json. The old code then took the half-filled new folder as THE models
-    folder (engine unavailable) and reported the rest "skip_exists" forever."""
+    folder (engine unavailable) and reported the rest "skip_exists" forever. The half-way
+    state is laid down by hand: which child a directory listing returns first differs
+    between file systems, so the test must not depend on it."""
     import shutil
     from dispatch_voice.host.engines import chatterbox
     old_cb = tmp_path / "xdg" / "dispatch-voice" / "models"
     _whole_chatterbox_set(old_cb)
+    put(layout / "chatterbox" / "config.json", b"{}")                # what an earlier run moved
+    (old_cb / "config.json").unlink()
     real_move = shutil.move
 
     def busy(src, dst, *a, **k):
@@ -154,7 +158,8 @@ def test_a_chatterbox_move_that_stopped_half_way_resumes_and_keeps_loading(layou
 
     monkeypatch.setattr(shutil, "move", busy)
     rep = models.migrate(dry_run=False)
-    assert rep["errors"] and (layout / "chatterbox" / "config.json").exists()   # moved before onnx/ failed
+    assert rep["errors"] and (layout / "chatterbox" / "config.json").exists()   # the earlier run's file
+    assert not (layout / "chatterbox" / "tokenizer.json").exists()   # folders go first: nothing else moved
     assert models.chatterbox_dir() == old_cb and chatterbox.complete(models.chatterbox_dir())
     assert models.legacy_present()                                   # still something to move
     monkeypatch.setattr(shutil, "move", real_move)

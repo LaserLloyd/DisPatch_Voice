@@ -209,7 +209,10 @@ def migrate(*, dry_run: bool = True) -> dict:
         try:
             if m["family"] == "chatterbox":
                 dst.mkdir(parents=True, exist_ok=True)
-                for child in list(src.iterdir()):
+                # Folders first, then files, each by name: directory order differs between file
+                # systems, and the engine's graphs (the folder Windows holds open) must be the
+                # first thing tried, so a refusal leaves the old set whole and loadable.
+                for child in sorted(src.iterdir(), key=lambda c: (not c.is_dir(), c.name)):
                     target = dst / child.name
                     if target.exists():
                         continue
