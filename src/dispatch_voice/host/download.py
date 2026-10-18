@@ -4,7 +4,7 @@
     python -m dispatch_voice.host.download [--dest DIR] [--force] [--verify]
 
 DIR defaults to the same place the server looks (``DISPATCH_SPEECH_MODELS``,
-else ``<data dir>/speech-models``). Standard library only. Every file comes
+else ``<data dir>/models/speech``). Standard library only. Every file comes
 from a public, ungated release; nothing here needs an account or a token.
 
 Total on disk: ~680 MB. That is Parakeet int8 (~670 MB), Smart Turn (~8 MB)

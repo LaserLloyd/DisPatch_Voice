@@ -19,7 +19,7 @@ drops the loaded speech models; turning it on starts the background prewarm
 (routes.apply_switch).
 
 Model files (VAD, Smart Turn, Parakeet) live in ``DISPATCH_SPEECH_MODELS``
-(default ``<data>/speech-models``) with the layout ``dispatch-voice
+(default ``<data>/models``) with the layout ``dispatch-voice
 fetch-models`` produces; the Chatterbox models in ``DISPATCH_VOICE_MODELS``.
 
 A few choices are PREFERENCES, not install decisions, and are changed from the
@@ -262,7 +262,8 @@ class VoiceSettings:
         elif self.stt_engine in ("parakeet", "moonshine"):         # Moonshine falls back to Parakeet
             if importlib.util.find_spec("onnx_asr") is None:
                 out.append("python package onnx-asr")
-            if not (self.parakeet_dir / "encoder-model.int8.onnx").exists():
+            from . import models
+            if not models.parakeet_complete(self.parakeet_dir):
                 out.append("model parakeet-tdt-0.6b-v2")
         out += self._tts_missing()
         return out

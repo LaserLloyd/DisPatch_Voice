@@ -72,7 +72,7 @@ def env_paths(data: Path | None = None) -> Paths:
         acks_yaml=data / "voice-acks.yaml",
         voices_dir=data / "voices",
         cache_dir=data / "voice-cache",
-        models_dir=Path(models).expanduser() if models else data / "speech-models",
+        models_dir=Path(models).expanduser() if models else data / "models",
         state_dir=data / "ext" / "voice",
     )
 

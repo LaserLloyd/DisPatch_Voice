@@ -17,14 +17,17 @@ Everything below can be done in Settings → Voice (the **Speech to text** secti
 rig (GPU)* as the provider, or open *Set up the speech rig*), without a terminal. The files and
 variables are for servers that are configured as code.
 
-1. **The token.** Paste it in Settings → Voice → *Rig token*. It is written to a private file on
-   the DisPatch machine (`~/.config/local-chat/speechforge.env`: mode 0600, or an owner-only ACL
-   on Windows) and is write-only: no page, route or log line ever shows it. On a server you
-   configure as code:
+1. **The token.** Paste it in Settings → Voice → *Rig token*. DisPatch keeps it in its own
+   credential store (the OS keyring when there is one, else a private file in its data folder),
+   so it survives an image update and works with a read-only container root. A DisPatch without
+   a credential store gets a private file in the add-on's state folder instead
+   (`<data>/ext/voice/speechforge.env`: mode 0600, or an owner-only ACL on Windows). It is
+   write-only: no page, route or log line ever shows it. The 1.6.0 location
+   (`~/.config/local-chat/speechforge.env`) is still read. On a server you configure as code:
 
    ```sh
-   mkdir -p ~/.config/local-chat
-   (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '<the token from the rig>' > ~/.config/local-chat/speechforge.env)
+   mkdir -p <data>/ext/voice
+   (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '<the token from the rig>' > <data>/ext/voice/speechforge.env)
    ```
 
    `SPEECHFORGE_TOKEN` in DisPatch's environment works too and wins over the file (the page then

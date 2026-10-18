@@ -346,7 +346,7 @@
     "models_cancel": "キャンセル",
     "models_progress": "{file} をダウンロード中: {pct}%",
     "models_done": "モデルをダウンロードしました。",
-    "models_restart": "クローンした声を使うには DisPatch を再起動してください。",
+    "models_restart": "音声での返答はすでに使えます。クローンした声を管理するには DisPatch を再起動してください。",
     "models_cancelled": "ダウンロードをキャンセルしました。",
     "models_failed": "ダウンロードに失敗しました: {error}",
     "models_missing": "足りないモデルがあります。",

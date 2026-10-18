@@ -14,6 +14,11 @@ models still sit there (so an existing install keeps working untouched), the new
 fresh install, and :func:`migrate` moves the old files (``dry_run`` by default, idempotent,
 refuses to overwrite). An explicit ``DISPATCH_SPEECH_MODELS`` / ``DISPATCH_VOICE_MODELS`` is
 an operator's choice of place: it is honoured and never moved.
+
+DisPatch 3.0 names its folder ``<data>/models`` (it was ``<data>/speech-models``, a name that
+held Chatterbox too, review F8) and moves the old folder across once. If that move has not
+happened (a host that predates it, or a move that failed) the add-on still finds, and can move,
+what sits in ``<data>/speech-models`` (:func:`legacy_host_root`).
 """
 from __future__ import annotations
 
@@ -32,6 +37,10 @@ SPEECH_ENV = "DISPATCH_SPEECH_MODELS"
 CHATTERBOX_ENV = "DISPATCH_VOICE_MODELS"
 #: Top-level entries ``dispatch-voice fetch-models`` puts in the speech folder.
 SPEECH_ENTRIES = ("silero_vad.onnx", "smart-turn-v3.2-cpu.onnx", "parakeet-tdt-0.6b-v2")
+#: Every file of the Parakeet folder, in the order the download writes them. The encoder is the
+#: fourth of five, so "the encoder exists" is true while the decoder is still coming down.
+PARAKEET_FILES = ("config.json", "vocab.txt", "nemo128.onnx", "encoder-model.int8.onnx",
+                  "decoder_joint-model.int8.onnx")
 MARKER = ".layout.json"
 LAYOUT = 2
 
@@ -52,6 +61,24 @@ def legacy_chatterbox_dir() -> Path:
     return Path(base) / "dispatch-voice" / "models"
 
 
+LEGACY_HOST_NAME = "speech-models"
+
+
+def legacy_host_root() -> Path | None:
+    """The pre-3.0 host folder ``<data>/speech-models`` while it still exists next to the
+    current models folder (and is not the models folder itself), else None."""
+    try:
+        r = root()
+        if r.name == LEGACY_HOST_NAME:
+            return None
+        cand = r.parent / LEGACY_HOST_NAME
+        if cand.is_dir() and cand.resolve() != r.resolve():
+            return cand
+    except OSError:
+        pass
+    return None
+
+
 def _has_speech(d: Path) -> bool:
     return any((d / e).exists() for e in SPEECH_ENTRIES)
 
@@ -59,6 +86,15 @@ def _has_speech(d: Path) -> bool:
 def _has_chatterbox(d: Path) -> bool:
     try:
         return d.is_dir() and any((d / n).exists() for n in ("tokenizer.json", "onnx", "config.json"))
+    except OSError:
+        return False
+
+
+def parakeet_complete(d: Path) -> bool:
+    """Is the whole Parakeet set in ``d``? (``status.ready`` and the STT provider's health use this,
+    so a download in progress is not "ready", review F6.)"""
+    try:
+        return all((Path(d) / n).exists() for n in PARAKEET_FILES)
     except OSError:
         return False
 
@@ -75,6 +111,12 @@ def speech_dir() -> Path:
         return new
     if _has_speech(r):
         return r                         # not migrated yet: keep using it
+    old = legacy_host_root()
+    if old is not None:
+        if _has_speech(old / SPEECH_SUB):
+            return old / SPEECH_SUB
+        if _has_speech(old):
+            return old
     return new
 
 
@@ -85,6 +127,9 @@ def chatterbox_dir() -> Path:
     new = root() / CHATTERBOX_SUB
     if _has_chatterbox(new):
         return new
+    old_host = legacy_host_root()
+    if old_host is not None and _has_chatterbox(old_host / CHATTERBOX_SUB):
+        return old_host / CHATTERBOX_SUB
     old = legacy_chatterbox_dir()
     if _has_chatterbox(old):
         return old
@@ -98,22 +143,33 @@ def plan() -> list[dict]:
     out: list[dict] = []
     r = root()
     sp_new = r / SPEECH_SUB
+    old_host = legacy_host_root()
     if _explicit(SPEECH_ENV) is not None:
         out.append({"family": "speech", "src": str(r), "dst": str(sp_new), "state": "explicit"})
     else:
-        for e in SPEECH_ENTRIES:
-            src = r / e
-            if src.exists():
+        seen: set[str] = set()
+        sources = [r] + ([old_host / SPEECH_SUB, old_host] if old_host is not None else [])
+        for base in sources:
+            for e in SPEECH_ENTRIES:
+                src = base / e
+                if not src.exists():
+                    continue
                 dst = sp_new / e
+                taken = e in seen or dst.exists()
+                seen.add(e)
                 out.append({"family": "speech", "src": str(src), "dst": str(dst),
-                            "state": "skip_exists" if dst.exists() else "move"})
+                            "state": "skip_exists" if taken else "move"})
     cb_new = r / CHATTERBOX_SUB
-    old = legacy_chatterbox_dir()
+    olds = [legacy_chatterbox_dir()] + ([old_host / CHATTERBOX_SUB] if old_host is not None else [])
     if _explicit(CHATTERBOX_ENV) is not None:
-        out.append({"family": "chatterbox", "src": str(old), "dst": str(cb_new), "state": "explicit"})
-    elif _has_chatterbox(old) and old.resolve() != cb_new.resolve():
-        out.append({"family": "chatterbox", "src": str(old), "dst": str(cb_new),
-                    "state": "skip_exists" if _has_chatterbox(cb_new) else "move"})
+        out.append({"family": "chatterbox", "src": str(olds[0]), "dst": str(cb_new), "state": "explicit"})
+    else:
+        taken = _has_chatterbox(cb_new)
+        for old in olds:
+            if _has_chatterbox(old) and old.resolve() != cb_new.resolve():
+                out.append({"family": "chatterbox", "src": str(old), "dst": str(cb_new),
+                            "state": "skip_exists" if taken else "move"})
+                taken = True
     return out
 
 
@@ -152,6 +208,11 @@ def migrate(*, dry_run: bool = True) -> dict:
             m["state"] = "error"
             report["errors"].append(f"{src.name}: {e}")
             log.warning("voice: could not move %s to %s (%s)", src, dst, e)
+    old_host = legacy_host_root()
+    if old_host is not None:
+        for d in (old_host / SPEECH_SUB, old_host / CHATTERBOX_SUB, old_host):
+            with contextlib.suppress(OSError):
+                d.rmdir()                   # only when now empty
     if report["moved"]:
         with contextlib.suppress(OSError):
             root().mkdir(parents=True, exist_ok=True)

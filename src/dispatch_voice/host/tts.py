@@ -377,7 +377,8 @@ def build_engine(settings):
     goes BEHIND the chosen one. Wrapped with the HQ fallback when
     DISPATCH_VOICE_HQ_URL is set.
     """
-    from . import registry
+    from . import profiles_bridge, registry
+    profiles_bridge.ensure_engine()      # models downloaded since setup: no restart needed (review F6)
     name = settings.tts_engine
     if name == "auto":
         name = _auto_engine(settings, registry)
@@ -434,7 +435,8 @@ _ENGINES_LOCK = threading.Lock()
 
 
 def shared_engine(settings):
-    from . import registry
+    from . import profiles_bridge, registry
+    profiles_bridge.ensure_engine()      # before the cache key reads the registered names (review F6)
     key = (f"{settings.tts_engine}:{settings.hq_url}:{getattr(settings, 'tts_provider', 'auto')}:"
            f"{registry.engine_names()}")
     with _ENGINES_LOCK:

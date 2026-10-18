@@ -217,9 +217,25 @@ def set_persona_provider(fn) -> None:
     _persona_provider = fn
 
 
+def has_profile_resolver() -> bool:
+    return _profile_resolver is not None
+
+
+def _lazy_cloned_voices() -> None:
+    """The models may have landed after setup (the in-app download): register the engine and the
+    resolver now (profiles_bridge.ensure_engine; review F6)."""
+    try:
+        from . import profiles_bridge
+        profiles_bridge.ensure_engine()
+    except Exception:       # noqa: BLE001 - resolving a voice never fails because of this
+        log.debug("voice: lazy cloned-voice registration failed", exc_info=True)
+
+
 def resolve_profile(bot_id: str | None, voice: str | None = None) -> str | None:
     """The profile that speaks for ``bot_id``. ``voice`` (a locked device's
     override, already checked to exist) takes the place of the bot's saved voice."""
+    if _profile_resolver is None:
+        _lazy_cloned_voices()
     if _profile_resolver is None:
         # No profile store (Chatterbox models not fetched): a bot can still
         # pick a built-in voice. The bot's saved voice comes from DisPatch
