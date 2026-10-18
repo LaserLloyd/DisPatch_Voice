@@ -76,3 +76,25 @@ def test_a_chosen_provider_the_session_does_not_build_is_reported(host_env):
         assert "stt_provider" not in ids and "tts_provider" not in ids
     finally:
         P.REGISTRY.drop_plugins()
+
+
+def test_removing_the_speech_server_from_the_allow_list_stops_the_cached_engine_using_it(host_env):
+    """build_engine checks hq_url against the policy once per build and shared_engine caches the
+    result: without the verdict in the cache key a server dropped from rig.allow kept receiving
+    the reply text until DisPatch restarted."""
+    from dispatch_voice.host import registry, tts
+    from dispatch_voice.host.config import VoiceSettings
+
+    class Local:
+        sample_rate = 24000
+        streaming = False
+
+        def stream(self, text, profile_id=None, stop=None):
+            yield b""
+
+    registry.register_engine("local", lambda s: Local())
+    url = "http://192.0.2.5:9/"                                     # public (TEST-NET): needs the allow-list
+    allowed = VoiceSettings(tts_engine="local", hq_url=url, rig_allow=("192.0.2.0/24",))
+    assert isinstance(tts.shared_engine(allowed), tts.FallbackTTS)
+    dropped = VoiceSettings(tts_engine="local", hq_url=url, rig_allow=())
+    assert not isinstance(tts.shared_engine(dropped), tts.FallbackTTS)
