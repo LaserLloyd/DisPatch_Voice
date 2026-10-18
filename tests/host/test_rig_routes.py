@@ -248,3 +248,17 @@ def test_no_profile_id_is_the_default_profile_or_nothing_never_the_stock_voice(m
     assert rig.voice_file("stock-host") == tmp_path / "stock-host" / "voice.npz"
     default[0] = "mine"
     assert rig.voice_file(None) == tmp_path / "mine" / "voice.npz"
+
+
+def test_a_public_rig_on_the_allow_list_is_used_by_a_voice_chat(host_env, monkeypatch, _isolated_token):
+    """The session's token gate (ws._rig_token) must read the admin allow-list like the status
+    page and open_for_session do: with an empty allow-list it said "no rig" for every public
+    address the allow-list names, so the chat silently stayed on the CPU."""
+    from dispatch_voice.host import ws
+    write_token(_isolated_token, f"{rig.TOKEN_ENV}={SECRET}\n")
+    vconfig.save_prefs({"rig": {"enabled": True, "url": URL}})       # 192.0.2.7: public, allow-listed
+    s = vconfig.load_settings()
+    assert s.rig_allow == ("192.0.2.0/24",) and rig.status(s)["configured"] is True
+    assert ws._rig_token(s) == SECRET
+    monkeypatch.setenv("DISPATCH_VOICE_RIG_ALLOW", "")
+    assert ws._rig_token(vconfig.load_settings()) == ""                # off the list: refused
