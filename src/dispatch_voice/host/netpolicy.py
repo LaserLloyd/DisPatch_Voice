@@ -23,6 +23,7 @@ Pure functions, stdlib only. Every refusal carries a stable ``code`` plus a ``re
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -54,11 +55,26 @@ class Verdict:
                 "fix": self.fix, "warning": self.warning}
 
 
+#: A host made only of digits, dots and hex letters with an ``0x`` / leading-zero prefix: the
+#: shorthand IPv4 forms the OS resolver accepts (``2852039166``, ``0xa9fea9fe``,
+#: ``0251.0376.0251.0376`` are all 169.254.169.254) that :mod:`ipaddress` does not.
+_NUMERIC_V4 = re.compile(r"\A(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}\Z", re.I)
+
+
 def _addr(host: str):
     h = host.strip("[]")
     try:
         a = ipaddress.ip_address(h)
     except ValueError:
+        a = None
+    if a is None and _NUMERIC_V4.match(h):
+        # Canonicalise the shorthand the way the connector will (inet_aton), so a metadata
+        # address written as one decimal number cannot pass as a "LAN name".
+        try:
+            a = ipaddress.IPv4Address(socket.inet_aton(h))
+        except (OSError, ValueError):
+            return None
+    if a is None:
         return None
     if isinstance(a, ipaddress.IPv6Address) and a.ipv4_mapped is not None:
         return a.ipv4_mapped
@@ -148,8 +164,9 @@ def check_url_policy(url: str, allow: tuple[str, ...] = (), *, schemes: tuple[st
                        "rig.allow (or DISPATCH_VOICE_RIG_ALLOW).")
     warning = ""
     if u.scheme in ("ws", "http") and kind != "loopback":
-        warning = ("This address is not encrypted (ws://): your voice and the token cross the network in the "
-                   "clear. Use wss:// or keep it on a VPN or tailnet.")
+        secure = "wss://" if u.scheme == "ws" else "https://"
+        warning = (f"This address is not encrypted ({u.scheme}://): your voice and the token cross the network in "
+                   f"the clear. Use {secure} or keep it on a VPN or tailnet.")
     return Verdict(True, kind, "url_warn_plaintext" if warning else "ok", "", "", warning)
 
 

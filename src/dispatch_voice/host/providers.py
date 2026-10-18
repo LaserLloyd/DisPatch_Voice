@@ -814,12 +814,16 @@ def register_builtins(registry: ProviderRegistry = REGISTRY) -> None:
         return RigSTTProvider(link, lambda: build_streaming_stt(settings, host_stt.shared_engine(settings)),
                               settings=settings)
 
-    def openai_stt(settings):
+    def allow_of(settings) -> tuple[str, ...]:
+        # The admin allow-list is the server's (`VoiceSettings.rig_allow`), not a RigSettings field.
         from . import netpolicy
+        return netpolicy.parse_allow(getattr(settings, "rig_allow", ()) or ())
+
+    def openai_stt(settings):
         return OpenAISTTProvider(getattr(settings, "stt_url", ""), getattr(settings, "stt_model", ""),
                                  api_key=_env_secret("DISPATCH_VOICE_STT_API_KEY"),
                                  timeout_s=float(getattr(settings, "stt_timeout_s", 20.0)),
-                                 allow=netpolicy.parse_allow(getattr(getattr(settings, "rig", None), "allow", ())))
+                                 allow=allow_of(settings))
 
     def cpu_tts(settings):
         from . import tts as host_tts
@@ -832,7 +836,7 @@ def register_builtins(registry: ProviderRegistry = REGISTRY) -> None:
     def openai_tts(settings):
         return openai_tts_provider(getattr(settings, "hq_url", ""), getattr(settings, "hq_model", ""),
                                    timeout_s=getattr(settings, "hq_timeout_s", 4.0),
-                                   api_key=_env_secret("DISPATCH_VOICE_HQ_API_KEY"))
+                                   api_key=_env_secret("DISPATCH_VOICE_HQ_API_KEY"), allow=allow_of(settings))
 
     registry.register("stt", "cpu", "This computer (Parakeet)", cpu_stt)
     registry.register("stt", "rig", "Speech rig (GPU)", rig_stt)

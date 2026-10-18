@@ -395,9 +395,17 @@ def build_engine(settings):
     else:
         raise RuntimeError(f"unknown TTS engine {name!r}")
     if settings.hq_url and getattr(settings, "tts_provider", "auto") != "cpu":
-        import os
-        eng = FallbackTTS(HQTTS(settings.hq_url, settings.hq_model, settings.hq_timeout_s, eng.sample_rate,
-                                api_key=os.environ.get("DISPATCH_VOICE_HQ_API_KEY", "").strip()), eng)
+        # The reply text goes to this address, so the network policy is checked HERE too, not only
+        # on PATCH: an address from the environment never passed through the route.
+        from . import netpolicy
+        verdict = netpolicy.check_url_policy(settings.hq_url, tuple(getattr(settings, "rig_allow", ()) or ()),
+                                             schemes=("http", "https"))
+        if not verdict.ok:
+            log.warning("voice: the speech server address (hq_url) is refused by the network policy (%s); "
+                        "this computer speaks instead", verdict.code)
+        else:
+            eng = FallbackTTS(HQTTS(settings.hq_url, settings.hq_model, settings.hq_timeout_s, eng.sample_rate,
+                                    api_key=os.environ.get("DISPATCH_VOICE_HQ_API_KEY", "").strip()), eng)
     return eng
 
 

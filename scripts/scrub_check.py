@@ -1035,6 +1035,11 @@ def _report(problems: list[str], scanned: str) -> int:
 
 
 def main() -> int:
+    # The verdict glyphs (U+2713 / U+2717) are not in cp1252: on a Windows console the clean verdict
+    # itself raised UnicodeEncodeError and the hook exited 1 on a clean tree.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--staged", action="store_true",

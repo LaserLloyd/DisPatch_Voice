@@ -21,6 +21,8 @@ DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatc
 
 `dispatch-voice doctor` checks both and prints the command for your system; `GET /api/voice/status` lists what is missing under `system` and `health`. They are declared in `pyproject.toml` (`[tool.dispatch-voice.system-requirements]`).
 
+**Ports.** The add-on opens no port of its own. Everything it serves rides on DisPatch's port (8765 by default): `/api/voice/*`, the client files under `/ext/voice/*` and the voice socket `/ws/voice/{thread}`. The one listener this package can start is the standalone Voices page, `dispatch-voice serve` (`127.0.0.1:8769`, loopback only, never inside DisPatch). Outbound connections are only the ones you configure: the GPU rig at `rig.url` (SpeechForge listens on `:1236` by default), an OpenAI-compatible speech or transcription server, MiniMax, and the model downloads (GitHub, Hugging Face) when you press Download or run `fetch-models`.
+
 **One page, no terminal.** With the add-on installed and DisPatch restarted once, everything else is Settings → Voice: switch it on, **Download** the models (about 1.4 GB, with progress and Cancel), pick the speech-to-text and text-to-speech providers, test the microphone. The commands below remain for servers configured as code.
 
 ```sh

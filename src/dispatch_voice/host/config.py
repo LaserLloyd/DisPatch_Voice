@@ -252,6 +252,13 @@ class VoiceSettings:
         if self.stt_provider == "openai":
             if not self.stt_url:
                 out.append("a transcription server address (stt_url)")
+            else:
+                # The microphone audio goes to this address: the policy applies when it is USED,
+                # not only on PATCH (a value from the environment never went through the route).
+                from . import netpolicy
+                v = netpolicy.check_url_policy(self.stt_url, tuple(self.rig_allow), schemes=("http", "https"))
+                if not v.ok:
+                    out.append(f"a transcription server address the network policy allows (stt_url: {v.code})")
         elif self.stt_engine in ("parakeet", "moonshine"):         # Moonshine falls back to Parakeet
             if importlib.util.find_spec("onnx_asr") is None:
                 out.append("python package onnx-asr")
