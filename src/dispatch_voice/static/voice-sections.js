@@ -206,6 +206,8 @@ export function sttSection(H, st, save, ctx) {
   });
   sel.id = 'drive-stt-provider';
   const provRow = H.row(t('drive.provider'), t('drive.provider_hint_stt'), [sel], { id: 'drive-stt-provider-row' });
+  const phn = healthNote(healthOf(st, 'stt_provider'));     // a provider voice chats do not use (yet)
+  if (phn) provRow.append(phn);
   rows.push(guard(st, 'stt_provider', provRow, [sel]));
   if (cur === 'cpu' || cur === 'rig') {
     const engines = [{ value: 'parakeet', label: t('drive.stt_parakeet') }, { value: 'moonshine', label: t('drive.stt_moonshine') }];
@@ -250,7 +252,10 @@ export function ttsSection(H, st, save, ctx) {
     else ctx.rebuild && ctx.rebuild();
   });
   sel.id = 'drive-tts-provider';
-  rows.push(guard(st, 'tts_provider', H.row(t('drive.provider'), t('drive.provider_hint_tts'), [sel], { id: 'drive-tts-provider-row' }), [sel]));
+  const tprov = H.row(t('drive.provider'), t('drive.provider_hint_tts'), [sel], { id: 'drive-tts-provider-row' });
+  const thn = healthNote(healthOf(st, 'tts_provider'));
+  if (thn) tprov.append(thn);
+  rows.push(guard(st, 'tts_provider', tprov, [sel]));
   if (cur === 'cpu') {
     const engines = ['auto', 'chatterbox', 'minimax', ...((st.tts_engines || []).filter((e) => !['auto', 'chatterbox', 'minimax'].includes(e)))];
     const labelOf = (e) => (has(`drive.tts_${e}`) ? t(`drive.tts_${e}`) : e);

@@ -127,6 +127,22 @@ test('speech to text: the engine select and the server fields follow the provide
   }, { fetch });
 });
 
+test('a plugin provider voice chats do not use shows the server note on the provider row', dom, async () => {
+  await withDom(async () => {
+    const { shell } = fakeShell();
+    const prev = bindShell(shell);
+    try {
+      const host = mount(STATUS({
+        providers: { ...PROVIDERS, selected: { ...PROVIDERS.selected, stt: 'faster' } },
+        health: [{ id: 'stt_provider', state: 'degraded', reason: 'not used yet', fix: 'choose cpu', code: 'provider_not_used' }],
+      }));
+      const row = host.querySelector('#drive-stt-provider-row');
+      assert.ok(row.textContent.includes('not used yet'), row.textContent);
+      assert.ok(!host.querySelector('#drive-tts-provider-row').textContent.includes('not used yet'));
+    } finally { bindShell(prev); }
+  }, { fetch: fakeFetch(ok) });
+});
+
 test('the rig: address saves through the schema, the token is write-only, a refused address shows the server reason', dom, async () => {
   const fetch = fakeFetch({
     'PATCH /api/voice/settings': (req) => (req.body.rig && req.body.rig.url === 'ws://169.254.169.254/x'
