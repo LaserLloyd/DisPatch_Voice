@@ -18,7 +18,7 @@ import wave
 import numpy as np
 import pytest
 import yaml
-from fakes import BotView, FakeContext
+from fakes import BotView, FakeContext, core_settings
 from fastapi.testclient import TestClient
 
 from dispatch_voice.host import config as vconfig
@@ -136,7 +136,7 @@ def test_no_provider_rejects_builtin_voices_without_crashing(tmp_path, monkeypat
     # A saved 2.1 choice degrades: the setting is kept, but nothing reports it.
     ctx.paths.voice_yaml.write_text("kokoro_voice: am_michael\nkokoro_speed: 1.2\n", encoding="utf-8")
     r = c.get("/api/voice/settings").json()
-    assert r == {"enabled": False, "forced": None, "default_voice": "", "speed": 1.2,
+    assert core_settings(r) == {"enabled": False, "forced": None, "default_voice": "", "speed": 1.2,
                  "voice_turn_thinking": "off", "merge_window_s": 1.8, "hard_silence_s": 1.4,
                  "max_sessions": 3, "max_sessions_live": 3, "restart_required": False,
                  "rt": rt_settings_out(), "rp_speech": "all", "narrator_voice": "", "expressive_tags": True,

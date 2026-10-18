@@ -18,11 +18,13 @@ URL = "ws://192.0.2.7:1236/v1/realtime"
 
 
 @pytest.fixture(autouse=True)
-def _isolated_token(monkeypatch, tmp_path):
+def _isolated_token(monkeypatch, tmp_path, host_env):
     rig._MISCONFIGURED.clear()
     rig._LAST.clear()
     rig.METRICS.reset()
     monkeypatch.delenv(rig.TOKEN_ENV, raising=False)
+    # URL below is a TEST-NET address: a public one, so the admin allow-list has to name it.
+    monkeypatch.setenv("DISPATCH_VOICE_RIG_ALLOW", "192.0.2.0/24")
     path = tmp_path / "local-chat" / "speechforge.env"
     monkeypatch.setattr(rig, "token_path", lambda: path)
     yield path

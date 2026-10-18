@@ -14,27 +14,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
-STT_ENGINES = ("parakeet", "moonshine")
-SPECULATE_MODES = ("advisor", "all", "off")
-POWER_HOLDS = ("performance", "off")
+from ..host import settings_schema as _schema
 
-#: (lo, hi) for the numeric keys, straight from C-§F.1.
-RANGES: dict[str, tuple[float, float]] = {
-    "speculate_max_per_turn": (1, 3),
-    "speculate_min_gap_s": (1.0, 10.0),
-    "decoder_prompt_s": (2.0, 10.0),
-    "first_chunk_tokens": (10, 40),
-    "decoder_sessions": (1, 2),
-    "probe_silence_s": (0.2, 0.5),
-    "hold_min_s": (0.2, 1.0),
-    "hold_max_s": (0.5, 2.0),
-    "addendum_s": (1.0, 5.0),
-    "echo_guard_s": (0.5, 5.0),
-    "false_interrupt_timeout_s": (1.0, 5.0),
-    "stt_threads_while_speaking": (1, 8),
-    "hard_silence_s": (0.8, 3.0),
-    "quiet_max_s": (600.0, 14400.0),
-}
+STT_ENGINES = _schema.STT_ENGINES
+SPECULATE_MODES = _schema.SPECULATE_MODES
+POWER_HOLDS = _schema.POWER_HOLD_MODES
+
+#: (lo, hi) for the numeric keys, straight from C-§F.1: generated from the settings table
+#: (``host/settings_schema.py``), which is the one place a range is written.
+RANGES: dict[str, tuple[float, float]] = _schema.rt_ranges()
 
 
 @dataclass(frozen=True)

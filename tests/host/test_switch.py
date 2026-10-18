@@ -547,8 +547,8 @@ def test_a_builtin_provider_describes_itself_and_releases(host_env, monkeypatch)
     assert "bogus" not in registry.builtin_info()
     routes.release_models()
     assert released == [1]
-    assert registry.ExtensionAPI(None, None).api_version == 3
-    assert registry.ExtensionAPI().api_version == 3
+    assert registry.ExtensionAPI(None, None).api_version == 4
+    assert registry.ExtensionAPI().api_version == 4
 
 
 def test_cache_tags_are_plain_names_and_old_ones_are_pruned(host_env):

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import yaml
-from fakes import BotView, assert_private
+from fakes import BotView, assert_private, core_settings
 
 from dispatch_voice.host import config as vconfig
 from dispatch_voice.host import registry, routes
@@ -75,7 +75,7 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
     c, ctx, _ = app_voice
     r = c.get("/api/voice/settings")
     assert r.status_code == 200
-    assert r.json() == {"enabled": True, "forced": "on",
+    assert core_settings(r.json()) == {"enabled": True, "forced": "on",
                         "default_voice": "builtin:af_heart", "speed": 1.05,
                         "voice_turn_thinking": "off", "merge_window_s": 1.8,
                         "hard_silence_s": 1.4, "max_sessions": 3, "max_sessions_live": 3,
@@ -89,7 +89,7 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
     r = c.patch("/api/voice/settings", json={"speed": 1.2, "voice_turn_thinking": "low",
                                              "default_voice": "builtin:am_michael"})
     assert r.status_code == 200, r.text
-    assert r.json() == {"enabled": True, "forced": "on",
+    assert core_settings(r.json()) == {"enabled": True, "forced": "on",
                         "default_voice": "builtin:am_michael", "speed": 1.2,
                         "voice_turn_thinking": "low", "merge_window_s": 1.8,
                         "hard_silence_s": 1.4, "max_sessions": 3, "max_sessions_live": 3,

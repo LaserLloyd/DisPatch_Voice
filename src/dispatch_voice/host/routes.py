@@ -38,7 +38,8 @@ import numpy as np
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import Response
 
-from . import context
+from . import context, netpolicy
+from . import settings_schema as _sch
 from .config import (
     BOT_KEYS,
     GATEWAY_TRAILERS,
@@ -506,6 +507,12 @@ def build_router() -> APIRouter:
         ch = await asyncio.to_thread(_voice_choices, settings)
         return _settings_out(settings, ch)
 
+    @r.get("/settings/schema")
+    async def get_voice_settings_schema():
+        """Every setting with its type, default, range, scope (server | device | bot), level
+        (basic | advanced), secrecy and environment names: what the Settings pane renders from."""
+        return _sch.schema_json()
+
     @r.patch("/settings")
     async def patch_voice_settings(body: dict = Body(...)):
         from . import config as _vc
@@ -523,54 +530,13 @@ def build_router() -> APIRouter:
                                          "switch can't change it")
             if settings.forced is None:
                 update["enabled"] = v
-        if "speed" in body:
-            update["speed"] = _ranged(body["speed"], "speed", SPEED_MIN, SPEED_MAX)
-        if "merge_window_s" in body:
-            update["merge_window_s"] = _ranged(body["merge_window_s"], "merge_window_s",
-                                               MERGE_WINDOW_MIN, MERGE_WINDOW_MAX)
-        if "hard_silence_s" in body:
-            update["hard_silence_s"] = _ranged(body["hard_silence_s"], "hard_silence_s",
-                                               HARD_SILENCE_MIN, HARD_SILENCE_MAX)
-        if "voice_turn_thinking" in body:
-            v = body["voice_turn_thinking"]
-            if v not in THINKING_LEVELS:
-                raise HTTPException(422, f"voice_turn_thinking must be one of {', '.join(THINKING_LEVELS)}")
-            update["voice_turn_thinking"] = v
-        if "max_sessions" in body:
-            v = body["max_sessions"]
-            if isinstance(v, bool) or not isinstance(v, int) or not MAX_SESSIONS_MIN <= v <= MAX_SESSIONS_MAX:
-                raise HTTPException(422, f"max_sessions must be a whole number between "
-                                         f"{MAX_SESSIONS_MIN} and {MAX_SESSIONS_MAX}")
-            update["max_sessions"] = v
-        if "rt" in body:
-            update_rt = _validate_rt(body["rt"])
-            if update_rt:
-                update["rt"] = update_rt
-        if "rp_speech" in body:
-            v = body["rp_speech"]
-            if v not in RP_MODES:
-                raise HTTPException(422, f"rp_speech must be one of {', '.join(RP_MODES)}")
-            update["rp_speech"] = v
-        if "expressive_tags" in body:
-            if not isinstance(body["expressive_tags"], bool):
-                raise HTTPException(422, "expressive_tags must be true or false")
-            update["expressive_tags"] = body["expressive_tags"]
-        if "gateway_trailer" in body:
-            v = body["gateway_trailer"]
-            if v not in GATEWAY_TRAILERS:
-                raise HTTPException(422, f"gateway_trailer must be one of {', '.join(GATEWAY_TRAILERS)}")
-            update["gateway_trailer"] = v
-        if "opus" in body:
-            v = body["opus"]
-            if v not in _vc.OPUS_MODES:
-                raise HTTPException(422, f"opus must be one of {', '.join(_vc.OPUS_MODES)}")
-            update["opus"] = v
-        for key, rungs in (("opus_down_kbps", _vc.OPUS_DOWN_KBPS), ("opus_up_kbps", _vc.OPUS_UP_KBPS)):
-            if key in body:
-                v = body[key]
-                if isinstance(v, bool) or v not in rungs:
-                    raise HTTPException(422, f"{key} must be one of {', '.join(map(str, rungs))}")
-                update[key] = int(v)
+        # Everything the schema describes (types, ranges, enums, the rt and rig trees, the
+        # aliases) is validated by the schema, not by a branch per key.
+        try:
+            _sch._merge(update, _sch.validate_patch(body, extra_keys=ROUTE_KEYS))
+        except _sch.SettingError as e:
+            raise HTTPException(422, str(e)) from None
+        warnings = _check_targets(update, settings)
         if "narrator_voice" in body:
             v = body["narrator_voice"]
             if v in ("", None):
@@ -582,8 +548,6 @@ def build_router() -> APIRouter:
                 update["narrator_voice"] = v
         if "bots" in body:
             update["bots"] = _validate_bots(body["bots"])
-        if "rig" in body:
-            update["rig"] = _validate_rig(body["rig"])
         reset: list[str] = []
         if "reset" in body:
             v = body["reset"]
@@ -622,7 +586,89 @@ def build_router() -> APIRouter:
         await apply_switch(was_on, fresh)
         _APPLIED["on"] = fresh.switched_on
         ch = await asyncio.to_thread(_voice_choices, fresh)
-        return _settings_out(fresh, ch)
+        out = _settings_out(fresh, ch)
+        # Saved but not in effect: the environment still decides these.
+        held = {i: fresh.sources[i]["env"] for i in _flat_ids(update)
+                if fresh.sources.get(i, {}).get("source") == "env" and i != "enabled"}
+        if held:
+            out["overridden"] = held
+        if warnings:
+            out["warnings"] = warnings
+        return out
+
+    @r.put("/rig/token")
+    async def put_rig_token(body: dict = Body(...)):
+        """Save the rig token to its private file (owner-only permissions). Write-only: nothing
+        here, or anywhere, ever returns it."""
+        from . import rig as _rig
+        if set(body) != {"token"}:
+            raise HTTPException(422, "Send {\"token\": \"...\"}")
+        if _rig.read_token().source == "env":
+            raise HTTPException(409, f"{_rig.TOKEN_ENV} is set in the server's environment, which wins. "
+                                     "Remove it there to manage the token here.")
+        try:
+            await asyncio.to_thread(_rig.write_token, body["token"])
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        except OSError:
+            log.exception("voice: could not save the rig token")
+            raise HTTPException(500, "Could not save the token (is the folder writable?)") from None
+        return await asyncio.to_thread(_rig.status, load_settings())
+
+    @r.delete("/rig/token")
+    async def delete_rig_token():
+        from . import rig as _rig
+        if _rig.read_token().source == "env":
+            raise HTTPException(409, f"{_rig.TOKEN_ENV} is set in the server's environment; remove it there.")
+        await asyncio.to_thread(_rig.clear_token)
+        return await asyncio.to_thread(_rig.status, load_settings())
+
+    @r.get("/providers")
+    async def get_providers():
+        """The speech providers (STT, TTS, turn-taking): health, capabilities, the settings each
+        reads; and the installed provider plugins with whether each is enabled."""
+        from . import providers as _p
+        settings = load_settings()
+        return await asyncio.to_thread(_providers_payload, settings, _p)
+
+    @r.get("/models/status")
+    async def models_status():
+        from . import fetch_job, models
+        return {**fetch_job.JOB.status(), "layout": await asyncio.to_thread(_models_layout, models)}
+
+    @r.post("/models/fetch")
+    async def models_fetch(body: dict = Body(default={})):
+        """Download the speech and Chatterbox models in the background (the same code as
+        `dispatch-voice fetch-models`). One job at a time; poll /models/status."""
+        from . import fetch_job
+        only = body.get("only")
+        if only not in (None, "all", "speech", "chatterbox"):
+            raise HTTPException(422, "only must be speech, chatterbox or all")
+        force, stock = body.get("force", False), body.get("stock", True)
+        if not isinstance(force, bool) or not isinstance(stock, bool):
+            raise HTTPException(422, "force and stock must be true or false")
+        if not fetch_job.JOB.start(None if only in (None, "all") else only, force=force, stock=stock):
+            raise HTTPException(409, "A download is already running")
+        return fetch_job.JOB.status()
+
+    @r.post("/models/cancel")
+    async def models_cancel():
+        from . import fetch_job
+        if not fetch_job.JOB.cancel():
+            raise HTTPException(409, "No download is running")
+        return fetch_job.JOB.status()
+
+    @r.post("/models/migrate")
+    async def models_migrate(body: dict = Body(default={})):
+        """Move the models from the old two folders into the unified one. A dry run unless
+        `dry_run` is false; never overwrites; safe to repeat."""
+        from . import fetch_job, models
+        dry = body.get("dry_run", True)
+        if not isinstance(dry, bool):
+            raise HTTPException(422, "dry_run must be true or false")
+        if not dry and fetch_job.JOB.status()["state"] == "running":
+            raise HTTPException(409, "A download is running; try again when it has finished")
+        return await asyncio.to_thread(models.migrate, dry_run=dry)
 
     @r.get("/preview")
     async def voice_preview(voice: str, text: str | None = None):
@@ -727,64 +773,6 @@ def _validate_bots(raw) -> dict:
     return clean_bots(raw)
 
 
-def _validate_rt(raw) -> dict:
-    """The ``rt`` tree of a settings PATCH (contracts §F.1): every key named
-    with its range, a wrong type or an unknown key → 422 with the reason."""
-    from dispatch_voice.rt.settings import POWER_HOLDS, RANGES, SPECULATE_MODES, STT_ENGINES, RtSettings
-
-    from . import config as _vc
-    if not isinstance(raw, dict):
-        raise HTTPException(422, "rt takes an object with: " + ", ".join(_vc.RT_KEYS))
-    unknown = set(raw) - set(_vc.RT_KEYS)
-    if unknown:
-        raise HTTPException(422, f"Unknown setting: rt.{sorted(unknown)[0]}")
-    defaults = RtSettings()
-    choices = {"power_hold": POWER_HOLDS, "speculate": SPECULATE_MODES, "stt_engine": STT_ENGINES}
-    for k, v in raw.items():
-        if k in choices:
-            if v not in choices[k]:
-                raise HTTPException(422, f"rt.{k} must be one of {', '.join(choices[k])}")
-            continue
-        d = getattr(defaults, k)
-        if isinstance(d, bool):
-            if not isinstance(v, bool):
-                raise HTTPException(422, f"rt.{k} must be true or false")
-        elif isinstance(d, (int, float)):
-            lo, hi = RANGES.get(k, (None, None))
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or (lo is not None and not lo <= v <= hi):
-                raise HTTPException(422, f"rt.{k} must be a number between {lo} and {hi}")
-            if isinstance(d, int) and int(v) != v:
-                raise HTTPException(422, f"rt.{k} must be a whole number between {lo} and {hi}")
-    return _vc.clean_rt(raw)
-
-
-def _validate_rig(raw) -> dict:
-    """The ``rig`` tree of a settings PATCH (host/rig.py): ``enabled``, ``url`` (a
-    ws:// or wss:// address, or "" to clear it) and the deadlines, each named with
-    its range. The token is never a setting: it stays in the server's environment."""
-    from . import rig as _rig
-    keys = ("enabled", "url", *_rig.RIG_RANGES)
-    if not isinstance(raw, dict):
-        raise HTTPException(422, "rig takes an object with: " + ", ".join(keys))
-    unknown = set(raw) - set(keys)
-    if unknown:
-        raise HTTPException(422, f"Unknown setting: rig.{sorted(unknown)[0]}")
-    if "enabled" in raw and not isinstance(raw["enabled"], bool):
-        raise HTTPException(422, "rig.enabled must be true or false")
-    if "url" in raw:
-        v = raw["url"]
-        if not isinstance(v, str) or (v.strip() and not _rig.valid_url(v.strip())):
-            raise HTTPException(422, "rig.url must be a ws:// or wss:// address with no "
-                                     "credentials or query (the token stays in the environment)")
-    for k, (lo, hi) in _rig.RIG_RANGES.items():
-        if k in raw:
-            v = raw[k]
-            if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
-                raise HTTPException(422, f"rig.{k} must be a whole number between {lo} and {hi}")
-    out = _rig.clean_rig({**raw, **({"url": raw["url"].strip()} if isinstance(raw.get("url"), str) else {})})
-    return out
-
-
 def effective_bots(settings: VoiceSettings) -> dict:
     """``{bot id: {backchannel, follow_up}}`` for every bot the context lists
     (the per-bot defaults the Bots-tab popover shows). Since 1.3.1 a ``safe``
@@ -844,8 +832,29 @@ async def status_payload(settings: VoiceSettings) -> dict:
     from . import acks
     st["acks"] = await asyncio.to_thread(acks.status)
     st["bots"] = effective_bots(settings)
+    from . import health as _health
+    from . import models as _models
+    from . import providers as _p
     from . import rig as _rig
+    from . import sysreq
     st["rig"] = await asyncio.to_thread(_rig.status, settings)
+    # Reason + fix for everything that is not fine (no paths, no keys).
+    st["health"] = await asyncio.to_thread(_health.report, settings)
+    st["health_state"] = _health.overall(st["health"])
+    st["system"] = await asyncio.to_thread(sysreq.check)
+    st["providers"] = await asyncio.to_thread(_providers_payload, settings, _p)
+    st["models"] = {**_fetch_status(), "layout": await asyncio.to_thread(_models_layout, _models)}
+    # Settings the server's ENVIRONMENT decides: {id: variable name} (the pane shows "set by environment").
+    st["settings_env"] = {k: v["env"] for k, v in settings.sources.items()
+                          if v.get("source") == "env" and v.get("env") and not k.startswith(("device.", "bots."))}
+    st["tts_engines"] = _engine_names()
+    return st
+
+
+def _fetch_status() -> dict:
+    from . import fetch_job
+    st = fetch_job.JOB.status()
+    st.pop("log", None)
     return st
 
 
@@ -862,13 +871,13 @@ def _sessions_count(settings: VoiceSettings) -> dict:
     return {"open": ws.open_count(), "max": settings.max_sessions}
 
 
+#: Keys the route validates itself (they need the switch's lock, a voice lookup, the bot list,
+#: or are not settings at all). Everything else comes from the schema.
+ROUTE_KEYS = frozenset({"enabled", "default_voice", "reset", "bots", "narrator_voice"})
 #: Every key PATCH /api/voice/settings accepts.
-SETTING_KEYS = frozenset({"enabled", "default_voice", "speed", "voice_turn_thinking",
-                          "merge_window_s", "hard_silence_s", "reset", "max_sessions", "rt",
-                          "rp_speech", "narrator_voice", "expressive_tags", "gateway_trailer", "bots",
-                          "opus", "opus_down_kbps", "opus_up_kbps", "rig"})
+SETTING_KEYS = _sch.patchable_keys() | ROUTE_KEYS
 #: Keys ``reset`` may put back to the server's default (the Voice lab's).
-RESETTABLE = frozenset({"voice_turn_thinking", "merge_window_s", "hard_silence_s"})
+RESETTABLE = frozenset(s.id for s in _sch.FILE_SETTINGS if s.resettable)
 
 LAB_TEST_MAX_S = 10
 LAB_TEST_MAX_BYTES = 16000 * 2 * LAB_TEST_MAX_S
@@ -877,18 +886,86 @@ LAB_TEST_FALLBACK = "I didn't catch anything that time. Try again a little close
 _LAB_LOCK = threading.Lock()
 
 
-def _ranged(v, name: str, lo: float, hi: float) -> float:
-    if (not isinstance(v, (int, float)) or isinstance(v, bool)
-            or not lo <= float(v) <= hi):
-        raise HTTPException(422, f"{name} must be between {lo} and {hi}")
-    return round(float(v), 3)
+def _flat_ids(tree: dict, prefix: str = "") -> list[str]:
+    """``{"speed": 1, "rt": {"power_hold": "off"}}`` -> ``["speed", "rt.power_hold"]``."""
+    ids: list[str] = []
+    for k, v in tree.items():
+        if k in _sch.TREES and isinstance(v, dict):
+            ids += _flat_ids(v, f"{k}.")
+        elif k != "bots":
+            ids.append(prefix + k)
+    return ids
+
+
+def _engine_names() -> list[str]:
+    from . import registry
+    return sorted({"auto", "chatterbox", "minimax", *registry.engine_names()})
+
+
+def _check_targets(update: dict, settings: VoiceSettings) -> list[str]:
+    """Where voice audio and text may go. Refuses (422) an address the network policy forbids;
+    returns warnings (plain ws:// off the machine). Also names must be ones that exist."""
+    warnings: list[str] = []
+    rig_up = update.get("rig", {})
+    allow = tuple(rig_up["allow"]) if "allow" in rig_up else tuple(settings.rig_allow)
+    url = rig_up.get("url")
+    checks = [("rig.url", url, ("ws", "wss"))] if url else []
+    for key in ("hq_url", "stt_url"):
+        if update.get(key):
+            checks.append((key, update[key], ("http", "https")))
+    for key, value, schemes in checks:
+        v = netpolicy.check_url_policy(value, allow, schemes=schemes)
+        if not v.ok:
+            raise HTTPException(422, f"{key}: {v.reason} {v.fix}")
+        if v.warning:
+            warnings.append(f"{key}: {v.warning}")
+    if "tts_engine" in update and update["tts_engine"] not in _engine_names():
+        raise HTTPException(422, "Unknown TTS engine: " + update["tts_engine"][:32]
+                            + " (available: " + ", ".join(_engine_names()) + ")")
+    for key, kind, extra in (("stt_provider", "stt", ("cpu", "openai")), ("tts_provider", "tts", ("auto", "cpu", "openai"))):
+        if key in update:
+            from . import providers as _p
+            known = sorted({*extra, *_p.REGISTRY.ids(kind)})
+            if update[key] not in known:
+                label = "speech-to-text" if kind == "stt" else "text-to-speech"
+                raise HTTPException(422, f"Unknown {label} provider: " + update[key][:32]
+                                    + " (available: " + ", ".join(known) + ")")
+    return warnings
+
+
+def _models_layout(models) -> dict:
+    """Where the models live and whether an old layout is left to move. No paths."""
+    return {"legacy": models.legacy_present(), "moves": [
+        {"family": m["family"], "state": m["state"]} for m in models.plan()]}
+
+
+def _providers_payload(settings: VoiceSettings, _p) -> dict:
+    enabled = {t for t in settings.extensions if ":" not in t}
+    return {"providers": _p.REGISTRY.catalog(settings),
+            "plugins": _p.discover_entry_points(enabled),
+            "selected": {"stt": "rig" if settings.rig.enabled else settings.stt_provider,
+                         "tts": "rig" if settings.rig.enabled else _tts_selected(settings),
+                         "vad": "cpu"}}
+
+
+def _tts_selected(settings: VoiceSettings) -> str:
+    """The provider the TTS select shows: ``openai`` when the HQ server is in use (``hq_url`` set and
+    not switched off with ``tts_provider: cpu``), a plugin's id when one was chosen, else ``cpu``."""
+    p = settings.tts_provider
+    if p == "openai" or (p == "auto" and settings.hq_url):
+        return "openai"
+    return p if p not in ("auto", "cpu") else "cpu"
 
 
 def _settings_out(settings: VoiceSettings, ch: dict) -> dict:
     # `max_sessions` is read once, at setup, for the gate's `max_total` (the
     # context is sealed after setup): a changed value is saved but takes effect
     # at the next restart, and the response says so for the Settings pane.
+    from . import rig as _rig
     live_max = _sessions_count(settings)["max"]
+    tok = _rig.read_token()
+    src = {k: v["source"] for k, v in settings.sources.items() if not k.startswith(("device.", "bots."))}
+    env = {k: v["env"] for k, v in settings.sources.items() if v.get("source") == "env" and v.get("env")}
     return {"enabled": settings.switched_on, "forced": settings.forced,
             "default_voice": ch["default_voice"], "speed": settings.speed,
             "voice_turn_thinking": settings.voice_turn_thinking or "off",
@@ -904,8 +981,17 @@ def _settings_out(settings: VoiceSettings, ch: dict) -> dict:
             "gateway_trailer": settings.gateway_trailer,
             "opus": settings.opus, "opus_down_kbps": settings.opus_down_kbps,
             "opus_up_kbps": settings.opus_up_kbps,
+            "tts_engine": settings.tts_engine, "stt_provider": settings.stt_provider,
+            "tts_provider": settings.tts_provider,
+            "stt_url": settings.stt_url, "stt_model": settings.stt_model,
+            "hq_url": settings.hq_url, "hq_model": settings.hq_model,
+            "extensions": list(settings.extensions),
             "bots": effective_bots(settings),
-            "rig": settings.rig.to_dict()}
+            "rig": {**settings.rig.to_dict(), "allow": list(settings.rig_allow),
+                    "token": {"set": bool(tok.value), "source": tok.source, "problem": tok.problem}},
+            # Where each value came from: "env" (the server's environment wins; `env` names the
+            # variable, the pane shows "set by environment"), "file" or "default".
+            "sources": src, "env": env}
 
 
 def _stock_id() -> str | None:

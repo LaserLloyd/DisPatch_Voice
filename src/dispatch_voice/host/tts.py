@@ -214,11 +214,16 @@ class HQTTS(_Base):
     another machine. NOT verified against a live server — no such server
     exists yet; this is the contract it is wired against."""
 
-    def __init__(self, url: str, model: str, timeout_s: float, sample_rate: int) -> None:
-        self.url = url.rstrip("/") + "/v1/audio/speech"
+    def __init__(self, url: str, model: str, timeout_s: float, sample_rate: int, *,
+                 api_key: str = "", transport=None) -> None:
+        base = url.rstrip("/")
+        base = base[:-3] if base.endswith("/v1") else base          # a base URL that already ends in /v1
+        self.url = base + "/v1/audio/speech"
         self.model = model
         self.timeout_s = timeout_s
         self.sample_rate = sample_rate
+        self.api_key = api_key                # sent as a bearer token, never logged
+        self.transport = transport            # tests; None = httpx's own
 
     def synth(self, text: str, profile_id: str | None = None) -> tuple[np.ndarray, int]:
         import httpx
@@ -226,7 +231,12 @@ class HQTTS(_Base):
                 "sample_rate": self.sample_rate}
         if profile_id:
             body["voice"] = profile_id
-        r = httpx.post(self.url, json=body, timeout=self.timeout_s)
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        if self.transport is None:
+            r = httpx.post(self.url, json=body, timeout=self.timeout_s, headers=headers)
+        else:
+            with httpx.Client(transport=self.transport, timeout=self.timeout_s) as c:
+                r = c.post(self.url, json=body, headers=headers)
         r.raise_for_status()      # 409 (lease) / 503 (priority hold) -> fallback
         return np.frombuffer(r.content, dtype="<i2"), self.sample_rate
 
@@ -384,9 +394,10 @@ def build_engine(settings):
         raise RuntimeError("no TTS engine is installed (see /api/voice/status)")
     else:
         raise RuntimeError(f"unknown TTS engine {name!r}")
-    if settings.hq_url:
-        eng = FallbackTTS(HQTTS(settings.hq_url, settings.hq_model,
-                                settings.hq_timeout_s, eng.sample_rate), eng)
+    if settings.hq_url and getattr(settings, "tts_provider", "auto") != "cpu":
+        import os
+        eng = FallbackTTS(HQTTS(settings.hq_url, settings.hq_model, settings.hq_timeout_s, eng.sample_rate,
+                                api_key=os.environ.get("DISPATCH_VOICE_HQ_API_KEY", "").strip()), eng)
     return eng
 
 
@@ -416,7 +427,8 @@ _ENGINES_LOCK = threading.Lock()
 
 def shared_engine(settings):
     from . import registry
-    key = f"{settings.tts_engine}:{settings.hq_url}:{registry.engine_names()}"
+    key = (f"{settings.tts_engine}:{settings.hq_url}:{getattr(settings, 'tts_provider', 'auto')}:"
+           f"{registry.engine_names()}")
     with _ENGINES_LOCK:
         if key not in _ENGINES:
             _ENGINES[key] = build_engine(settings)

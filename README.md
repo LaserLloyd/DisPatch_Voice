@@ -95,6 +95,67 @@ mkdir -p ~/.config/local-chat && (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '
 
 Then Settings → Voice → *Use the GPU rig when available*. This computer stays in charge of the conversation and takes over the speech work whenever the rig is slow, busy or away: a turn only starts on a rig that answered recently, a dead rig is noticed in under a second, and the words in flight replay into the local recogniser. Only voice conditionals go to the rig, never the reference clip. Details: [docs/voice-chat/rig.md](docs/voice-chat/rig.md).
 
+## Settings and environment variables
+
+Every setting has ONE definition ([`host/settings_schema.py`](src/dispatch_voice/host/settings_schema.py)): its type, default, range, whether it is a server, device or per-character setting, basic or advanced, secret or not, and its environment names. `GET /api/voice/settings/schema` serves the table; the Settings page, `PATCH /api/voice/settings` and `voice.yaml` are all generated from it.
+
+**Order of precedence: the environment, then `voice.yaml`, then the default** (1.5.0 let `voice.yaml` beat every variable except `DISPATCH_VOICE`). `GET /api/voice/settings` reports `sources` (`env`, `file` or `default` for each key) and `env` (the variable that is winning); Settings → Voice shows "set by environment" next to such a setting and disables it. A value saved over a variable is kept in `voice.yaml` for when the variable goes (`overridden` in the PATCH answer says so). The environment is not range-limited (the app limits people, not the operator), except `DISPATCH_VOICE_MAX_SESSIONS`.
+
+The table below is generated from the schema (`python -m dispatch_voice.host.settings_schema --write-readme`); a test fails when it is stale.
+
+<!-- env-table:start -->
+| Environment variable | Setting | Default | Notes |
+|---|---|---|---|
+| `DISPATCH_VOICE` | `enabled` | False | Turns voice chat on. DISPATCH_VOICE=1/0 forces it (the switch is then locked). |
+| `DISPATCH_VOICE_STT_PROVIDER` | `stt_provider` | cpu | cpu (this computer), openai (an OpenAI-compatible server), or a plugin's id. The GPU rig is switched with rig.enabled. |
+| `DISPATCH_VOICE_STT_URL` | `stt_url` | - | A server with POST /v1/audio/transcriptions (whisper.cpp, faster-whisper-server, ...). |
+| `DISPATCH_VOICE_STT_MODEL` | `stt_model` | - | Transcription model |
+| `DISPATCH_VOICE_STT_TIMEOUT` | `stt_timeout_s` | 20.0 | Transcription timeout (s) |
+| `DISPATCH_VOICE_STT_API_KEY` | `stt_api_key` | (unset) | Only ever read from the environment. |
+| `DISPATCH_VOICE_STT` | `rt.stt_engine` | parakeet | Which recogniser hears you. Parakeet is the default; Moonshine is an optional extra (it falls back to Parakeet when missing). |
+| `DISPATCH_VOICE_THREADS` | `threads` | 6 | onnxruntime intra-op threads. |
+| `DISPATCH_VOICE_TTS_PROVIDER` | `tts_provider` | auto | auto (an OpenAI-compatible server when hq_url is set, else this computer), cpu (never the remote server), openai, or a plugin's id. The GPU rig is switched with rig.enabled. |
+| `DISPATCH_VOICE_TTS` | `tts_engine` | auto | auto, chatterbox, minimax, or the name a plugin registered (kokoro). |
+| `DISPATCH_VOICE_BUILTIN_VOICE` | `builtin_voice` | - | Changed with default_voice (it also accepts a cloned-voice profile). |
+| `DISPATCH_VOICE_KOKORO_VOICE` | `builtin_voice` | - | older name of `DISPATCH_VOICE_BUILTIN_VOICE` |
+| `DISPATCH_VOICE_SPEED` | `speed` | 1.05 | Engines that support a speed (a cloned voice keeps its own pace). |
+| `DISPATCH_VOICE_KOKORO_SPEED` | `speed` | 1.05 | older name of `DISPATCH_VOICE_SPEED` |
+| `DISPATCH_VOICE_TTS_THREADS` | `tts_threads` | 8 | ONNX threads (speech synthesis) |
+| `DISPATCH_VOICE_HQ_URL` | `hq_url` | - | A server with POST /v1/audio/speech; the reply text is sent to it, and any failure falls back to this computer's voice. |
+| `DISPATCH_VOICE_HQ_MODEL` | `hq_model` | - | Speech server model |
+| `DISPATCH_VOICE_HQ_TIMEOUT` | `hq_timeout_s` | 4.0 | Speech server timeout (s) |
+| `DISPATCH_VOICE_HQ_API_KEY` | `hq_api_key` | (unset) | Only ever read from the environment. |
+| `DISPATCH_VOICE_MINIMAX_MODEL` | `minimax_model` | speech-2.8-turbo | MiniMax model |
+| `DISPATCH_VOICE_MINIMAX_VOICE` | `minimax_voice` | Wise_Woman | MiniMax voice |
+| `DISPATCH_VOICE_MINIMAX_BASE_URL` | `minimax_base_url` | https://api.minimax.io | MiniMax address |
+| `MINIMAX_API_KEY` | `minimax_api_key` | (unset) | Only ever read from the environment. |
+| `DISPATCH_VOICE_MERGE_WINDOW` | `merge_window_s` | 1.8 | Turn merge window (s) |
+| `DISPATCH_VOICE_HARD_SILENCE` | `hard_silence_s` | 1.4 | Silence that ends a turn regardless of the turn-taking model. |
+| `DISPATCH_VOICE_THINKING` | `voice_turn_thinking` | off | Thinking during voice turns |
+| `DISPATCH_VOICE_SILENCE` | `no_smart_turn_silence_s` | 0.8 | End-of-turn silence without Smart Turn (s) |
+| `DISPATCH_VOICE_PATIENCE` | `patience` | 1.0 | Server patience multiplier |
+| `DISPATCH_VOICE_BARGE_ABORT` | `barge_abort_turn` | True | Barge-in also aborts the agent turn |
+| `DISPATCH_VOICE_POWER_HOLD` | `rt.power_hold` | performance | Hold the performance power profile while a chat is open (Linux only). |
+| `DISPATCH_VOICE_OPUS` | `opus` | auto | Opus codec |
+| `DISPATCH_VOICE_MAX_SESSIONS` | `max_sessions` | 3 | Voice chats at once |
+| `DISPATCH_VOICE_PREWARM` | `prewarm` | True | Load the models at start-up |
+| `DISPATCH_VOICE_RIG_ENABLED` | `rig.enabled` | False | Use the GPU rig |
+| `DISPATCH_VOICE_RIG_URL` | `rig.url` | - | ws:// or wss:// address of the speech server. Checked against a host allow-list. |
+| `DISPATCH_VOICE_RIG_STT_FINAL_DEADLINE_MS` | `rig.stt_final_deadline_ms` | 350 | Rig: final-transcript deadline (ms) |
+| `DISPATCH_VOICE_RIG_TTS_START_DEADLINE_MS` | `rig.tts_start_deadline_ms` | 800 | Rig: first-audio deadline (ms) |
+| `DISPATCH_VOICE_RIG_AHEAD_MS` | `rig.ahead_ms` | 3000 | Rig: audio rendered ahead (ms) |
+| `DISPATCH_VOICE_RIG_FIRST_CHUNK_TOKENS` | `rig.first_chunk_tokens` | 15 | Rig: first chunk (tokens) |
+| `DISPATCH_VOICE_RIG_ALLOW` | `rig.allow` | - | Hosts, *.suffixes or CIDRs a PUBLIC rig address may be. Private, tailnet and loopback addresses need no entry; link-local and metadata addresses are never allowed. |
+| `SPEECHFORGE_TOKEN` | `rig.token` | (unset) | Write-only: saved to a private file, never shown, never logged. |
+| `DISPATCH_VOICE_EXTENSIONS` | `extensions` | - | Entry-point names from the dispatch_voice.providers group (or legacy module:setup targets). |
+| `DISPATCH_SPEECH_MODELS` | `models_root` | - | Speech-model folder |
+| `DISPATCH_VOICE_MODELS` | `chatterbox_models` | - | Chatterbox model folder |
+| `DISPATCH_VOICE_MODEL_REVISION` | `model_revision` | - | Chatterbox model revision |
+| `DISPATCH_DATA_DIR` | `data_dir` | - | Data folder |
+| `XDG_DATA_HOME` | `data_dir` | - | Data folder |
+| `DISPATCH_VOICE_ACK_RENDER` | `ack_render` | True | Pre-render acknowledgement lines |
+<!-- env-table:end -->
+
 ## Standalone use
 
 ```sh

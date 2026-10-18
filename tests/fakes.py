@@ -34,6 +34,20 @@ from fastapi import Request  # module level: FastAPI resolves the gate's annotat
 from dispatch_voice import fsperm
 
 
+#: Keys 1.6.0 added to GET/PATCH /api/voice/settings (the tests that pin the older shape strip them;
+#: tests/host/test_settings_routes.py asserts the new ones).
+SETTINGS_ADDED = ("sources", "env", "tts_engine", "tts_provider", "stt_provider", "stt_url", "stt_model", "hq_url", "hq_model",
+                  "extensions", "overridden", "warnings")
+
+
+def core_settings(out: dict) -> dict:
+    """``out`` without the 1.6.0 additions (see SETTINGS_ADDED)."""
+    d = {k: v for k, v in out.items() if k not in SETTINGS_ADDED}
+    if isinstance(d.get("rig"), dict):
+        d["rig"] = {k: v for k, v in d["rig"].items() if k not in ("allow", "token")}
+    return d
+
+
 def make_private(path, *, private: bool = True) -> None:
     """Give ``path`` the protection the token-file rules look at: owner-only (``private``)
     or readable by everyone. POSIX: chmod 600 / 644. Windows: the ACL (restrict, or grant

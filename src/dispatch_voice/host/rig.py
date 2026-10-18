@@ -56,6 +56,7 @@ from urllib.parse import urlsplit
 import numpy as np
 
 from .. import fsperm
+from . import settings_schema as _schema
 
 log = logging.getLogger("dispatch.voice")
 
@@ -128,14 +129,9 @@ SERVING_LEASES = ("held", "unleased")
 # Settings (voice.yaml `rig:`)
 # --------------------------------------------------------------------------- #
 
-#: (lo, hi) for the numeric keys of ``rig:``.
-RIG_RANGES: dict[str, tuple[int, int]] = {
-    "stt_final_deadline_ms": (100, 1000),
-    "tts_start_deadline_ms": (200, 2000),
-    "ahead_ms": (1000, 10000),
-    "first_chunk_tokens": (4, 100),
-}
-URL_MAX = 256
+#: (lo, hi) for the numeric keys of ``rig:`` (generated from the settings table).
+RIG_RANGES: dict[str, tuple[int, int]] = _schema.rig_ranges()
+URL_MAX = _schema.URL_MAX
 
 
 @dataclass(frozen=True)
@@ -160,43 +156,38 @@ class RigSettings:
     def to_dict(self) -> dict:
         return {f.name: getattr(self, f.name) for f in fields(self)}
 
-    def active(self, token: str) -> bool:
-        """The rig is in play for a voice chat: switched on, an address, a token."""
-        return bool(self.enabled and self.url and valid_url(self.url) and token)
+    def active(self, token: str, allow: tuple[str, ...] = ()) -> bool:
+        """The rig is in play for a voice chat: switched on, an address the policy accepts, a token."""
+        return bool(self.enabled and self.url and valid_url(self.url) and token and url_verdict(self.url, allow).ok)
 
 
 def valid_url(url: str) -> bool:
     """``ws://`` / ``wss://`` with a host, no credentials, no query or fragment (the
-    token travels in a header, never in a URL that lands in logs)."""
-    if not isinstance(url, str) or not url or len(url) > URL_MAX or any(c.isspace() for c in url):
-        return False
-    try:
-        u = urlsplit(url)
-        _ = u.port                                   # raises on a bad port
-    except ValueError:
-        return False
-    return (u.scheme in ("ws", "wss") and bool(u.hostname) and not u.username and not u.password
-            and not u.query and not u.fragment)
+    token travels in a header, never in a URL that lands in logs). The SHAPE only: which
+    hosts are acceptable is :func:`url_verdict`."""
+    return _schema.check_url(url, schemes=("ws", "wss"))
+
+
+def url_verdict(url: str, allow: tuple[str, ...] | None = None):
+    """Is ``url`` an address the rig may be at (netpolicy: loopback, private, tailnet and LAN
+    names yes; link-local and cloud-metadata never; public only on the admin allow-list)?
+    ``allow=None`` reads the configured allow-list."""
+    from . import netpolicy
+    if allow is None:
+        try:
+            from .config import load_settings
+            allow = tuple(load_settings().rig_allow)
+        except Exception:       # noqa: BLE001 - the policy must not depend on a readable voice.yaml
+            allow = ()
+    return netpolicy.check_url_policy(url, tuple(allow))
 
 
 def clean_rig(raw) -> dict:
     """The ``rig:`` subtree, validated: unknown keys dropped, a number outside its
-    range clamped, a wrong type or a bad URL dropped (the default applies)."""
-    out: dict = {}
-    if not isinstance(raw, dict):
-        return out
-    if isinstance(raw.get("enabled"), bool):
-        out["enabled"] = raw["enabled"]
-    url = raw.get("url")
-    if url == "" or url is None and "url" in raw:
-        out["url"] = ""
-    elif isinstance(url, str) and valid_url(url.strip()):
-        out["url"] = url.strip()
-    for k, (lo, hi) in RIG_RANGES.items():
-        v = raw.get(k)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            out[k] = int(min(hi, max(lo, round(float(v)))))
-    return out
+    range clamped, a wrong type or a bad URL dropped (the default applies). Only the
+    keys ``RigSettings`` has (the allow-list is the server's, not a per-connection value)."""
+    names = {f.name for f in fields(RigSettings)}
+    return {k: v for k, v in _schema.clean_subtree("rig", raw).items() if k in names}
 
 
 def http_base(url: str) -> str:
@@ -232,6 +223,33 @@ class Token:
 
 #: One warning per process when the token file's permissions cannot be read.
 _WARNED_PERMS: list[bool] = []
+_AUTH_HEADER = re.compile(r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)\S+")
+
+
+class _RedactTokens(logging.Filter):
+    """The websockets library logs every request header at DEBUG, ``Authorization: Bearer <token>``
+    included. Records that pass through this filter have the value replaced."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:       # noqa: BLE001 - a malformed record is not ours to fix
+            return True
+        red = _AUTH_HEADER.sub(r"\1***", msg)
+        if red != msg:
+            record.msg, record.args = red, ()
+        return True
+
+
+def ws_logger() -> logging.Logger:
+    """The logger handed to ``websockets.connect``: a child of ``websockets.client`` that redacts the
+    bearer token, so turning DEBUG on for the websockets library never writes it to a log."""
+    lg = logging.getLogger("websockets.client.dispatch_voice")
+    if not any(isinstance(f, _RedactTokens) for f in lg.filters):
+        lg.addFilter(_RedactTokens())
+    return lg
+
+
 _ENV_LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 
@@ -268,6 +286,44 @@ def read_token() -> Token:
             if v:
                 return Token(v, "file")
     return Token(problem="no_token")
+
+
+TOKEN_MIN, TOKEN_MAX = 8, 512
+_TOKEN_OK = re.compile(r"\A[\x21-\x7e]+\Z")       # printable ASCII, no space, no control characters
+
+
+def write_token(value: str) -> Path:
+    """Save the rig token to :func:`token_path` as ``SPEECHFORGE_TOKEN=<value>``, readable by
+    the owner only (0600 / an owner-only ACL), atomically. The value is never logged and never
+    echoed. ``ValueError`` (its message names the rule, not the value) for a malformed token."""
+    v = value.strip() if isinstance(value, str) else ""
+    if not (TOKEN_MIN <= len(v) <= TOKEN_MAX) or not _TOKEN_OK.match(v) or any(c in v for c in "'\"`$\\"):
+        raise ValueError(f"The token must be {TOKEN_MIN}-{TOKEN_MAX} visible characters with no spaces or quotes.")
+    p = token_path()
+    made = not p.parent.exists()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if made:
+        fsperm.ensure_private(p.parent, directory=True)
+    tmp = p.with_name(p.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        f.write(f"{TOKEN_ENV}={v}\n")
+    fsperm.ensure_private(tmp)
+    os.replace(tmp, p)
+    _MISCONFIGURED.clear()                  # a new token deserves a fresh try
+    log.info("voice: the rig token was saved to %s", p.name)
+    return p
+
+
+def clear_token() -> bool:
+    """Delete the token file; True when there was one."""
+    try:
+        token_path().unlink()
+    except FileNotFoundError:
+        return False
+    _MISCONFIGURED.clear()
+    log.info("voice: the rig token file was removed")
+    return True
 
 
 def _fingerprint(url: str, token: str) -> str:
@@ -867,12 +923,17 @@ class RigConnection:
     async def _open_socket(self):
         if self._connect_fn is not None:
             return await self._connect_fn(self.settings.url, self._token)
+        from . import netpolicy
+        v = await asyncio.to_thread(netpolicy.check_resolved, self.settings.url)
+        if not v.ok:          # a NAME that resolves to a link-local / metadata address (DNS rebinding)
+            log.warning("voice: the rig address resolves somewhere that is never used (%s)", v.code)
+            raise OSError(v.code)
         from websockets.asyncio.client import connect
         return await connect(self.settings.url, subprotocols=[PROTO],
                              additional_headers={"Authorization": f"Bearer {self._token}"},
                              max_size=MAX_MESSAGE_BYTES, compression=None,
                              open_timeout=OPEN_TIMEOUT_S, ping_interval=None, close_timeout=1.0,
-                             user_agent_header=f"dispatch-voice/{self.version or '1'}")
+                             user_agent_header=f"dispatch-voice/{self.version or '1'}", logger=ws_logger())
 
     async def _connect(self, *, resume: bool) -> None:
         self.state = "connecting"
@@ -1498,9 +1559,11 @@ def status(settings) -> dict:
     """What the browser may know: no token, the address reduced to its host."""
     rs: RigSettings = getattr(settings, "rig", None) or RigSettings()
     tok = read_token()
-    configured = bool(rs.url and valid_url(rs.url) and tok.value)
+    verdict = url_verdict(rs.url) if rs.url and valid_url(rs.url) else None
+    configured = bool(rs.url and valid_url(rs.url) and tok.value and (verdict is None or verdict.ok))
     live = [c for c in list(_LIVE) if c.state != "closed"]
     out: dict = {"configured": configured, "enabled": rs.enabled, "url_set": bool(rs.url),
+                 "url_check": verdict.to_dict() if verdict is not None else None,
                  "token": tok.source, "token_problem": tok.problem, "host": host_of(rs.url),
                  "active": bool(configured and rs.enabled), "sessions": len(live),
                  "metrics": METRICS.snapshot()}
@@ -1624,6 +1687,13 @@ def open_for_session(settings, *, token: str | None = None, connect=None,
     if not valid_url(rs.url):
         log.warning("voice: rig.url is not a ws:// or wss:// address; the rig is not used")
         return None
+    verdict = url_verdict(rs.url, tuple(getattr(settings, "rig_allow", ()) or ()))
+    if not verdict.ok:
+        log.warning("voice: the rig address is refused (%s); the rig is not used", verdict.code)
+        return None
+    if verdict.warning:
+        log.warning("voice: the rig address is not encrypted (ws://) and is not this machine: audio and the "
+                    "token cross the network in the clear")
     value = token if token is not None else read_token().value
     if not value:
         log.info("voice: rig.enabled is on but %s is not set; the rig is not used", TOKEN_ENV)

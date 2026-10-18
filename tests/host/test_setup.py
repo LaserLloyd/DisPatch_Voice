@@ -131,7 +131,7 @@ def test_plugin_seam_runs_inside_setup_and_mounts_under_api_voice(host_env, monk
     monkeypatch.setattr(chatterbox, "available", lambda: False)
 
     def plug(api):
-        assert api.api_version == 3
+        assert api.api_version == 4
         r = APIRouter(prefix="/kokoro")
 
         @r.get("/voices")
