@@ -109,12 +109,30 @@ def report(settings, *, rig_token: bool | None = None) -> list[dict]:
             out.append(_entry(name, Health("ok")))
 
     # providers the user chose
-    chosen = {"stt": settings.stt_provider}
+    chosen = {"stt": settings.stt_provider, "tts": settings.tts_provider}
+    wired = {"stt": ("cpu", "openai"), "tts": ("auto", "cpu", "openai")}
     for kind, pid in chosen.items():
+        if pid in wired[kind]:
+            continue
         if pid not in P.REGISTRY.ids(kind):
             out.append(_entry(f"{kind}_provider", Health(
                 "down", f"The {kind.upper()} provider {pid!r} is not installed.",
                 "Choose another provider in Settings > Voice, or install the plugin.", "provider_missing")))
+        elif pid == "rig":
+            out.append(_entry(f"{kind}_provider", Health(
+                "degraded", f"{kind}_provider 'rig' does not switch the GPU rig on; this computer's engine runs "
+                            "unless 'Use the GPU rig' is on.",
+                "Turn on 'Use the GPU rig' (rig.enabled) and set the provider back to 'This computer'.",
+                "provider_rig_via_switch")))
+        else:
+            # A plugin's provider is listed and selectable, but the voice session builds only the
+            # built-in pipelines (stt.shared_engine / tts.build_engine): say so instead of letting
+            # the page show a choice that voice chats silently ignore.
+            out.append(_entry(f"{kind}_provider", Health(
+                "degraded", f"Voice chats do not use plugin {kind.upper()} providers yet; {pid!r} is listed "
+                            "but this computer's engine runs instead.",
+                "Choose 'This computer' or an OpenAI-compatible server; a plugin's TTS engine is chosen under "
+                "Voice engine.", "provider_not_used")))
     return out
 
 

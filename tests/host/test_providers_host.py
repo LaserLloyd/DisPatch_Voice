@@ -56,3 +56,23 @@ def test_the_network_policy_applies_when_a_remote_address_is_used_not_only_on_pa
     stt = VoiceSettings(stt_provider="openai", stt_url="http://2852039166/")       # 169.254.169.254 in decimal
     assert any("network policy" in m and "url_blocked_metadata" in m for m in stt.missing())
     assert not any("network policy" in m for m in VoiceSettings(stt_provider="openai", stt_url="http://10.0.0.5/").missing())  # scrub-ok: address-range fixture
+
+
+def test_a_chosen_provider_the_session_does_not_build_is_reported(host_env):
+    """The PATCH accepts any registered provider id, but the voice session builds only cpu/openai
+    (stt.shared_engine, tts.build_engine): the health list must say a plugin's provider (or
+    stt_provider 'rig') is not what speaks, instead of reporting nothing."""
+    from dispatch_voice.host import health
+    from dispatch_voice.host.config import VoiceSettings
+    P.REGISTRY.register("stt", "fancy", "Fancy STT", lambda s: None, origin="plugin")
+    P.REGISTRY.register("tts", "fancy", "Fancy TTS", lambda s: None, origin="plugin")
+    try:
+        by_id = {e["id"]: e for e in health.report(VoiceSettings(stt_provider="fancy", tts_provider="fancy"))}
+        assert by_id["stt_provider"]["code"] == by_id["tts_provider"]["code"] == "provider_not_used"
+        assert by_id["stt_provider"]["state"] == "degraded"
+        assert health.report(VoiceSettings(stt_provider="rig"))[-1]["code"] == "provider_rig_via_switch"
+        assert health.report(VoiceSettings(stt_provider="gone"))[-1]["code"] == "provider_missing"
+        ids = {e["id"] for e in health.report(VoiceSettings(stt_provider="openai", tts_provider="auto"))}
+        assert "stt_provider" not in ids and "tts_provider" not in ids
+    finally:
+        P.REGISTRY.drop_plugins()
