@@ -64,6 +64,26 @@ first Windows-supported release. No change to the voice session itself.
 - The bearer token no longer appears in DEBUG logs of the websockets client; a test pins that no
   log line carries it.
 
+### Fixed (host wiring, W6b)
+- **Speech works right after the in-app download, with no restart** (review F6). The Chatterbox
+  engine and the voice resolver were registered once, at setup, so a download finished
+  afterwards left `status.ready` true while the first voice socket failed ("voice models failed
+  to load"). `tts.build_engine` / `shared_engine` and `resolve_profile` now register them as
+  soon as the models are on disk. `ready` is also exact now: it is true only when the whole
+  Chatterbox set (all four graphs and their weights) and the whole Parakeet set are present, not
+  while the download has written the tokenizer or the encoder but not the rest. Only the
+  cloned-voice management routes (`/api/voice/profiles`) still mount at the next start, and the
+  page says so.
+- **The rig token lives in DisPatch's data folder** (review F7c): the host's credential store
+  (`ctx.secrets`) first, else `<data>/ext/voice/speechforge.env`, so it survives a container
+  image update and `PUT /api/voice/rig/token` no longer answers 500 under a read-only root. The
+  1.6.0 file `~/.config/local-chat/speechforge.env` and `SPEECHFORGE_TOKEN` are still read.
+
+### Changed (host wiring, W6b)
+- **One models folder named `models`** (review F8): the default is `<data>/models` with
+  `speech/` and `chatterbox/` (it was `<data>/speech-models`, which held Chatterbox too). An
+  install that still has `<data>/speech-models` keeps working; `migrate-models` moves it.
+
 ### Fixed (Windows)
 - The rig token file was rejected on every Windows file (POSIX mode bits are always 0666 there):
   the ACL is checked instead. Text files are read and written as UTF-8 (a non-ASCII bot id or

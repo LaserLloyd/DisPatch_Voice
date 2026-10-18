@@ -107,8 +107,10 @@ rig:
 ```
 
 ```sh
-# the token, readable by you only (or SPEECHFORGE_TOKEN in DisPatch's environment)
-mkdir -p ~/.config/local-chat && (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '<token>' > ~/.config/local-chat/speechforge.env)
+# the token, readable by you only (or SPEECHFORGE_TOKEN in DisPatch's environment). Settings -> Voice
+# -> Rig token does the same, into DisPatch's credential store. <data> is DisPatch's data folder
+# (/data in the container).
+mkdir -p <data>/ext/voice && (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '<token>' > <data>/ext/voice/speechforge.env)
 ```
 
 Then Settings → Voice → *Use the GPU rig when available*. This computer stays in charge of the conversation and takes over the speech work whenever the rig is slow, busy or away: a turn only starts on a rig that answered recently, a dead rig is noticed in under a second, and the words in flight replay into the local recogniser. Only voice conditionals go to the rig, never the reference clip. Details: [docs/voice-chat/rig.md](docs/voice-chat/rig.md).
