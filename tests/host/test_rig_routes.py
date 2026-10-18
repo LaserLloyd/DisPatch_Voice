@@ -161,6 +161,42 @@ def test_deleting_a_profile_deletes_its_conditionals_on_the_rig(host_env, monkey
     assert seen == [(f"http://192.0.2.7:1236/v1/voices/{sha}", {"Authorization": f"Bearer {SECRET}"})]
 
 
+@pytest.mark.parametrize("url,allow", [
+    ("ws://169.254.169.254/x", "192.0.2.0/24"),       # cloud metadata: never, allow-list or not
+    (URL, ""),                                        # a public address that is not on the allow-list
+])
+def test_the_deletion_sync_never_sends_the_token_to_an_address_the_policy_refuses(
+        host_env, monkeypatch, _isolated_token, tmp_path, url, allow):
+    """rig.url from a 1.5.0 voice.yaml or the environment never passed the PATCH check: the
+    deletion sync (fired even with the rig switched off) must apply the policy itself."""
+    from types import SimpleNamespace
+    import httpx
+    monkeypatch.setenv("DISPATCH_VOICE_RIG_ALLOW", allow)
+    root = tmp_path / "voices"
+    (root / "v").mkdir(parents=True)
+    (root / "v" / "voice.npz").write_bytes(b"tensors")
+    vconfig.save_prefs({"rig": {"url": url}})
+    write_token(_isolated_token, f"{rig.TOKEN_ENV}={SECRET}\n")
+    monkeypatch.setattr(httpx, "delete", lambda *a, **k: (_ for _ in ()).throw(AssertionError("token sent")))
+    assert rig._delete_target() is None
+    assert rig.sha_for_delete(SimpleNamespace(root=root, get=lambda pid: {}), "v") is None
+    rig.delete_voice_async("0" * 64)                  # nothing to send it to: no thread, no request
+
+
+def test_doctor_probe_never_sends_the_token_to_an_address_the_policy_refuses(host_env, monkeypatch, _isolated_token):
+    import httpx
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("dialled")))
+    write_token(_isolated_token, f"{rig.TOKEN_ENV}={SECRET}\n")
+    vconfig.save_prefs({"rig": {"enabled": True, "url": "ws://169.254.169.254/x"}})
+    r = cli.probe_rig(vconfig.load_settings())
+    assert r["policy"] == "url_blocked_metadata" and "health" not in r
+    line, n = cli.rig_line(r)
+    assert "network policy" in line and n == 1
+    monkeypatch.setenv("DISPATCH_VOICE_RIG_ALLOW", "")
+    vconfig.save_prefs({"rig": {"url": URL}})
+    assert cli.probe_rig(vconfig.load_settings())["policy"] == "url_not_allowed"
+
+
 # ------------------------------------------------------------------ doctor
 @pytest.mark.parametrize("rep,want,bad", [
     ({"enabled": False, "url_set": False, "url_ok": False}, "not set up", 0),
@@ -212,3 +248,17 @@ def test_no_profile_id_is_the_default_profile_or_nothing_never_the_stock_voice(m
     assert rig.voice_file("stock-host") == tmp_path / "stock-host" / "voice.npz"
     default[0] = "mine"
     assert rig.voice_file(None) == tmp_path / "mine" / "voice.npz"
+
+
+def test_a_public_rig_on_the_allow_list_is_used_by_a_voice_chat(host_env, monkeypatch, _isolated_token):
+    """The session's token gate (ws._rig_token) must read the admin allow-list like the status
+    page and open_for_session do: with an empty allow-list it said "no rig" for every public
+    address the allow-list names, so the chat silently stayed on the CPU."""
+    from dispatch_voice.host import ws
+    write_token(_isolated_token, f"{rig.TOKEN_ENV}={SECRET}\n")
+    vconfig.save_prefs({"rig": {"enabled": True, "url": URL}})       # 192.0.2.7: public, allow-listed
+    s = vconfig.load_settings()
+    assert s.rig_allow == ("192.0.2.0/24",) and rig.status(s)["configured"] is True
+    assert ws._rig_token(s) == SECRET
+    monkeypatch.setenv("DISPATCH_VOICE_RIG_ALLOW", "")
+    assert ws._rig_token(vconfig.load_settings()) == ""                # off the list: refused

@@ -437,7 +437,14 @@ _ENGINES_LOCK = threading.Lock()
 def shared_engine(settings):
     from . import profiles_bridge, registry
     profiles_bridge.ensure_engine()      # before the cache key reads the registered names (review F6)
-    key = (f"{settings.tts_engine}:{settings.hq_url}:{getattr(settings, 'tts_provider', 'auto')}:"
+    # Whether the policy accepts hq_url is part of the key: build_engine decides it once per build, so
+    # an allow-list entry removed later must not leave the cached engine sending reply text there.
+    hq_ok = None
+    if settings.hq_url:
+        from . import netpolicy
+        hq_ok = netpolicy.check_url_policy(settings.hq_url, tuple(getattr(settings, "rig_allow", ()) or ()),
+                                           schemes=("http", "https")).ok
+    key = (f"{settings.tts_engine}:{settings.hq_url}:{hq_ok}:{getattr(settings, 'tts_provider', 'auto')}:"
            f"{registry.engine_names()}")
     with _ENGINES_LOCK:
         if key not in _ENGINES:

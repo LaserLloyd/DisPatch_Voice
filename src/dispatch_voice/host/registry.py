@@ -359,11 +359,16 @@ def mount_extensions(ctx=None, spec: str | None = None, *, eps=None) -> list[str
     * the NAME of an installed plugin in the ``dispatch_voice.providers`` entry-point group
       (``kokoro``), or
     * a ``module:callable`` target, or a bare module name (calls its ``setup``), the 1.5.0
-      form. When it comes from the environment variable a deprecation warning says to enable
-      the plugin in Settings > Voice instead.
+      form, honoured ONLY from the environment variable (with a deprecation warning that says
+      to enable the plugin in Settings > Voice instead). The setting is written by any operator
+      through ``PATCH /api/voice/settings``; letting it name an arbitrary importable module and
+      callable (``sys:exit`` stops DisPatch at every boot) would hand the web tier what only
+      the machine's owner should choose, so a module target found in voice.yaml is skipped
+      with a warning. Installed entry-point plugins are the operator's choice.
 
-    ``spec`` (a comma list) replaces the setting; ``eps`` replaces entry-point discovery (tests).
-    A plugin that raises is logged and skipped; it never stops the add-on or DisPatch booting."""
+    ``spec`` (a comma list, treated as the environment's) replaces the setting; ``eps`` replaces
+    entry-point discovery (tests). A plugin that raises is logged and skipped; it never stops
+    the add-on or DisPatch booting."""
     from . import providers
     if spec is None:
         from .config import load_settings
@@ -379,7 +384,11 @@ def mount_extensions(ctx=None, spec: str | None = None, *, eps=None) -> list[str
     ep_names = {ep.name for ep in eps}
     named = {t for t in items if ":" not in t and t in ep_names}
     legacy = [t for t in items if t not in named]
-    if legacy and from_env:
+    if legacy and not from_env:
+        log.warning("voice: `extensions` in voice.yaml names %s, which is not an installed plugin; skipped "
+                    "(a module:setup target is loaded only from DISPATCH_VOICE_EXTENSIONS)", ", ".join(legacy))
+        legacy = []
+    if legacy:
         log.warning("voice: DISPATCH_VOICE_EXTENSIONS is deprecated; install the plugin and enable it in "
                     "Settings > Voice (or list it under `extensions:` in voice.yaml). Still loading: %s",
                     ", ".join(legacy))
@@ -391,7 +400,7 @@ def mount_extensions(ctx=None, spec: str | None = None, *, eps=None) -> list[str
             fn(ExtensionAPI(ctx))
             loaded.append(target)
             log.info("voice: extension %s loaded", target)
-        except Exception:
+        except (Exception, SystemExit):        # a target that exits must not stop DisPatch booting
             log.exception("voice: extension %s failed to load; skipped", target)
     loaded += providers.load_entry_points(ExtensionAPI(ctx), named, eps=eps)
     return loaded

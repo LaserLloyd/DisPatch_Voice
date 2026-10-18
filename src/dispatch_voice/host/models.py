@@ -120,19 +120,31 @@ def speech_dir() -> Path:
     return new
 
 
+def _chatterbox_complete(d: Path) -> bool:
+    try:
+        from .engines.chatterbox import complete
+        return complete(d)
+    except Exception:       # noqa: BLE001 - "cannot tell" is "not complete"
+        return False
+
+
 def chatterbox_dir() -> Path:
+    """The explicit env folder, else the first COMPLETE set (new, old host folder, old home
+    folder), else the first folder holding part of one (a download in progress), else the new
+    one. Completeness first: a move that stopped half way leaves a few files in the new folder
+    and the rest in the old one, and the engine must keep loading from the whole set."""
     exp = _explicit(CHATTERBOX_ENV)
     if exp is not None:
         return exp
     new = root() / CHATTERBOX_SUB
-    if _has_chatterbox(new):
-        return new
     old_host = legacy_host_root()
-    if old_host is not None and _has_chatterbox(old_host / CHATTERBOX_SUB):
-        return old_host / CHATTERBOX_SUB
-    old = legacy_chatterbox_dir()
-    if _has_chatterbox(old):
-        return old
+    cands = [new] + ([old_host / CHATTERBOX_SUB] if old_host is not None else []) + [legacy_chatterbox_dir()]
+    for d in cands:
+        if _chatterbox_complete(d):
+            return d
+    for d in cands:
+        if _has_chatterbox(d):
+            return d
     return new
 
 
@@ -164,7 +176,9 @@ def plan() -> list[dict]:
     if _explicit(CHATTERBOX_ENV) is not None:
         out.append({"family": "chatterbox", "src": str(olds[0]), "dst": str(cb_new), "state": "explicit"})
     else:
-        taken = _has_chatterbox(cb_new)
+        # "Taken" only by a WHOLE set: a move that stopped half way (a file in use on Windows, a full
+        # disk) must be resumable, not reported as done with half the graphs left behind.
+        taken = _chatterbox_complete(cb_new)
         for old in olds:
             if _has_chatterbox(old) and old.resolve() != cb_new.resolve():
                 out.append({"family": "chatterbox", "src": str(old), "dst": str(cb_new),

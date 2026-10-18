@@ -194,3 +194,28 @@ def test_status_route_is_unlocked_only(voice_app):
     ctx.operator = True
     st = c.get("/api/voice/status").json()
     assert "enabled" in st and "missing" in st and "extensions" in st
+
+
+def test_a_module_target_in_voice_yaml_is_never_imported(host_env, monkeypatch):
+    """The `extensions` setting is written by any operator (PATCH): a module:setup target found
+    there must not run (`sys:exit` would stop DisPatch at every boot). Only the environment may
+    name one; installed entry-point plugins load from either."""
+    from dispatch_voice.host import config as vconfig
+    monkeypatch.delenv("DISPATCH_VOICE_EXTENSIONS", raising=False)
+    ran = []
+    install("fake_voice_ext_file", lambda api: ran.append("ran"))
+    vconfig.save_prefs({"extensions": ["sys:exit", "fake_voice_ext_file:setup", "fake_voice_ext_file"]})
+    assert registry.mount_extensions(host_env, eps=[]) == [] and ran == []
+    monkeypatch.setenv("DISPATCH_VOICE_EXTENSIONS", "fake_voice_ext_file:setup")
+    assert registry.mount_extensions(host_env, eps=[]) == ["fake_voice_ext_file:setup"] and ran == ["ran"]
+
+
+def test_a_target_that_exits_does_not_stop_the_boot(host_env):
+    assert registry.mount_extensions(host_env, "sys:exit", eps=[]) == []
+
+
+def test_patch_refuses_a_new_module_target(voice_app, monkeypatch):
+    c, _ = voice_app
+    r = c.patch("/api/voice/settings", json={"extensions": ["sys:exit"]})
+    assert r.status_code == 422 and "DISPATCH_VOICE_EXTENSIONS" in r.text
+    assert c.patch("/api/voice/settings", json={"extensions": ["kokoro"]}).status_code == 200

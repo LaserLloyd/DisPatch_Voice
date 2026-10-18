@@ -7,9 +7,9 @@ nothing. On Windows the protection is the file's ACL, so:
 
 * :func:`restrict` removes inherited access and grants the current user alone (plus the
   SYSTEM account Windows itself needs), through ``icacls`` with SIDs (language independent);
-* :func:`others_can_read` reads the DACL (``advapi32`` via ctypes) and reports whether any
-  well-known "other people" SID (Everyone, Users, Authenticated Users, Guests, ...) is
-  granted access.
+* :func:`others_can_read` reads the DACL (``advapi32`` via ctypes) and reports whether anybody
+  but the current user, SYSTEM and Administrators is granted access (the well-known groups
+  Everyone, Users, Authenticated Users, Guests, ... and any other named account).
 
 When the ACL cannot be read (a filesystem without ACLs: FAT/exFAT, a network share, a
 sandbox) :func:`others_can_read` returns ``None`` ("cannot tell") and the caller logs a
@@ -34,6 +34,11 @@ OTHER_SIDS = frozenset({"S-1-1-0", "S-1-5-32-545", "S-1-5-11", "S-1-5-32-546", "
                         "S-1-5-4", "S-1-5-2", "S-1-5-32-547"})
 OTHER_SID_SUFFIXES = ("-513", "-514")        # Domain Users / Domain Guests
 SYSTEM_SID = "S-1-5-18"
+#: SIDs that may hold access to a private file besides the current user: SYSTEM, the local
+#: Administrators group (they can take ownership of anything anyway; every profile folder grants
+#: it), CREATOR OWNER and OWNER RIGHTS. Any OTHER grant (a second local or domain account, Remote
+#: Desktop Users, an app container, ...) makes the file readable by somebody else.
+OWNER_SIDE_SIDS = frozenset({SYSTEM_SID, "S-1-5-32-544", "S-1-3-0", "S-1-3-4"})
 
 
 def restrict(path: Path | str, *, directory: bool = False) -> bool:
@@ -101,8 +106,13 @@ def others_can_read(path: Path | str) -> bool | None:
     sids = _dacl_sids(str(path))
     if sids is None:
         return None
+    me = current_user_sid()
     for sid in sids:
         if sid in OTHER_SIDS or sid.endswith(OTHER_SID_SUFFIXES):
+            return True
+        # Everybody else who is granted access is "other people" too: a deny-list of well-known
+        # groups alone passed a file shared with one named account.
+        if me is not None and sid != me and sid not in OWNER_SIDE_SIDS:
             return True
     return False
 
@@ -201,6 +211,8 @@ def _dacl_sids(path: str) -> list[str] | None:
                     return None
                 hdr = ACE_HEADER.from_address(ace.value)
                 if hdr.AceType != 0:                       # ACCESS_ALLOWED_ACE_TYPE only
+                    continue
+                if hdr.AceFlags & 0x08:                    # INHERIT_ONLY_ACE: not access to THIS object
                     continue
                 sid_ptr = ace.value + 8                    # header (4) + ACCESS_MASK (4)
                 sid = _sid_to_string(adv, k32, ctypes.c_void_p(sid_ptr))

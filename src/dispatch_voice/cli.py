@@ -242,6 +242,15 @@ def probe_rig(settings) -> dict:
                  "secrets_file": str(rig.host_secrets_file())}
     if not (out["url_ok"] and tok.value):
         return out
+    # The token rides in the /ready header: never to an address the network policy refuses
+    # (the runtime would not dial it either).
+    from .host import netpolicy
+    verdict = rig.url_verdict(rs.url, tuple(getattr(settings, "rig_allow", ()) or ()))
+    if verdict.ok:
+        verdict = netpolicy.check_resolved(rs.url)
+    if not verdict.ok:
+        out["policy"] = verdict.code
+        return out
     import httpx
     base = rig.http_base(rs.url)
     try:
@@ -272,6 +281,9 @@ def rig_line(r: dict) -> tuple[str, int]:
         return "GPU rig: not set up (optional; see docs/voice-chat/rig.md)", 0
     if r["url_set"] and not r["url_ok"]:
         return "GPU rig: rig.url in voice.yaml is not a ws:// or wss:// address", 1
+    if r.get("policy"):
+        return (f"GPU rig{where}: the address is refused by the network policy ({r['policy']}); "
+                "use a private, tailnet or loopback address, or add the host to rig.allow"), 1
     if r.get("token_problem") == "permissions":
         return f"GPU rig: {r['token_file']} is readable by other users: chmod 600 it", 1
     if not r.get("token"):
@@ -330,9 +342,8 @@ def doctor_report(*, backend: Path | None, url: str, check_update: bool) -> dict
     # DISPATCH_VOICE_EXTENSIONS variable, which wins); entry-point plugins that are installed but off.
     from .host import providers
     declared = list(settings.extensions)
-    spec = ",".join(declared)
     routers = DoctorContext()
-    loaded = registry.mount_extensions(routers, spec) if spec else []
+    loaded = registry.mount_extensions(routers) if declared else []     # same rule as the server (env-only module targets)
     if chatterbox.available():
         chatterbox.register()
     enabled = {t for t in declared if ":" not in t}
