@@ -23,6 +23,12 @@ DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatc
 
 **Ports.** The add-on opens no port of its own. Everything it serves rides on DisPatch's port (8765 by default): `/api/voice/*`, the client files under `/ext/voice/*` and the voice socket `/ws/voice/{thread}`. The one listener this package can start is the standalone Voices page, `dispatch-voice serve` (`127.0.0.1:8769`, loopback only, never inside DisPatch). Outbound connections are only the ones you configure: the GPU rig at `rig.url` (SpeechForge listens on `:1236` by default), an OpenAI-compatible speech or transcription server, MiniMax, and the model downloads (GitHub, Hugging Face) when you press Download or run `fetch-models`.
 
+| Port | What | Listens on |
+|---|---|---|
+| 8765 | DisPatch itself. The add-on's routes (`/api/voice/*`, `/ext/voice/*`, `/ws/voice/{thread}`) ride on it; the DisPatch image exposes it. | DisPatch's bind address (`BIND_ADDR` in DisPatch's `docker-compose.yml`) |
+| 8769 | `dispatch-voice serve`, the standalone Voices page. Not started by DisPatch or its image. | `127.0.0.1` only |
+| 1236 | SpeechForge, the GPU rig (optional). Outbound from the add-on to `rig.url`. | the rig |
+
 **One page, no terminal.** With the add-on installed and DisPatch restarted once, everything else is Settings → Voice: switch it on, **Download** the models (about 1.4 GB, with progress and Cancel), pick the speech-to-text and text-to-speech providers, test the microphone. The commands below remain for servers configured as code.
 
 ```sh
@@ -60,6 +66,10 @@ Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin pac
 The models live in ONE folder (DisPatch's `models_dir`) with a `speech/` and a `chatterbox/` subfolder. An install from before 1.6.0 keeps working where its files are; `dispatch-voice migrate-models` (dry run) and `--apply`, or the Move button, bring the old two folders into the new layout.
 
 Voice chat understands and speaks English only for now. It works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with (the `safe` ones); every turn from a locked device, spoken or typed, runs with DisPatch's locked rules, and the voice settings stay unlocked-only. Since 1.3.4 a bot can use a different voice for locked devices: `bots.<id>.locked_voice` in `voice.yaml`, or the "Voice on locked devices" picker in the Bots-tab Voice popover. Empty (the default) means the bot's standard voice. The server picks it from the socket's locked flag, and a locked device cannot read the setting.
+
+### Run in Docker
+
+DisPatch's image ships the add-on when it is built with `--build-arg VOICE=1` (or `VOICE=1` in DisPatch's `.env`, then `docker compose up -d --build`). `VOICE_REF` picks the add-on's ref: a full ref (`refs/heads/<branch>`, `refs/tags/<tag>`) or a bare tag name. With `VOICE_SRC=local` and `--build-context voice-src=<dir>` the add-on is installed from a local directory instead. The speech models are not baked into the image; download them from Settings → Voice. The steps are in DisPatch Chat's `docs/voice.md` and `docs/deploy-docker.md`.
 
 ### Which DisPatch version
 
@@ -237,6 +247,8 @@ uv run pytest -q                 # Python; model-backed tests skip when the mode
 npm install && npm test          # client modules (node --test; jsdom for the DOM suites)
 python3 scripts/check-locales.py # locale bundles
 ```
+
+`npm test` needs Node `^22.22.2 || ^24.15.0 || >=26`, the range jsdom 30 declares (`engines` in `package.json` says the same); on other versions `npm install` warns with EBADENGINE.
 
 See [tests/README.md](tests/README.md) for the layout, the DisPatch stand-in (`tests/fakes.py`), the fixtures, and how to run the model-backed and browser harnesses on a shared machine. The cross-repo contract test (`tests/contract/`) runs against a DisPatch checkout (`DISPATCH_BACKEND`); `tests/e2e_voice_roundtrip.py` walks a whole voice chat on a scratch server, with or without DisPatch.
 

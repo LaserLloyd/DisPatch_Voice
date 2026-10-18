@@ -11,7 +11,7 @@ from dispatch_voice.host import netpolicy as N
 
 @pytest.mark.parametrize("host, kind", [
     ("127.0.0.1", "loopback"), ("[::1]", "loopback"), ("localhost", "loopback"), ("x.localhost", "loopback"),
-    ("10.1.2.3", "private"), ("172.16.0.9", "private"), ("172.31.255.1", "private"), ("192.168.3.37", "private"),  # scrub-ok: address-range fixture
+    ("10.1.2.3", "private"), ("172.16.0.9", "private"), ("172.31.255.1", "private"), ("192.168.77.37", "private"),  # scrub-ok: address-range fixture
     ("fd12:3456::1", "private"),
     ("100.64.0.1", "tailnet"), ("100.127.255.254", "tailnet"), ("100.100.100.200", "metadata"),  # scrub-ok: address-range fixture
     ("169.254.169.254", "metadata"), ("169.254.170.2", "metadata"), ("fd00:ec2::254", "metadata"),
