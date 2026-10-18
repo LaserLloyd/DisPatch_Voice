@@ -8,7 +8,224 @@ On the call screen there are three round buttons: **Mute**, **Type** (type your 
 
 Docs: [docs/voice-chat/](docs/voice-chat/index.md) (install and setup, the host side, turn taking, the protocol).
 
-## Install, for DisPatch
+## Install
+
+DisPatch Voice is an add-on, not an app, so "install" means adding it to a DisPatch install (2.2.0 or
+later; 3.0 recommended). Pick your platform; methods are listed simplest first. Every method ends the
+same way: restart DisPatch, open **Settings, Voice**, switch it on and press **Download** for the models
+(about 1.4 GB, with progress and Cancel).
+
+**Ports:** none of its own. The add-on rides on DisPatch's port, `8765` (`/api/voice/*`, `/ext/voice/*`,
+`/ws/voice/{thread}`). The only listener this package can start is the standalone Voices page,
+`dispatch-voice serve` on `127.0.0.1:8769`. A GPU rig (SpeechForge, `1236`) is an optional outbound
+connection.
+
+**System programs** come from the operating system, not pip: `ffmpeg` (required to clone a voice) and
+`libopus` (optional). Each block below installs them; the DisPatch container image already includes both.
+`dispatch-voice doctor` checks them and prints the command for your system.
+
+### Windows
+
+#### 1. DisPatch container image with voice (simplest)
+
+Choose this if you run DisPatch in Docker. The image is built with the add-on, `ffmpeg` and `libopus`; the
+models are downloaded into the data volume from the Settings page, and survive image updates.
+
+```powershell
+winget install --id Git.Git -e
+winget install --id Docker.DockerDesktop -e
+```
+
+Start Docker Desktop once, then open a new PowerShell window:
+
+```powershell
+git clone https://github.com/LaserLloyd/DisPatch_Chat.git
+cd DisPatch_Chat
+Add-Content .env "VOICE=1"
+docker compose up -d --build
+docker compose ps
+docker compose exec app ffmpeg -version
+docker compose logs app | Select-String "SETUP TOKEN"
+```
+
+Open <http://localhost:8765>, create the owner with that token, then Settings, Voice, which lists what is
+missing (the models, until you press Download). `ffmpeg -version` proves the system program is in the image. The default `VOICE_REF` installs the add-on
+from this repository's `refactor/prosumer-2026` branch; set `VOICE_REF=refs/tags/<tag>` in `.env` to pin a
+release.
+
+| Pros | Cons |
+| --- | --- |
+| One flag; ffmpeg and libopus are included | Image grows by about 0.84 GB (ffmpeg's libraries) |
+| Models and voices live on the data volume, not in the image | Rebuild the image to update the add-on |
+| One touch point after the build: Settings, Voice | Needs DisPatch in Docker |
+
+#### 2. Add it to a native DisPatch with uv
+
+Choose this if DisPatch runs from a clone with `uv`. Windows native DisPatch is experimental; see its
+README.
+
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+winget install --id Gyan.FFmpeg -e
+```
+
+Open a new PowerShell window so the programs are on `PATH`, then:
+
+```powershell
+git clone https://github.com/LaserLloyd/DisPatch_Chat.git
+git clone https://github.com/LaserLloyd/DisPatch_Voice.git
+cd DisPatch_Chat\backend
+uv sync
+uv pip install --python .venv\Scripts\python.exe ..\..\DisPatch_Voice
+.venv\Scripts\dispatch-voice.exe doctor --backend .
+uv run --no-sync uvicorn app.main:app --port 8765
+```
+
+For the optional Opus link, put `opus.dll` next to `python.exe` (the add-on works without it, on raw PCM).
+A later `uv sync` removes a pip-installed add-on, so repeat the `uv pip install` line after one.
+
+| Pros | Cons |
+| --- | --- |
+| No container; the add-on is editable from the clone | `uv sync` in DisPatch removes it again; repeat the install line |
+| Updating is `git pull` plus the install line | You install ffmpeg yourself |
+
+#### 3. Standalone Voices page (try voice cloning without DisPatch)
+
+Choose this to clone and audition a voice without running DisPatch. It serves a page on loopback only,
+with no login.
+
+```powershell
+winget install --id Git.Git -e
+winget install --id astral-sh.uv -e
+winget install --id Gyan.FFmpeg -e
+git clone https://github.com/LaserLloyd/DisPatch_Voice.git
+cd DisPatch_Voice
+uv sync
+uv run dispatch-voice fetch-models
+uv run dispatch-voice serve --data .\voices-data --port 8769
+```
+
+Open <http://127.0.0.1:8769> (it redirects to `/voices/ui`). Open a new PowerShell window after the `winget`
+lines if a command is not found. See [Standalone use](#standalone-use) for the CLI and the library.
+
+| Pros | Cons |
+| --- | --- |
+| Smallest way to hear the engine | Not connected to any chat; the page has no login |
+| Everything in one folder | Models are a 1.4 GB download first |
+
+### Linux
+
+On a bare Ubuntu or Debian image `git` and `curl` are missing, so the blocks install them first.
+
+#### 1. DisPatch container image with voice (simplest)
+
+```bash
+sudo apt-get update && sudo apt-get install -y git curl ca-certificates
+curl -fsSL https://get.docker.com | sh
+git clone https://github.com/LaserLloyd/DisPatch_Chat.git
+cd DisPatch_Chat
+echo "VOICE=1" >> .env
+sudo docker compose up -d --build
+sudo docker compose exec app ffmpeg -version
+sudo docker compose logs app | grep "SETUP TOKEN"
+```
+
+Open <http://localhost:8765>, create the owner with that token, then Settings, Voice. Skip the second line
+if Docker is already installed. (`dispatch-voice doctor` inside the container may report the models missing
+even after the download, because it looks in the home folder instead of `/data`; trust the Settings page.)
+
+| Pros | Cons |
+| --- | --- |
+| One flag; ffmpeg and libopus are included | Image grows by about 0.84 GB |
+| Models and voices live on the data volume | Rebuild the image to update the add-on |
+
+#### 2. Add it to a native DisPatch with uv
+
+Choose this if DisPatch runs from a clone, by hand or as a systemd service.
+
+```bash
+sudo apt-get update && sudo apt-get install -y git curl ca-certificates ffmpeg libopus0
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source "$HOME/.local/bin/env"
+git clone https://github.com/LaserLloyd/DisPatch_Chat.git
+git clone https://github.com/LaserLloyd/DisPatch_Voice.git
+cd DisPatch_Chat/backend
+uv sync
+uv pip install --python .venv/bin/python ../../DisPatch_Voice
+.venv/bin/dispatch-voice doctor --backend .
+.venv/bin/uvicorn app.main:app --port 8765
+```
+
+`doctor --backend .` prints the handshake, the missing models and the system programs (run from `backend/`, `--backend .` points it at DisPatch's own environment). If DisPatch runs as a systemd
+service, restart it instead of starting it by hand (`systemctl --user restart dispatch`). A later `uv sync`
+removes a pip-installed add-on, so repeat the `uv pip install` line after one. To follow releases instead of a
+checkout, install `"dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1.6.0"` once that tag
+is published (the `v1` tag still names 1.5.0).
+
+| Pros | Cons |
+| --- | --- |
+| No container; works with the systemd unit DisPatch ships | `uv sync` in DisPatch removes it again |
+| Editable from the clone for development | You install ffmpeg and libopus (the line above does) |
+
+#### 3. Overlay with a release checkout (a server you keep running)
+
+Choose this for an always-on DisPatch. Point an editable overlay at a release checkout nobody develops in,
+and start DisPatch through its launcher, which falls back to DisPatch without voice (instead of a restart
+loop) when the overlay cannot be resolved or crashes on import.
+
+```bash
+git clone https://github.com/LaserLloyd/DisPatch_Voice.git ~/DisPatch_Voice
+git -C ~/DisPatch_Voice worktree add --detach ~/DisPatch_Voice-release origin/main
+cd ~/DisPatch_Chat/backend
+uv run --with-editable ~/DisPatch_Voice-release python -c "import dispatch_voice"
+~/DisPatch_Chat/scripts/local-chat-launch --uv "$(command -v uv)" --with-editable ~/DisPatch_Voice-release \
+    -- uvicorn app.main:app --host 0.0.0.0 --port 8765 --ws-ping-timeout 60 --ws-max-size 262144
+```
+
+Run the `import` line online after every release. `--offline` (added by the launcher), `--ws-max-size 262144`
+and `--ws-ping-timeout 60` are load-bearing; [docs/voice-chat/host.md](docs/voice-chat/host.md#running-dispatch-with-the-add-on)
+says why. Once a release tag such as `v1.6.0` is published, use it in place of `origin/main`; later releases:
+`git -C ~/DisPatch_Voice-release checkout --detach <tag>`.
+
+| Pros | Cons |
+| --- | --- |
+| Survives `uv sync`; what is in the folder is what goes live | Most steps; needs `--offline` care and a warm cache |
+| Falls back to DisPatch without voice instead of crash-looping | You move the checkout to each release by hand |
+
+#### 4. Standalone Voices page
+
+```bash
+sudo apt-get update && sudo apt-get install -y git curl ca-certificates ffmpeg
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source "$HOME/.local/bin/env"
+git clone https://github.com/LaserLloyd/DisPatch_Voice.git
+cd DisPatch_Voice
+uv sync
+uv run dispatch-voice fetch-models
+uv run dispatch-voice serve --data ./voices-data --port 8769
+```
+
+Open <http://127.0.0.1:8769> (it redirects to `/voices/ui`). Loopback only, no login; see [Standalone use](#standalone-use).
+
+| Pros | Cons |
+| --- | --- |
+| Try the engine without a chat server | Not connected to any chat; 1.4 GB model download first |
+
+### macOS
+
+Expected to work but not tested (CI runs Linux and Windows). Use the Linux methods with
+`brew install ffmpeg opus uv git` in place of the `apt-get` and `uv` install lines.
+
+### Upgrade and uninstall
+
+| Method | Upgrade | Uninstall (models and voices are kept) |
+| --- | --- | --- |
+| Container image | `git pull` in the DisPatch clone, then `docker compose up -d --build` | Remove `VOICE=1` from `.env` and rebuild. The data volume keeps `models/`, `voices/` and `voice.yaml` |
+| Native, uv | `git pull` in the Voice clone, then the `uv pip install` line again; restart DisPatch | `uv pip uninstall --python .venv/bin/python dispatch-voice`. Data stays in DisPatch's data folder |
+| Overlay | `git -C <release-dir> checkout --detach <tag>`, run the warm-up `import` line online, restart | Drop `--with-editable` from the start line |
+
+### Details
 
 DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatch version](#which-dispatch-version)). Python 3.12 or later. Linux and Windows are tested in CI (the suite runs on both); macOS is expected to work but is not tested. Details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
 
@@ -23,37 +240,9 @@ DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatc
 
 **Ports.** The add-on opens no port of its own. Everything it serves rides on DisPatch's port (8765 by default): `/api/voice/*`, the client files under `/ext/voice/*` and the voice socket `/ws/voice/{thread}`. The one listener this package can start is the standalone Voices page, `dispatch-voice serve` (`127.0.0.1:8769`, loopback only, never inside DisPatch). Outbound connections are only the ones you configure: the GPU rig at `rig.url` (SpeechForge listens on `:1236` by default), an OpenAI-compatible speech or transcription server, MiniMax, and the model downloads (GitHub, Hugging Face) when you press Download or run `fetch-models`.
 
-**One page, no terminal.** With the add-on installed and DisPatch restarted once, everything else is Settings → Voice: switch it on, **Download** the models (about 1.4 GB, with progress and Cancel), pick the speech-to-text and text-to-speech providers, test the microphone. The commands below remain for servers configured as code.
+**One page, no terminal.** With the add-on installed and DisPatch restarted once, everything else is Settings → Voice: switch it on, **Download** the models (about 1.4 GB, with progress and Cancel), pick the speech-to-text and text-to-speech providers, test the microphone. The commands above remain for servers configured as code.
 
-```sh
-# 1. the add-on on DisPatch's environment: an editable overlay on the line that starts DisPatch
-cd <dispatch-chat>/backend
-uv run --with-editable <dispatch-voice> python -c "import dispatch_voice"       # once, online
-uv run --offline --with-editable <dispatch-voice> uvicorn app.main:app …        # the unit line
-
-#    or a bare-metal install into DisPatch's venv (`v1` follows the latest 1.x release)
-uv pip install --python .venv/bin/python "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1"
-
-# 2. the models (~1.4 GB: Silero VAD, Smart Turn, Parakeet, Chatterbox-Turbo, the stock voice) -
-#    or press Download in Settings → Voice (the same code, with progress and Cancel)
-dispatch-voice fetch-models
-
-# 3. restart DisPatch, then Settings → Voice → switch it on
-```
-
-**On a server you keep running**, point the overlay at a release checkout that nobody develops in, and start DisPatch through its launcher, which falls back to DisPatch without voice (instead of a restart loop) when the overlay cannot be resolved or crashes on import:
-
-```sh
-git -C <dispatch-voice> worktree add --detach <release-dir> v1.6.0     # later releases: git -C <release-dir> checkout --detach <tag>
-cd <dispatch-chat>/backend
-uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm once, online, after every release
-<dispatch-chat>/scripts/local-chat-launch --uv "$(command -v uv)" --with-editable <release-dir> \
-    -- uvicorn app.main:app --host 0.0.0.0 --port 8765 --ws-ping-timeout 60 --ws-max-size 262144
-```
-
-`--offline` (added by the launcher), `--ws-max-size 262144` and `--ws-ping-timeout 60` are load-bearing; [docs/voice-chat/host.md](docs/voice-chat/host.md#running-dispatch-with-the-add-on) says why.
-
-`dispatch-voice doctor` prints the DisPatch handshake, which models are present, the engines and plugins, the switch, and whether the add-on the running server loaded is the one in this checkout (`--unit <name>` reads the voice settings and backend directory of a systemd `--user` unit; `--backend DIR` also checks DisPatch's venv and that the overlay resolves offline; `--check-update` compares with the latest release). `dispatch-voice fetch-models --verify` checks every model file against its checksum.
+`dispatch-voice doctor` prints the DisPatch handshake, which models are present, the engines and plugins, the switch, and whether the add-on the running server loaded is the one in this checkout (`--unit <name>` reads the voice settings and backend directory of a systemd `--user` unit; `--backend DIR` also checks DisPatch's venv and that the overlay resolves offline; `--check-update` compares with the latest release). `dispatch-voice fetch-models --verify` checks the speech models against their sha256 and that the Chatterbox files are present.
 
 Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro`: install it and switch it on under Settings → Voice → *Provider plugins* (it registers through the `dispatch_voice.providers` entry-point group; the old `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup` still works and is deprecated). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
 
