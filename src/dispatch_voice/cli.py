@@ -318,13 +318,18 @@ def doctor_report(*, backend: Path | None, url: str, check_update: bool) -> dict
     from .stock import cached_tensors_path
     rep["stock_voice"] = {"tensors": cached_tensors_path().exists()}
     rep["python_packages_missing"] = [m for m in missing if m.startswith("python package")]
-    spec = os.environ.get("DISPATCH_VOICE_EXTENSIONS", "")
+    # What is switched on: the `extensions` setting (Settings > Voice, voice.yaml, or the deprecated
+    # DISPATCH_VOICE_EXTENSIONS variable, which wins); entry-point plugins that are installed but off.
+    from .host import providers
+    declared = list(settings.extensions)
+    spec = ",".join(declared)
     routers = DoctorContext()
     loaded = registry.mount_extensions(routers, spec) if spec else []
     if chatterbox.available():
         chatterbox.register()
-    rep["plugins"] = {"declared": [t.strip() for t in spec.split(",") if t.strip()], "loaded": loaded,
-                      "routers": routers.prefixes}
+    enabled = {t for t in declared if ":" not in t}
+    rep["plugins"] = {"declared": declared, "loaded": loaded, "routers": routers.prefixes}
+    rep["provider_plugins"] = providers.discover_entry_points(enabled)
     rep["engines"] = registry.engine_names()
     rep["builtin_voices"] = len(registry.builtin_voices(settings))
     rep["switch"] = {"enabled": settings.switched_on, "forced": settings.forced,
@@ -373,15 +378,18 @@ def print_doctor(rep: dict) -> int:
         print("python packages MISSING: " + ", ".join(rep["python_packages_missing"]))
         problems += 1
     p = rep["plugins"]
+    off = [a["name"] for a in rep.get("provider_plugins", []) if not a["enabled"]]
+    if off:
+        print(f"provider plugins installed but off: {', '.join(off)} (switch them on in Settings > Voice)")
     if p["declared"]:
         failed = [t for t in p["declared"] if t not in p["loaded"]]
-        print(f"plugins (DISPATCH_VOICE_EXTENSIONS): loaded {p['loaded'] or 'none'}"
+        print(f"plugins (extensions): loaded {p['loaded'] or 'none'}"
               + (f"; routes under {', '.join(p['routers'])} (mounted inside DisPatch)"
                  if p.get("routers") else "")
               + (f"; FAILED {failed}" if failed else ""))
         problems += 1 if failed else 0
     else:
-        print("plugins: none declared (DISPATCH_VOICE_EXTENSIONS unset)")
+        print("plugins: none switched on")
     print(f"engines: {', '.join(rep['engines']) or 'none'}; built-in voices: {rep['builtin_voices']}")
     sw = rep["switch"]
     print(f"switch: {'on' if sw['enabled'] else 'off'}" + (f" (forced by DISPATCH_VOICE={sw['forced']})" if sw["forced"] else "")

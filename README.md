@@ -1,6 +1,6 @@
 # dispatch-voice
 
-**DisPatch Voice**: voice chat for [DisPatch Chat](https://github.com/LaserLloyd/DisPatch_Chat), as an add-on. You talk to a DisPatch bot hands-free; it listens, answers in its own voice and can be interrupted. Everything runs on the CPU of the machine DisPatch runs on; by default nothing is sent anywhere (the optional MiniMax and HQ engines, `DISPATCH_VOICE_TTS=minimax` / `DISPATCH_VOICE_HQ_URL`, send the reply text to that service to be spoken).
+**DisPatch Voice**: voice chat for [DisPatch Chat](https://github.com/LaserLloyd/DisPatch_Chat), as an add-on. You talk to a DisPatch bot hands-free; it listens, answers in its own voice and can be interrupted. Everything runs on the CPU of the machine DisPatch runs on; by default nothing is sent anywhere. What you switch on does send data: the **GPU rig** receives your microphone audio and the reply text, an **OpenAI-compatible server** (speech to text, or the HQ voice) receives the audio or the reply text, and the optional **MiniMax** engine receives the reply text. Each is off until you set it up, each address is checked against a network policy (below), and nothing else leaves the machine.
 
 DisPatch runs fully without it. With the add-on installed, DisPatch gains a microphone button in each chat and a Settings → Voice page. The add-on is the whole feature: the speech pipeline (Silero VAD + Smart Turn v3.2 for turn taking, Parakeet TDT 0.6B for recognition), the voice session, the voices (cloned voices and a stock synthetic voice on Chatterbox-Turbo ONNX; optional built-in voices through a plugin), the settings routes and its own frontend assets. DisPatch keeps only a small, stable extension host and the page that explains how to install this when it is absent.
 
@@ -10,7 +10,18 @@ Docs: [docs/voice-chat/](docs/voice-chat/index.md) (install and setup, the host 
 
 ## Install, for DisPatch
 
-DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatch version](#which-dispatch-version)). Three steps; details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
+DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatch version](#which-dispatch-version)). Python 3.12 or later. Linux and Windows are tested in CI (the suite runs on both); macOS is expected to work but is not tested. Details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
+
+**System programs.** pip installs every Python dependency (including `websockets`, which the GPU-rig client needs), but two pieces come from the operating system:
+
+| Program | For | Install |
+|---|---|---|
+| `ffmpeg` | decoding the clip you upload to clone a voice | `sudo apt install ffmpeg` / `sudo dnf install ffmpeg-free` / `brew install ffmpeg` / `winget install Gyan.FFmpeg` |
+| `libopus` | the compact Opus wire on a slow link (optional; without it the link stays PCM16) | `sudo apt install libopus0` / `sudo dnf install opus` / `brew install opus` / Windows: put `opus.dll` next to `python.exe` |
+
+`dispatch-voice doctor` checks both and prints the command for your system; `GET /api/voice/status` lists what is missing under `system` and `health`. They are declared in `pyproject.toml` (`[tool.dispatch-voice.system-requirements]`).
+
+**One page, no terminal.** With the add-on installed and DisPatch restarted once, everything else is Settings → Voice: switch it on, **Download** the models (about 1.4 GB, with progress and Cancel), pick the speech-to-text and text-to-speech providers, test the microphone. The commands below remain for servers configured as code.
 
 ```sh
 # 1. the add-on on DisPatch's environment: an editable overlay on the line that starts DisPatch
@@ -21,7 +32,8 @@ uv run --offline --with-editable <dispatch-voice> uvicorn app.main:app …      
 #    or a bare-metal install into DisPatch's venv (`v1` follows the latest 1.x release)
 uv pip install --python .venv/bin/python "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1"
 
-# 2. the models (~1.4 GB: Silero VAD, Smart Turn, Parakeet, Chatterbox-Turbo, the stock voice)
+# 2. the models (~1.4 GB: Silero VAD, Smart Turn, Parakeet, Chatterbox-Turbo, the stock voice) -
+#    or press Download in Settings → Voice (the same code, with progress and Cancel)
 dispatch-voice fetch-models
 
 # 3. restart DisPatch, then Settings → Voice → switch it on
@@ -30,7 +42,7 @@ dispatch-voice fetch-models
 **On a server you keep running**, point the overlay at a release checkout that nobody develops in, and start DisPatch through its launcher, which falls back to DisPatch without voice (instead of a restart loop) when the overlay cannot be resolved or crashes on import:
 
 ```sh
-git -C <dispatch-voice> worktree add --detach <release-dir> v1.5.0     # later releases: git -C <release-dir> checkout --detach <tag>
+git -C <dispatch-voice> worktree add --detach <release-dir> v1.6.0     # later releases: git -C <release-dir> checkout --detach <tag>
 cd <dispatch-chat>/backend
 uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm once, online, after every release
 <dispatch-chat>/scripts/local-chat-launch --uv "$(command -v uv)" --with-editable <release-dir> \
@@ -41,7 +53,9 @@ uv run --with-editable <release-dir> python -c "import dispatch_voice"  # warm o
 
 `dispatch-voice doctor` prints the DisPatch handshake, which models are present, the engines and plugins, the switch, and whether the add-on the running server loaded is the one in this checkout (`--unit <name>` reads the voice settings and backend directory of a systemd `--user` unit; `--backend DIR` also checks DisPatch's venv and that the overlay resolves offline; `--check-update` compares with the latest release). `dispatch-voice fetch-models --verify` checks every model file against its checksum.
 
-Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro` (`DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
+Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro`: install it and switch it on under Settings → Voice → *Provider plugins* (it registers through the `dispatch_voice.providers` entry-point group; the old `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup` still works and is deprecated). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
+
+The models live in ONE folder (DisPatch's `models_dir`) with a `speech/` and a `chatterbox/` subfolder. An install from before 1.6.0 keeps working where its files are; `dispatch-voice migrate-models` (dry run) and `--apply`, or the Move button, bring the old two folders into the new layout.
 
 Voice chat understands and speaks English only for now. It works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with (the `safe` ones); every turn from a locked device, spoken or typed, runs with DisPatch's locked rules, and the voice settings stay unlocked-only. Since 1.3.4 a bot can use a different voice for locked devices: `bots.<id>.locked_voice` in `voice.yaml`, or the "Voice on locked devices" picker in the Bots-tab Voice popover. Empty (the default) means the bot's standard voice. The server picks it from the socket's locked flag, and a locked device cannot read the setting.
 
@@ -55,6 +69,8 @@ Voice chat understands and speaks English only for now. It works on an unlocked 
 | Voice on a `safe` bot, for an unlocked device | 1.3.1 | 2.3.1 |
 | Voice on locked devices | 1.3.3 | 2.3.4 |
 | Per-bot `locked_voice` | 1.3.4 | 2.3.4 |
+| Interrupt sensitivity | 1.5.0 | 2.2.0 |
+| One Settings → Voice page (providers, model download, rig address and token), provider plugins | 1.6.0 | 2.2.0 |
 
 On an older DisPatch the newer buttons are simply not available or the socket is refused, as the [changelog](CHANGELOG.md) notes per release.
 

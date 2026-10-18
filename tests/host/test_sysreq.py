@@ -56,6 +56,7 @@ def test_doctor_prints_the_install_command(monkeypatch, capsys):
            "speech_models": {"dir": "d", "missing": []}, "chatterbox_models": {"dir": "d", "ok": True},
            "stock_voice": {"tensors": True}, "python_packages_missing": [],
            "plugins": {"declared": [], "loaded": [], "routers": []}, "engines": [], "builtin_voices": 0,
+           "provider_plugins": [{"name": "kokoro", "target": "x:setup", "enabled": False}],
            "switch": {"enabled": True, "forced": None, "voice_yaml": "v"}, "rig": None,
            "running": {"url": "u", "reachable": False},
            "system": [{"id": "ffmpeg", "ok": False, "optional": False, "required_for": "cloning a voice",
@@ -67,3 +68,5 @@ def test_doctor_prints_the_install_command(monkeypatch, capsys):
     assert "system program ffmpeg: MISSING (needed for cloning a voice)" in out
     assert "install (winget): winget install Gyan.FFmpeg" in out and "system program libopus: ok" in out
     assert "warnings: 1" in out and "problems: 0" in out and rc == 0
+    assert "provider plugins installed but off: kokoro (switch them on in Settings > Voice)" in out
+    assert "plugins: none switched on" in out
