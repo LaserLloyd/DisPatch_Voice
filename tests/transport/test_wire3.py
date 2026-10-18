@@ -10,7 +10,7 @@ from dispatch_voice.transport import wire3
 @pytest.fixture(scope="module")
 def vectors():
     from fakes import FIXTURES
-    return json.loads((FIXTURES / "wire3.json").read_text())
+    return json.loads((FIXTURES / "wire3.json").read_text(encoding="utf-8"))
 
 
 def manual_up(codec, flags, off, packets):

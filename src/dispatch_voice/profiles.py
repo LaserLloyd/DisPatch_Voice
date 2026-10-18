@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import audio
+from . import audio, fsperm
 from .engine import ChatterboxOnnx, VoiceTensors
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
@@ -67,7 +67,7 @@ class ProfileStore:
     def __init__(self, root: Path, engine: ChatterboxOnnx | None):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.root, 0o700)
+        fsperm.ensure_private(self.root, directory=True)
         self.engine = engine
         self._lock = threading.Lock()
         self._voices: dict[str, VoiceTensors] = {}
@@ -89,7 +89,7 @@ class ProfileStore:
 
     def _write_meta(self, d: Path, meta: dict) -> None:
         tmp = d / "profile.json.tmp"
-        tmp.write_text(json.dumps(meta, indent=1, sort_keys=True))
+        tmp.write_text(json.dumps(meta, indent=1, sort_keys=True), encoding="utf-8")
         os.replace(tmp, d / "profile.json")
 
     # ------------------------------------------------------------------ reads
@@ -98,14 +98,14 @@ class ProfileStore:
         for d in sorted(self.root.iterdir()):
             if d.is_dir() and ID_RE.match(d.name) and (d / "profile.json").exists():
                 try:
-                    out.append(Profile(d.name, json.loads((d / "profile.json").read_text())).public())
+                    out.append(Profile(d.name, json.loads((d / "profile.json").read_text(encoding="utf-8"))).public())
                 except (OSError, json.JSONDecodeError):
                     continue
         return sorted(out, key=lambda m: m.get("created", 0), reverse=True)
 
     def get(self, pid: str) -> dict:
         d = self._require(pid)
-        return Profile(pid, json.loads((d / "profile.json").read_text())).public()
+        return Profile(pid, json.loads((d / "profile.json").read_text(encoding="utf-8"))).public()
 
     def file(self, pid: str, name: str) -> Path:
         d = self._require(pid)
@@ -202,14 +202,14 @@ class ProfileStore:
             sf.write(tmp, wav, audio.SAMPLE_RATE, subtype="PCM_16", format="WAV")
             os.replace(tmp, out)
         with self._lock:
-            meta = json.loads((d / "profile.json").read_text())
+            meta = json.loads((d / "profile.json").read_text(encoding="utf-8"))
             meta["fillers"] = "ready"
             self._write_meta(d, meta)
 
     def update(self, pid: str, *, name: str | None = None, default: bool | None = None) -> dict:
         with self._lock:
             d = self._require(pid)
-            meta = json.loads((d / "profile.json").read_text())
+            meta = json.loads((d / "profile.json").read_text(encoding="utf-8"))
             if name is not None:
                 if not name.strip():
                     raise ProfileError("Give the voice a name.")
@@ -217,7 +217,7 @@ class ProfileStore:
             if default:
                 for other in self.root.iterdir():
                     if other.is_dir() and other.name != pid and (other / "profile.json").exists():
-                        om = json.loads((other / "profile.json").read_text())
+                        om = json.loads((other / "profile.json").read_text(encoding="utf-8"))
                         if om.get("default"):
                             om["default"] = False
                             self._write_meta(other, om)

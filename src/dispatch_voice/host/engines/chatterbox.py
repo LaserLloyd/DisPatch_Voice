@@ -63,11 +63,29 @@ def model_dir() -> Path:
     return Path(default_model_dir())
 
 
+def complete(d: Path) -> bool:
+    """Is a whole Chatterbox set in ``d``: the tokenizer and, for one precision, all four graphs
+    with their weight files? The in-app download writes ``tokenizer.json`` first and creates
+    ``onnx/`` at once, so "the folder exists" is true minutes before the last graph lands; this
+    is true only when the engine could load."""
+    from dispatch_voice.engine import COMPONENTS, DTYPES, _filename
+    if not (d / "tokenizer.json").exists():
+        return False
+    onnx = d / "onnx"
+    if not onnx.is_dir():
+        return False
+    for dtype in DTYPES:
+        names = [_filename(c, dtype) for c in COMPONENTS]
+        if all((onnx / n).exists() and (onnx / (n + "_data")).exists() for n in names):
+            return True
+    return False
+
+
 def available() -> bool:
-    """The Chatterbox models are on disk (``dispatch-voice fetch-models``)."""
+    """The Chatterbox models are on disk, all of them (``dispatch-voice fetch-models`` or the
+    in-app download)."""
     try:
-        d = model_dir()
-        return (d / "tokenizer.json").exists() and (d / "onnx").is_dir()
+        return complete(model_dir())
     except Exception:
         return False
 

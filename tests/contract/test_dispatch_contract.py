@@ -95,7 +95,7 @@ def _dispatch(tmp_path_factory):
         {"id": "voicetest", "name": "Voice Test", "emoji": "🎙", "order": 0, "visible": True, "safe": False,
          "api": {"provider": "openai", "base_url": "http://127.0.0.1:9/v1", "model": "stub", "api_key": "not-a-key"}},
         {"id": "alpha", "name": "Alpha", "emoji": "✨", "order": 1, "visible": True, "safe": True},
-    ]}, ensure_ascii=False))
+    ]}, ensure_ascii=False), encoding="utf-8")
     if str(BACKEND) not in sys.path:
         sys.path.insert(0, str(BACKEND))
     try:

@@ -5,6 +5,7 @@ import json
 
 import e2e_lowbw as E
 import pytest
+from fakes import assert_private
 
 from dispatch_voice.transport import opus
 
@@ -30,7 +31,7 @@ def ref_dispatch(tmp_path, port_pair):
     server_port, proxy_port = port_pair
     pin_file = tmp_path / "pin"
     pin = E.write_pin(pin_file)
-    assert oct(pin_file.stat().st_mode & 0o777) == "0o600"
+    assert_private(pin_file)
     clip = E.load_clip()
     proc = E.start_refserver(server_port, tmp_path / "state", "short", "oracle", tmp_path / "refserver.log",
                              ("--dispatch-api", "--pin-file", str(pin_file), "--oracle-text", E.known_text(),

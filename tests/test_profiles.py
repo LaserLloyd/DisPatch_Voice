@@ -2,8 +2,10 @@ import json
 
 import pytest
 
-from dispatch_voice.profiles import FILLERS, ProfileError
 from conftest import speechlike, wav_bytes
+from fakes import assert_private
+
+from dispatch_voice.profiles import FILLERS, ProfileError
 
 
 def make(store, name="Morning host", consent="synthetic"):
@@ -15,10 +17,10 @@ def test_create_writes_profile(store):
     d = store.root / p["id"]
     for f in ("original.wav", "reference.wav", "voice.npz", "profile.json", "audition.wav"):
         assert (d / f).exists(), f
-    meta = json.loads((d / "profile.json").read_text())
+    meta = json.loads((d / "profile.json").read_text(encoding="utf-8"))
     assert meta["consent"]["kind"] == "synthetic" and meta["fillers"] == "pending"
     assert meta["quality"]["match"] == 0.9
-    assert oct((store.root).stat().st_mode)[-3:] == "700"
+    assert_private(store.root, directory=True)
 
 
 def test_consent_and_name_required(store):

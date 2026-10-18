@@ -13,29 +13,51 @@ does without a rig.
 
 ## Set it up
 
-1. **The token.** Put the rig's token on the DisPatch machine, readable by you only:
+Everything below can be done in Settings → Voice (the **Speech to text** section; choose *Speech
+rig (GPU)* as the provider, or open *Set up the speech rig*), without a terminal. The files and
+variables are for servers that are configured as code.
+
+1. **The token.** Paste it in Settings → Voice → *Rig token*. DisPatch keeps it in its own
+   credential store (the OS keyring when there is one, else a private file in its data folder),
+   so it survives an image update and works with a read-only container root. A DisPatch without
+   a credential store gets a private file in the add-on's state folder instead
+   (`<data>/ext/voice/speechforge.env`: mode 0600, or an owner-only ACL on Windows). It is
+   write-only: no page, route or log line ever shows it. The 1.6.0 location
+   (`~/.config/local-chat/speechforge.env`) is still read. On a server you configure as code:
 
    ```sh
-   mkdir -p ~/.config/local-chat
-   (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '<the token from the rig>' > ~/.config/local-chat/speechforge.env)
+   mkdir -p <data>/ext/voice
+   (umask 077 && printf 'SPEECHFORGE_TOKEN=%s\n' '<the token from the rig>' > <data>/ext/voice/speechforge.env)
    ```
 
-   `SPEECHFORGE_TOKEN` in DisPatch's environment works too and wins over the file. A file
-   that other users can read is ignored (the status says so). The token is read when each
-   voice chat opens, so a rotated token needs no restart. It is sent only in the
-   connection's `Authorization` header; it is never written to `voice.yaml`, never logged
+   `SPEECHFORGE_TOKEN` in DisPatch's environment works too and wins over the file (the page then
+   says the environment provides it). A file that other users can read is ignored (the status
+   says so; on Windows "readable by others" means the ACL grants Everyone, Users or
+   Authenticated Users access). The token is read when each voice chat opens, so a rotated token
+   needs no restart. It is sent only in the connection's `Authorization` header; it is never
+   written to `voice.yaml`, never logged (the websockets library's own DEBUG output is redacted)
    and never shown in the app.
 
-2. **The address**, in `<data>/voice.yaml`:
+2. **The address**, in Settings → Voice → *Rig address*, in `<data>/voice.yaml`, or in
+   `DISPATCH_VOICE_RIG_URL` (the environment wins and the page shows *Set by environment*):
 
    ```yaml
    rig:
      enabled: true
-     url: ws://<rig>:1236/v1/realtime    # ws:// on a private network or tailnet, wss:// otherwise
+     url: ws://<rig>:1236/v1/realtime    # wss:// whenever it crosses a network you do not control
    ```
 
+   **Which addresses are allowed.** The address receives the token and your live microphone, so
+   it is checked when you save it and again when it is used: loopback, private-network, tailnet
+   (100.64.0.0/10) and plain LAN names (`rig`, `rig.local`, `rig.lan`, a tailnet's MagicDNS names, ...) are accepted;
+   link-local (169.254.x.x, fe80::) and cloud-metadata addresses are always refused; a **public**
+   address or domain is refused unless the administrator lists it in `rig.allow` (or
+   `DISPATCH_VOICE_RIG_ALLOW`, comma separated: a host, `*.example.org` or a CIDR). A plain
+   `ws://` to anything but this machine is accepted with a warning: use `wss://` or keep the rig
+   on a VPN or tailnet. A name that resolves to a forbidden address is not dialled.
+
    Optional tuning keys (defaults shown; the app keeps them in range). The two deadlines
-   come from measurements on an RTX 3090 rig over a tailnet: final words 115 ms median,
+   come from measurements on a 3090-class rig over a tailnet: final words 115 ms median,
    172 ms worst of 24 under continuous partials; first reply audio 200-275 ms for most
    sentences with outliers to about 520 ms. Moving a reply here costs the deadline plus
    this computer's own first chunk (well over a second on a small CPU), so the start
@@ -47,6 +69,7 @@ does without a rig.
    | `tts_start_deadline_ms` | 800 | how long a reply sentence waits for the rig's first audio before that reply moves to this computer |
    | `ahead_ms` | 3000 | how far the rig may render past what the phone has played |
    | `first_chunk_tokens` | 15 | the size of the rig's first audio chunk |
+   | `allow` | (empty) | public hosts, `*.suffix`es and CIDRs the address may be (above) |
 
 3. **Switch it on** in Settings → Voice → *Use the GPU rig when available* (the same
    `rig.enabled`). The row is greyed out with "Not set up on this computer" until the

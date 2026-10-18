@@ -8,6 +8,7 @@ import time
 
 import numpy as np
 import pytest
+from settling import pause
 
 from dispatch_voice.host import rig as rig_mod
 from dispatch_voice.rt.stt_stream import Partial
@@ -60,7 +61,7 @@ async def wait_for(pred, timeout: float = 3.0, step: float = 0.01):
     while time.monotonic() < end:
         if pred():
             return True
-        await asyncio.sleep(step)
+        await pause(step)           # real time: asyncio.sleep(0.01) returns at once on Windows
     return bool(pred())
 
 

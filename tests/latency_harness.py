@@ -69,14 +69,14 @@ _SENT_END = re.compile(r"([.!?]+[\"')\]]?)(\s+|$)")
 
 def platform_profile() -> str:
     try:
-        return Path("/sys/firmware/acpi/platform_profile").read_text().strip()
+        return Path("/sys/firmware/acpi/platform_profile").read_text(encoding="utf-8").strip()
     except OSError:
         return "unknown"
 
 
 def max_mhz() -> int:
     try:
-        return int(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read_text()) // 1000
+        return int(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read_text(encoding="utf-8")) // 1000
     except OSError:
         return 0
 
@@ -93,7 +93,7 @@ def profile_column() -> str:
 
 def load1() -> str:
     try:
-        return Path("/proc/loadavg").read_text().split()[0]
+        return Path("/proc/loadavg").read_text(encoding="utf-8").split()[0]
     except OSError:
         return "?"
 
@@ -498,7 +498,7 @@ def load_clip(name: str) -> np.ndarray:
 
 
 def addendum_parts() -> tuple[np.ndarray, np.ndarray]:
-    meta = json.loads((FIXTURES / "addendum.json").read_text())
+    meta = json.loads((FIXTURES / "addendum.json").read_text(encoding="utf-8"))
     x = load_clip("addendum")
     cut = meta["first_end_sample"] + 3200          # 0.2 s after the first half ends
     return x[:cut], x[cut:]                            # the rest carries the real 2.0 s gap
@@ -768,7 +768,7 @@ def _main(a, hold_state: str) -> int:
         for r in rows:
             print(json.dumps(r))
         if a.json:
-            Path(a.json).write_text(json.dumps(report, indent=1))
+            Path(a.json).write_text(json.dumps(report, indent=1), encoding="utf-8")
         return 0
 
     from load import cpu_load
@@ -814,7 +814,7 @@ def _main(a, hold_state: str) -> int:
                 print(f"{'PASS' if extra <= 0.3 + 0.15 else 'FAIL'} {r.load}: embed wait {r.embed_wait_ms} ms, "
                       f"first audio {r.first_audio_at:.2f} s (+{extra:.2f} vs idle short; budget +0.3 s) [simulated]")
     if a.json:
-        Path(a.json).write_text(json.dumps(report, indent=1))
+        Path(a.json).write_text(json.dumps(report, indent=1), encoding="utf-8")
     if a.do_assert and any(v.startswith("FAIL") for v in report.get("verdicts", [])):
         return 1
     if a.do_assert and report.get("contention", {}).get("gate_decoder_sessions_2") == "FAIL":

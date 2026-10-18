@@ -13,8 +13,8 @@ switch and the models behave, and the power-profile hold.
 |---|---|---|
 | DisPatch ↔ add-on, Python | DisPatch `app/extensions.py: EXT_API`; add-on `dispatch_voice.EXTENSION["api"]` | `1`; the add-on accepts `[1, 1]` |
 | DisPatch ↔ add-on, JS | `shell.EXT_API`; `static/index.js: EXT.api` | `1`; `[1, 1]` |
-| Add-on ↔ its plugins (Kokoro) | `dispatch_voice.host.registry.ExtensionAPI.api_version` | `3` (unchanged since DisPatch 2.1) |
-| Release numbers | `dispatch-voice 1.1.0`, `dispatch-voice-kokoro 0.1.1` | informational, never compared |
+| Add-on ↔ its plugins (Kokoro) | `dispatch_voice.host.registry.ExtensionAPI.api_version` | `4` since 1.6.0 (`register_provider`, entry-point discovery); `3` through 1.5.0 |
+| Release numbers | `dispatch-voice 1.6.0`, `dispatch-voice-kokoro 0.1.1` | informational, never compared |
 
 DisPatch discovers the add-on through the `dispatch.extensions` entry point
 (`voice = dispatch_voice:EXTENSION`), or `DISPATCH_EXTENSIONS=dispatch_voice:EXTENSION`
@@ -62,17 +62,24 @@ and whether the `--with-editable` overlay resolves offline.
 6. `ctx.on_startup(prewarm, thread=True)` — the models load in the background
    after boot when the switch is on, so the first chat is fast.
 7. `ctx.on_shutdown(shutdown)` — the power hold is released and the models dropped.
-8. `registry.mount_extensions(ctx)` — the add-on's **own** plugin seam
-   (`DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`), where the
-   optional Kokoro plugin registers its engine and built-in voices. A plugin's
+8. `registry.mount_extensions(ctx)` — the add-on's **own** plugin seam: the
+   provider plugins the `extensions` setting names (Settings → Voice → *Provider
+   plugins*, `extensions:` in `voice.yaml`, or the deprecated
+   `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`), where the optional
+   Kokoro plugin registers its engine and built-in voices. A plugin's
    `api.include_router(router)` mounts under `/api/voice` through the same
    DisPatch gate; its router's paths are relative to that prefix.
 
 Everything the add-on needs from DisPatch arrives through the context
 (`ctx.paths`, `ctx.bots`, `submit_turn`, `abort_turn`, `retract_message`,
-`replies_after`, `subscribe_frames`, `socket_count`). The add-on never imports
-`app.*`; `host/context.py` holds the context, and outside DisPatch (the CLI,
-`dispatch-voice serve`, tests) the paths come from `DISPATCH_DATA_DIR` instead.
+`replies_after`, `subscribe_frames`, `socket_count`). DisPatch 3.0 adds two more,
+both feature-tested with `getattr(ctx, ..., None)` so an older DisPatch still works:
+`ctx.secrets` (`get` / `set` / `delete` by name; the rig token lives there, see
+[rig.md](rig.md)) and `ctx.settings_writer(namespace)` (the host calls
+`migrate_voice_yaml(writer, dry_run=False)` once its settings store exists). The
+add-on never imports `app.*`; `host/context.py` holds the context, and outside DisPatch (the CLI,
+`dispatch-voice serve`, tests) the paths come from `DISPATCH_DATA_DIR` (else the legacy `LOCAL_CHAT_DATA_DIR`, the
+same order DisPatch uses) instead.
 
 ## A voice chat, end to end
 
@@ -412,8 +419,13 @@ nobody uses from holding the session open:
 
 | Route | What |
 |---|---|
-| `GET /status` | what the Settings page and the mic button draw from: the switch, `ready`/`missing`, the voices, `warm`, `plugins`, `langs`, `sessions {open, max}`, `power_hold`, `extension {name, version}`, `assets_version_at_setup`, `rp_speech`, `narrator_voice`, `expressive_tags`, `gateway_trailer`, `bots: {<id>: {backchannel, follow_up}}` (effective, every non-Safe bot), `acks: {<voice or "default">: {ready, total, failed, name?}}` |
-| `GET/PATCH /settings` | the switch and the server preferences, persisted to `<data>/voice.yaml` and applied live: `enabled`, `default_voice`, `speed`, `voice_turn_thinking`, `merge_window_s`, `hard_silence_s`, `max_sessions`, `rt: {power_hold}`, `rp_speech`, `narrator_voice` (a known voice or ""; 422 otherwise), `expressive_tags`, `gateway_trailer`, `bots: {<id>: {backchannel?, follow_up?}}` (known non-Safe bots only; merged per bot per key), `reset: [...]`. `max_sessions` alone takes effect at the next restart (the gate's `max_total` is sealed at setup): the response carries `max_sessions_live` and `restart_required: true` while the saved and live values differ |
+| `GET /status` | what the Settings page and the mic button draw from: the switch, `ready`/`missing`, the voices, `warm`, `plugins`, `langs`, `sessions {open, max}`, `power_hold`, `extension {name, version}`, `assets_version_at_setup`, `rp_speech`, `narrator_voice`, `expressive_tags`, `gateway_trailer`, `bots: {<id>: {backchannel, follow_up}}` (effective, every non-Safe bot), `acks: {<voice or "default">: {ready, total, failed, name?}}`. 1.6.0 adds **`health`** (a list of `{id, state, reason, fix, code}` for the switch, the models, the system programs, the rig and the remote servers; `state` is `ok`, `degraded`, `unconfigured` or `down`, and `health_state` is the worst), `system` (ffmpeg and libopus with the install command for this OS), `providers` (see `GET /providers`), `models` (the download job's state and whether an old folder layout is left), `settings_env` (`{setting id: environment variable}` for every setting the environment decides), `config` (the non-secret values the Settings page edits in place) and `tts_engines` |
+| `GET/PATCH /settings` | the switch and the server preferences, persisted to `<data>/voice.yaml` and applied live. Every key below is validated by the schema (`host/settings_schema.py`), not by a branch per key: `enabled`, `default_voice`, `speed`, `voice_turn_thinking`, `merge_window_s`, `hard_silence_s`, `max_sessions`, `rt: {...}` (every section F.1 key; `power_hold` and `stt_engine` may also be sent at the top level), `rp_speech`, `narrator_voice` (a known voice or ""; 422 otherwise), `expressive_tags`, `gateway_trailer`, `opus*`, `tts_engine`, `tts_provider`, `stt_provider`, `stt_url`, `stt_model`, `hq_url`, `hq_model`, `extensions` (provider plugins to load, applied at the next restart), `rig: {enabled, url, allow, deadlines}`, `bots: {<id>: {backchannel?, follow_up?, locked_voice?}}` (merged per bot per key), `reset: [...]`. `max_sessions` alone takes effect at the next restart (the gate's `max_total` is sealed at setup): the response carries `max_sessions_live` and `restart_required: true` while the saved and live values differ. **The environment beats the file:** `sources` says `env`, `file` or `default` for each key and `env` names the variable that wins; a PATCH over such a key is saved but listed in `overridden`. An address the policy refuses (below) is a 422 that says why and what to do; a plain `ws://` / `http://` address off this machine is accepted with a `warnings` entry |
+| `GET /settings/schema` | the whole settings table: id, type, default, range, scope (`server`, `device`, `bot`), level (`basic`, `advanced`), secret flag, environment names, aliases, restart flag. The Settings page and this document's environment table are generated from it |
+| `PUT/DELETE /rig/token` | save or remove the rig token (`{"token": "..."}`): written to its private file (0600, or an owner-only ACL on Windows), never returned, never logged; 409 while `SPEECHFORGE_TOKEN` is set in the environment |
+| `GET /providers` | the speech providers (STT, TTS, turn taking): `{kind, id, name, health, capabilities, settings, origin}`, the installed provider plugins (`{name, target, enabled}`) and which provider is selected |
+| `POST /models/fetch`, `GET /models/status`, `POST /models/cancel` | the in-app `dispatch-voice fetch-models`: one background job (`{only: speech|chatterbox|all, force, stock}`), progress weighted by file size, a log tail, cancel at the next chunk (speech models) or file (Chatterbox); 409 while a job runs |
+| `POST /models/migrate` | move the models from the old two folders into the single models folder (`{dry_run: true}` by default; never overwrites; safe to repeat) |
 | `POST /acks/rebuild?voice=` | re-render one voice's acknowledgement lines (the Voice lab's Rebuild; `default` or "" = the default voice; 404 when nothing was ever queued for it) |
 | `GET /preview?voice=&text=` | a WAV sample of a voice (503 while voice is off, 422 unknown voice / too long) |
 | `GET /lab`, `POST /lab/test` | the Voice lab: engines, timings, a hear-and-say-back test (320 000 B cap) |
@@ -427,8 +439,8 @@ nobody uses from holding the session open:
 | Voice profiles (cloned voices, the stock voice) | `<data>/voices/` (`ctx.paths.voices_dir`, mode 0700) |
 | Render cache (acknowledgements, notices, tool lines — every voice with a `cache_tag`, cloned ones included) | `<data>/voice-cache/<engine tag>/<sha256(text)[:24]>.npy` |
 | Acknowledgement pools (operator overrides, hot-reloaded) | `<data>/voice-acks.yaml` (`ctx.paths.acks_yaml`; format in [persona-acks-rp.md](persona-acks-rp.md)) |
-| Speech models (Silero, Smart Turn, Parakeet) | `DISPATCH_SPEECH_MODELS`, else `<data>/speech-models` |
-| Chatterbox models + the stock voice tensors | `DISPATCH_VOICE_MODELS`, else `~/.local/share/dispatch-voice/models` |
+| Models | ONE folder, `ctx.paths.models_dir`, with a subfolder per family: `speech/` (Silero, Smart Turn, Parakeet) and `chatterbox/` (the graphs and the stock voice tensors). DisPatch 3.0 names the folder `<data>/models` (the 2.x name `<data>/speech-models` also held Chatterbox, which confused support threads); DisPatch moves the old folder across once at start, and the add-on still finds and can move whatever remains in `<data>/speech-models`. An install that predates 1.6.0 keeps working where its files are (`<data>/speech-models` flat, `~/.local/share/dispatch-voice/models`) until `dispatch-voice migrate-models --apply` (or the Move button) moves them; `DISPATCH_SPEECH_MODELS` / `DISPATCH_VOICE_MODELS` still point a family at an explicit folder and that folder is never moved |
+| Rig token | read from, first found: `SPEECHFORGE_TOKEN`; the host's credential store (`ctx.secrets`, name `speechforge_token`); `<data>/ext/voice/speechforge.env` (0600; an owner-only ACL on Windows); the 1.6.0 file `~/.config/local-chat/speechforge.env`. (`dispatch-voice doctor`, which runs outside DisPatch and so has no `ctx.secrets`, also reads the host's file store `<data>/ext/voice/secrets.json` directly; it does not read an OS keyring.) `PUT /rig/token` writes the credential store, or the state-folder file when the host offers no store |
 | Add-on state | `<data>/ext/voice/` (0700): `cursor.sqlite` (0600), the commit cursor — what each voice chat's stream has submitted, so a reconnect or a restart never submits an utterance twice (LRU 256, 10 min) |
 
 `voice.yaml` keys: `enabled`, `builtin_voice`, `speed` (0.8–1.3), `voice_turn_thinking`
@@ -451,11 +463,35 @@ never new DisPatch bot fields. The 2.1 names `kokoro_voice`/`kokoro_speed`
 still read. Unknown keys are dropped on save. A hand-written `power_hold: off`
 is YAML's boolean `false` and still means off.
 
-Environment, read by the add-on: `DISPATCH_VOICE` (`auto`/`1`/`0`),
-`DISPATCH_SPEECH_MODELS`, `DISPATCH_VOICE_MODELS`, `DISPATCH_VOICE_STT`,
-`DISPATCH_VOICE_TTS`, `DISPATCH_VOICE_THREADS`, `DISPATCH_VOICE_TTS_THREADS`,
-`DISPATCH_VOICE_EXTENSIONS`, `DISPATCH_VOICE_MAX_SESSIONS`, `DISPATCH_VOICE_POWER_HOLD`,
-`DISPATCH_VOICE_PREWARM`. DisPatch reads only `DISPATCH_EXTENSIONS`.
+**Settings, one definition each.** `host/settings_schema.py` is the only place a setting is
+declared. `clean_prefs` (what `voice.yaml` may hold), the `PATCH /settings` validation, the
+`rt` and `rig` subtrees, the precedence rule, `GET /settings/schema` and the README's
+environment table are generated from it; the duplicated keys (`stt_engine`, `hard_silence_s`,
+`power_hold`, `bots`) are one entry with compatibility aliases (a top-level `power_hold`,
+`rt.hard_silence_s`, the 2.1 `kokoro_*` names).
+
+**Precedence: environment, then `voice.yaml`, then the default.** (Through 1.5.0 `voice.yaml`
+won.) `DISPATCH_VOICE` stays the force switch. The environment is not range-limited, except
+`DISPATCH_VOICE_MAX_SESSIONS`. The README lists every variable (generated); DisPatch itself
+reads only `DISPATCH_EXTENSIONS`.
+
+**Moving `voice.yaml` into the host's settings store.** `host/migration.py` has
+`migrate_voice_yaml(store_writer, dry_run=True)`: it reads `voice.yaml`, validates it with the
+schema and calls `store_writer("voice.<id>", value)` for every key (`voice.speed`,
+`voice.rt.power_hold`, `voice.rig.url`, `voice.bots` as one map), then copies the file to
+`voice.yaml.bak` and writes `voice.yaml.migrated`. A dry run only reports (including the keys the
+schema refuses, by name); a second run is a no-op unless forced; a failing writer leaves no
+marker. Not called by the add-on yet: the host calls it once when its store exists, and then
+reads `voice.yaml` only as the lowest-priority source for one release.
+
+**Where audio and text may go.** `rig.url`, `hq_url` and `stt_url` receive the bearer token, the
+live microphone or the reply text, so `host/netpolicy.py` checks them on `PATCH` and again when
+they are used: loopback, private, tailnet (100.64.0.0/10) and plain LAN names are allowed;
+link-local and cloud-metadata addresses are never allowed (not even on the allow-list); a public
+address or domain only if `rig.allow` / `DISPATCH_VOICE_RIG_ALLOW` names it (a host, `*.suffix` or
+a CIDR); a plain `ws://` / `http://` off this machine is allowed with a warning; a name is resolved
+just before dialling and refused if it points somewhere forbidden. The websocket client logs the
+bearer header at DEBUG, so it is handed a logger that redacts it.
 
 ## The switch and the models
 
@@ -466,7 +502,8 @@ chat with 1013 and drops the loaded models (and hands the heap back to the OS).
 Until the models are fetched, `/api/voice/status.missing` lists them with the
 command to run; the socket refuses with 1013 "voice models missing".
 
-`dispatch-voice fetch-models` fetches every core model: Silero VAD, Smart
+`dispatch-voice fetch-models` (and the Download button, which runs the same code in a
+background job) fetches every core model: Silero VAD, Smart
 Turn v3.2 and Parakeet TDT 0.6B (int8) into the speech-model directory
 (sha256-checked, pinned revisions), Chatterbox-Turbo ONNX (q4) into the
 Chatterbox directory, and builds the stock voice's tensors. `--verify` only
@@ -498,18 +535,55 @@ chat carries on at the box's current profile. The session's clean-up releases
 the hold even if the handler task is cancelled, and `on_shutdown` releases
 whatever is left.
 
-## Plugins (the add-on's own seam)
+## Providers and plugins (the add-on's own seam)
 
-`DISPATCH_VOICE_EXTENSIONS=pkg.module:setup[,…]`. Each `setup(api)` gets an
-`ExtensionAPI` (`api_version` 3): `register_engine`, `set_builtin_voices_provider`,
-`add_release_hook`, `set_profile_resolver`, `set_ack_provider`, `set_persona_provider`
-and `include_router(router, prefix="")`. The router mounts under `/api/voice<prefix>`
-behind DisPatch's operator gate, with paths relative to it; a router that spells
-`/api/voice` in its own paths is refused (the gate adds the prefix and nothing
-can strip it from a built router). A broken plugin is logged and skipped. The
-optional, GPL-licensed `dispatch-voice-kokoro` package (installed separately) is
-the reference plugin: the `kokoro` engine behind the cloned-voice engine and
-the `builtin:<id>` voices.
+**The provider interface** (`host/providers.py`). Speech is three providers behind one shape, so
+the Settings page, a plugin and a test can talk to any of them without touching the session:
+
+| | method | yields |
+|---|---|---|
+| `STTProvider` | `transcribe(stream)` | `Partial` events, then exactly one `Final` |
+| `TTSProvider` | `synthesize(text, voice)` | PCM16 mono bytes at `capabilities()["sample_rate"]` |
+| `VADProvider` | `detect(stream)` / `build()` | `speech_start` / `turn_end` events; the session's detector |
+
+Each has `health()` (state, reason, fix, code), `capabilities()` and `settings_schema()` (the
+schema rows it is configured by). The built-in adapters WRAP the existing classes; the session
+engine is unchanged and still uses `StreamingSTT` and `TTSEngine`:
+
+| id | speech to text | text to speech |
+|---|---|---|
+| `cpu` | Parakeet / Moonshine tail STT | the configured engine chain (Chatterbox, MiniMax, a plugin's) |
+| `rig` | `RigSTTProvider` over `RigStreamingSTT` | `RigTTSProvider` over `ReplyEngine`; both share one `RigLink` (one `RigConnection`) |
+| `openai` | `OpenAISTTProvider`: `POST /v1/audio/transcriptions` (also reaches the session as `stt_provider: openai`) | `HQTTS`: `POST /v1/audio/speech` with the CPU voice as the fallback |
+
+`tests/rig/test_providers_contract.py` runs every adapter against the same fake audio and text
+streams (and the SpeechForge fake) through one set of assertions.
+
+**Plugins.** A plugin is a package that exposes `setup(api)` in the `dispatch_voice.providers`
+entry-point group:
+
+```toml
+[project.entry-points."dispatch_voice.providers"]
+kokoro = "dispatch_voice_kokoro:setup"
+```
+
+Installed plugins are listed in Settings → Voice (and `GET /providers`); switching one on adds its
+name to `extensions` (`voice.yaml`, applied at the next restart). `setup(api)` gets an
+`ExtensionAPI` (`api_version` 4): `register_provider(kind, id, name, factory)` (new),
+`register_engine`, `set_builtin_voices_provider`, `add_release_hook`, `set_profile_resolver`,
+`set_ack_provider`, `set_persona_provider` and `include_router(router, prefix="")`. The router
+mounts under `/api/voice<prefix>` behind DisPatch's operator gate, with paths relative to it; a
+router that spells `/api/voice` in its own paths is refused (the gate adds the prefix and nothing
+can strip it from a built router). A broken plugin is logged and skipped. The optional,
+GPL-licensed `dispatch-voice-kokoro` package (installed separately) is the reference plugin: the
+`kokoro` engine behind the cloned-voice engine and the `builtin:<id>` voices.
+
+**`DISPATCH_VOICE_EXTENSIONS=pkg.module:setup[,...]` is deprecated** but still loads, with a
+warning that says to enable the plugin in Settings instead. A module target (`pkg.module:setup`,
+or a bare module name that is not an installed plugin) is honoured ONLY from that variable: the
+`extensions` setting is written by any operator from Settings, so in `voice.yaml` it names
+installed entry-point plugins only (a module target there is skipped with a warning, and
+`PATCH /api/voice/settings` refuses a new one with 422).
 
 ## Running DisPatch with the add-on
 

@@ -154,8 +154,8 @@ def start_scratch(port: int, data: Path, backend: Path, llm_base: str, *, kokoro
     shutil.rmtree(data, ignore_errors=True)
     know = data / "knowledge"
     (know / "notes").mkdir(parents=True)
-    (know / "_profile.md").write_text("# Profile\nThe owner keeps a family calendar and a garden.\n")
-    (know / "notes" / "calendar.md").write_text("The dentist is on Thursdays. The school calls on Fridays.\n")
+    (know / "_profile.md").write_text("# Profile\nThe owner keeps a family calendar and a garden.\n", encoding="utf-8")
+    (know / "notes" / "calendar.md").write_text("The dentist is on Thursdays. The school calls on Fridays.\n", encoding="utf-8")
     prov = {"provider": "openai", "base_url": llm_base, "model": "stub", "api_key": "not-a-key"}
     cfg = {"bots": [
         {"id": BOT, "name": "Adviser", "emoji": "A", "order": 0, "visible": True, "safe": False,
@@ -165,12 +165,12 @@ def start_scratch(port: int, data: Path, backend: Path, llm_base: str, *, kokoro
         {"id": "apibot", "name": "Api Bot", "emoji": "B", "order": 1, "visible": True, "safe": False, "api": prov},
     ]}
     data.mkdir(parents=True, exist_ok=True)
-    (data / "config.yaml").write_text(json.dumps(cfg))
+    (data / "config.yaml").write_text(json.dumps(cfg), encoding="utf-8")
     os.chmod(data / "config.yaml", 0o600)
     voice: dict = {"enabled": True, "rt": {"power_hold": power_hold, "speculate": speculate}}
     if rig_url:
         voice["rig"] = {"enabled": True, "url": rig_url}      # the token stays in the environment
-    (data / "voice.yaml").write_text(json.dumps(voice))
+    (data / "voice.yaml").write_text(json.dumps(voice), encoding="utf-8")
     os.chmod(data / "voice.yaml", 0o600)
     env = {k: v for k, v in os.environ.items() if k not in ("DISPATCH_VOICE_PKG", "DISPATCH_EXTENSIONS", "DISPATCH_VOICE")}
     env.update(DISPATCH_DATA_DIR=str(data), DISPATCH_MIRROR="0", DISPATCH_GATEWAY_WS="0",
@@ -252,7 +252,7 @@ def tree_cpu_s(pid: int | None) -> float:
         if not d.name.isdigit():
             continue
         try:
-            raw = (d / "stat").read_text()
+            raw = (d / "stat").read_text(encoding="utf-8")
         except OSError:
             continue
         rest = raw[raw.rindex(")") + 2:].split()
@@ -1040,7 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\n".join(vs))
     report["rows"] = [asdict(r) for r in rows]
     report["verdicts"] = vs
-    (a.out / "latency_ws.json").write_text(json.dumps(report, indent=1))
+    (a.out / "latency_ws.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     if a.do_assert and any(v.startswith("FAIL") for v in vs):
         return 1
     return 0

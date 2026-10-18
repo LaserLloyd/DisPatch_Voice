@@ -4,7 +4,7 @@
     python -m dispatch_voice.host.download [--dest DIR] [--force] [--verify]
 
 DIR defaults to the same place the server looks (``DISPATCH_SPEECH_MODELS``,
-else ``<data dir>/speech-models``). Standard library only. Every file comes
+else ``<data dir>/models/speech``). Standard library only. Every file comes
 from a public, ungated release; nothing here needs an account or a token.
 
 Total on disk: ~680 MB. That is Parakeet int8 (~670 MB), Smart Turn (~8 MB)
@@ -75,6 +75,10 @@ class ChecksumError(RuntimeError):
     pass
 
 
+class Cancelled(RuntimeError):
+    """The operator cancelled the download (the partial file is removed)."""
+
+
 def sha256_of(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -83,33 +87,63 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def _fetch(url: str, dest: Path, sha256: str) -> None:
+def _fetch(url: str, dest: Path, sha256: str, *, progress: Callable[[int, int], None] | None = None,
+           cancel=None) -> None:
     """Download to a .part file, verify, then move into place. A file that
-    fails its checksum never reaches `dest`."""
+    fails its checksum never reaches `dest`. ``progress(bytes_done, bytes_total)`` is called
+    after every chunk (total 0 when the server does not say); ``cancel`` (a ``threading.Event``)
+    stops the download between chunks, removing the partial file (:class:`Cancelled`)."""
     tmp = dest.with_suffix(dest.suffix + ".part")
     dest.parent.mkdir(parents=True, exist_ok=True)
     req = urllib.request.Request(url, headers={"User-Agent": "dispatch-voice-download"})
     h = hashlib.sha256()
-    with urllib.request.urlopen(req, timeout=60) as r, tmp.open("wb") as f:
-        while chunk := r.read(1 << 20):
-            h.update(chunk)
-            f.write(chunk)
+    done = 0
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r, tmp.open("wb") as f:
+            total = int(r.headers.get("Content-Length") or 0) if getattr(r, "headers", None) else 0
+            while chunk := r.read(1 << 20):
+                if cancel is not None and cancel.is_set():
+                    raise Cancelled("cancelled")
+                h.update(chunk)
+                f.write(chunk)
+                done += len(chunk)
+                if progress is not None:
+                    progress(done, total)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     if h.hexdigest() != sha256:
         tmp.unlink(missing_ok=True)
         raise ChecksumError(f"sha256 mismatch (got {h.hexdigest()}, want {sha256})")
     tmp.replace(dest)
 
 
+#: The real downloader, kept so a test double (or an operator's fetcher) is told apart from it.
+_REAL_FETCH = _fetch
+
+
+def _approx_mb(rel: str) -> float:
+    from .fetch_job import APPROX_MB
+    return float(APPROX_MB["speech"].get(Path(rel).name, 1))
+
+
 def fetch_speech_models(dest: Path, *, force: bool = False, verify: bool = False,
-                        echo: Callable[[str], None] = print, fetch: Callable | None = None) -> int:
+                        echo: Callable[[str], None] = print, fetch: Callable | None = None,
+                        progress: Callable[[dict], None] | None = None, cancel=None) -> int:
     """Fetch (or with ``verify`` only check) every file in :data:`FILES` under
-    ``dest``. Returns 0 when everything is present and verified, 1 otherwise."""
+    ``dest``. Returns 0 when everything is present and verified, 1 otherwise.
+    ``progress(event)`` gets ``{phase, file, index, total, bytes, bytes_total, weight_mb, done}``;
+    ``cancel`` is a ``threading.Event`` (raises :class:`Cancelled`)."""
     fetch = fetch or _fetch
     dest = Path(dest)
     echo(f"speech models -> {dest}")
     bad = 0
-    for rel, url, sha in files_for():
+    files = files_for()
+    for idx, (rel, url, sha) in enumerate(files, 1):
+        if cancel is not None and cancel.is_set():
+            raise Cancelled("cancelled")
         target = dest / rel
+        ev = {"phase": "speech", "file": rel, "index": idx, "total": len(files), "weight_mb": _approx_mb(rel)}
         have = target.exists() and target.stat().st_size > 0
         if verify or (have and not force):
             if not have:
@@ -120,14 +154,77 @@ def fetch_speech_models(dest: Path, *, force: bool = False, verify: bool = False
                 bad += 1
             else:
                 echo(f"  have  {rel}")
+            if progress is not None:
+                progress({**ev, "done": True})
             continue
         echo(f"  fetch {rel}")
         try:
-            fetch(url, target, sha)
+            if fetch is _REAL_FETCH:
+                fetch(url, target, sha, cancel=cancel,
+                      progress=(lambda d, t, ev=ev: progress({**ev, "bytes": d, "bytes_total": t}))
+                      if progress is not None else None)
+            else:
+                fetch(url, target, sha)                     # a test double or a custom fetcher
+        except Cancelled:
+            raise
         except Exception as e:
             echo(f"  FAILED {rel}: {e}")
             return 1
+        if progress is not None:
+            progress({**ev, "done": True})
     return 1 if bad else 0
+
+
+def fetch_all(*, only: str | None = None, force: bool = False, verify: bool = False, stock: bool = True,
+              dtype: str = "q4", speech_dir: Path | None = None, models_dir: Path | None = None,
+              echo: Callable[[str], None] = print, progress: Callable[[dict], None] | None = None,
+              cancel=None, fetch: Callable | None = None, fetch_chatterbox: Callable | None = None,
+              build_stock: Callable | None = None) -> int:
+    """Everything ``dispatch-voice fetch-models`` does, callable from the CLI and from the
+    in-app download job (:mod:`host.fetch_job`): the speech models, the Chatterbox graphs, the
+    stock voice. ``only`` is ``"speech"``, ``"chatterbox"`` or None (both). Returns 0 / 1."""
+    import time as _time
+
+    from . import models as _models
+    rc = 0
+    if only in (None, "speech"):
+        rc = fetch_speech_models(Path(speech_dir) if speech_dir else _models.speech_dir(), force=force,
+                                 verify=verify, echo=echo, fetch=fetch, progress=progress, cancel=cancel)
+    if only in (None, "chatterbox"):
+        if cancel is not None and cancel.is_set():
+            raise Cancelled("cancelled")
+        from ..engine import ChatterboxOnnx
+        from ..engine import fetch_models as _fetch_chatterbox
+        target = Path(models_dir) if models_dir else None
+        if verify:
+            from .engines import chatterbox
+            ok = chatterbox.available()
+            echo(f"Chatterbox models ({chatterbox.model_dir()}): {'have' if ok else 'MISSING'}")
+            rc = rc or (0 if ok else 1)
+        else:
+            fc = fetch_chatterbox or _fetch_chatterbox
+
+            def on_file(name: str, idx: int, total: int, done: bool) -> None:
+                if progress is not None:
+                    progress({"phase": "chatterbox", "file": name, "index": idx, "total": total,
+                              "weight_mb": 720.0 / max(1, total), "done": done})
+
+            d = fc(target or _models.chatterbox_dir(), dtype, on_file=on_file, cancel=cancel)
+            echo(f"Chatterbox models -> {d}")
+            if stock:
+                if cancel is not None and cancel.is_set():
+                    raise Cancelled("cancelled")
+                if build_stock is None:
+                    from ..stock import build_tensors as build_stock_voice
+                else:
+                    build_stock_voice = build_stock
+                t = _time.perf_counter()
+                path = build_stock_voice(ChatterboxOnnx(d, dtype, watermark=False), d)
+                echo(f"stock voice: {path} ({_time.perf_counter() - t:.1f}s)")
+                if progress is not None:
+                    progress({"phase": "stock", "file": "stock voice", "index": 1, "total": 1, "weight_mb": 20.0,
+                              "done": True})
+    return rc
 
 
 def main(argv: list[str] | None = None) -> int:

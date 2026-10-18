@@ -520,7 +520,7 @@ def _rig_token(settings: VoiceSettings) -> str:
     """The rig token when a rig is set up and switched on, else "" (off the loop: it
     reads the env file). "" keeps the session exactly the CPU one."""
     tok = rig.read_token().value
-    return tok if settings.rig.active(tok) else ""
+    return tok if settings.rig.active(tok, tuple(getattr(settings, "rig_allow", ()) or ())) else ""
 
 
 async def _close_rig(rig_session) -> None:

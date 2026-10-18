@@ -14,13 +14,10 @@ from dispatch_voice.host import power, routes, vad_turn
 from dispatch_voice.host import ws as ws_mod
 from dispatch_voice.host.config import VoiceSettings
 from dispatch_voice.host.engines import chatterbox
+from settling import pause, settle
 
 THREAD = "t-voice-1"
 
-
-async def settle(n=30):
-    for _ in range(n):
-        await asyncio.sleep(0.005)
 
 
 async def wait_json(ws, t, timeout=5.0):
@@ -31,7 +28,7 @@ async def wait_json(ws, t, timeout=5.0):
     while not ws.json_of(t):
         if loop.time() > end:
             raise AssertionError(f"no {t!r} frame within {timeout} s")
-        await asyncio.sleep(0.005)
+        await pause(0.005)
     return ws.json_of(t)
 
 
@@ -41,7 +38,7 @@ async def wait_until(cond, timeout=5.0):
     while not cond():
         if loop.time() > end:
             raise AssertionError("condition not met within %s s" % timeout)
-        await asyncio.sleep(0.005)
+        await pause(0.005)
 
 
 @pytest.fixture

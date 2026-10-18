@@ -66,12 +66,26 @@ class Transcriber:
         return await asyncio.to_thread(self.engine.transcribe, audio)
 
 
+def remote_engine(settings):
+    """``stt_provider = openai``: the same ``transcribe(audio) -> str`` seam, over
+    ``POST {stt_url}/v1/audio/transcriptions`` (providers.OpenAISTTProvider). Not cached: it
+    holds no model, and a changed address or model applies to the next chat."""
+    import os
+
+    from . import providers
+    return providers.OpenAISTTEngine(providers.OpenAISTTProvider(
+        settings.stt_url, settings.stt_model, api_key=os.environ.get("DISPATCH_VOICE_STT_API_KEY", "").strip(),
+        timeout_s=float(settings.stt_timeout_s), allow=tuple(getattr(settings, "rig_allow", ()) or ())))
+
+
 _ENGINES: dict[str, object] = {}
 _ENGINES_LOCK = threading.Lock()
 
 
 def shared_engine(settings):
     """Load once per process (the encoder is ~650 MB; loading takes seconds)."""
+    if getattr(settings, "stt_provider", "cpu") == "openai":
+        return remote_engine(settings)
     key = f"{settings.stt_engine}:{settings.parakeet_dir}"
     with _ENGINES_LOCK:
         if key not in _ENGINES:

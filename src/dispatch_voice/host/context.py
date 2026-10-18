@@ -53,9 +53,24 @@ def clear_context() -> None:
     set_context(None)
 
 
+#: DisPatch answers to both names (``config.env``: the DISPATCH_ name first, the legacy
+#: LOCAL_CHAT_ name second), so a container or service unit that sets only the old one still works.
+DATA_DIR_ENV = ("DISPATCH_DATA_DIR", "LOCAL_CHAT_DATA_DIR")
+
+
+def data_dir_override() -> str:
+    """The data folder named in the environment (``DISPATCH_DATA_DIR``, else the legacy
+    ``LOCAL_CHAT_DATA_DIR``), or "" when neither is set to something."""
+    for name in DATA_DIR_ENV:
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            return raw
+    return ""
+
+
 def default_data_dir() -> Path:
     """Where a DisPatch install keeps its data when no context says otherwise."""
-    raw = os.environ.get("DISPATCH_DATA_DIR", "").strip()
+    raw = data_dir_override()
     if raw:
         return Path(raw).expanduser()
     base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
@@ -64,7 +79,7 @@ def default_data_dir() -> Path:
 
 def env_paths(data: Path | None = None) -> Paths:
     """The paths derived from the environment (no context): the same layout
-    DisPatch's ``ExtPaths`` describes, under ``DISPATCH_DATA_DIR``."""
+    DisPatch's ``ExtPaths`` describes, under ``DISPATCH_DATA_DIR`` (or the legacy ``LOCAL_CHAT_DATA_DIR``)."""
     data = Path(data) if data is not None else default_data_dir()
     models = os.environ.get("DISPATCH_SPEECH_MODELS", "").strip()
     return Paths(
@@ -72,7 +87,7 @@ def env_paths(data: Path | None = None) -> Paths:
         acks_yaml=data / "voice-acks.yaml",
         voices_dir=data / "voices",
         cache_dir=data / "voice-cache",
-        models_dir=Path(models).expanduser() if models else data / "speech-models",
+        models_dir=Path(models).expanduser() if models else data / "models",
         state_dir=data / "ext" / "voice",
     )
 

@@ -45,7 +45,7 @@ def test_cached_tensors_make_the_profile_without_an_engine(tmp_path, models, eng
     stock.build_tensors(engine)
     bare = ProfileStore(tmp_path / "other", None)       # no engine at all
     assert stock.ensure_stock(bare, build=False) == stock.STOCK_ID
-    assert json.loads((bare.root / stock.STOCK_ID / "profile.json").read_text())["stock"] is True
+    assert json.loads((bare.root / stock.STOCK_ID / "profile.json").read_text(encoding="utf-8"))["stock"] is True
 
 
 def test_extras_render_audition_and_fillers(store, models, engine):

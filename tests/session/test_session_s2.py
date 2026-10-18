@@ -14,6 +14,7 @@ from fakes import FakeSTT, FakeTTS, FakeWS, ScriptedDetector, utterance
 from dispatch_voice.host import session as vs
 from dispatch_voice.host.session import VoiceHost, VoiceSession
 from dispatch_voice.host.vad_turn import SpeechStart
+from settling import pause
 from session.test_session import (
     THREAD,
     _NoSkip,
@@ -199,7 +200,7 @@ async def test_a_cut_reply_gets_no_say_end_and_a_new_gen():
     task = await start(s, ws)
     s.on_app_frame(frame(type="message", message={"id": "m1", "role": "assistant", "content": REPLY}))
     while not ws.json_of("audio"):
-        await asyncio.sleep(0.002)
+        await pause(0.002)
     ws.push_json({"type": "stop_playback"})
     await settle(20)
     assert ws.json_of("barge_in") and not ws.json_of("say_end")
@@ -234,7 +235,7 @@ async def test_mode_change_applies_at_the_next_sentence():
     task = await start(s, ws)
     s.on_app_frame(frame(type="message", message={"id": "m1", "role": "assistant", "content": REPLY}))
     while not ws.json_of("audio"):
-        await asyncio.sleep(0.002)
+        await pause(0.002)
     ws.push_json({"type": "link", "mode": "text", "why": "stall"})      # mid-sentence
     # (3000 chunks: on a loaded box sentence 1 takes a while to finish — wait for the
     # result, not a fixed 0.6 s: review-T3s3 #13)
@@ -320,7 +321,9 @@ async def test_speech_text_reads_numbers_and_drops_markdown():
 async def test_ack_line_plays_once_at_the_gate_and_the_reply_queues_behind_it():
     s, ws, tts, host = make([[utterance()]], acks=kit_with_lines({"question": ("Let me see.", "Hmm.")}))
     task = await start(s, ws)
-    ws.push_audio(); await settle(10)
+    ws.push_audio()
+    # The line is due ack_after_s (50 ms) after the transcript: wait for it, not for a fixed time.
+    assert await wait_until(lambda: [m for m in ws.json_of("audio") if m["kind"] == "ack"])
     ack_say = [m for m in ws.json_of("say") if m["kind"] == "ack"]
     ack_audio = [m for m in ws.json_of("audio") if m["kind"] == "ack"]
     assert len(ack_say) == 1 and len(ack_audio) == 1 and ack_say[0]["seq"] == ack_audio[0]["seq"] == 1
@@ -367,7 +370,8 @@ async def test_no_rendered_line_falls_back_to_the_earcon():
 async def test_phone_voice_mode_acks_with_the_earcon_never_a_spoken_line():
     s, ws, tts, _ = make([[utterance()]], acks=kit_with_lines({"question": ("Let me see.",)}))
     task = await start(s, ws, slow_link="always_phone")
-    ws.push_audio(); await settle(10)
+    ws.push_audio()
+    assert await wait_until(lambda: ws.json_of("ack"))
     assert ws.json_of("ack") and not [m for m in ws.json_of("say") if m["kind"] == "ack"]
     assert not ws.json_of("audio") and tts.said == []
     ws.hang_up(); await task
@@ -379,7 +383,8 @@ async def test_tool_lines_once_per_distinct_tool_at_most_two_as_notices():
     s, ws, _, _ = make([[utterance()]], acks=kit)
     s.settings = settings(merge_window_s=0.0, ack_after_s=0.02)
     task = await start(s, ws, acks="often")
-    ws.push_audio(); await settle(6)
+    ws.push_audio()
+    assert await wait_until(lambda: [m for m in ws.json_of("audio") if m["kind"] == "ack"])   # the ack goes first
     s.on_app_frame(frame(type="message", message={"id": "u1", "role": "user", "content": "x"}))
     s.on_app_frame(frame(type="thinking", status="started"))
     for name in ("brave_search", "brave_search", "google_calendar", "flashcards_list"):
@@ -403,7 +408,7 @@ async def _speak_then_interrupt(s, ws, host, *, heard_frame: dict | None):
     for f in reply("m1", REPLY, prov="run:1"):
         s.on_app_frame(f)
     while len(ws.json_of("audio")) < 2:
-        await asyncio.sleep(0.002)
+        await pause(0.002)
     ws.push_audio()                                   # SpeechStart: duck
     await settle(5)
     assert ws.json_of("duck") and not ws.json_of("barge_in")
@@ -475,7 +480,7 @@ async def test_note_heard_is_deferred_until_the_row_has_an_id():
     s.on_app_frame(frame(type="stream_start", message_id="run:9"))
     s.on_app_frame(frame(type="stream_chunk", message_id="run:9", text=REPLY))
     while len(ws.json_of("audio")) < 2:
-        await asyncio.sleep(0.002)
+        await pause(0.002)
     ws.push_audio(); await settle(5)
     ws.push_json({"type": "heard", "gen": 0, "seq": 1, "played_ms": 300, "source": "server"})
     await settle(3)
@@ -518,7 +523,7 @@ async def test_tap_to_stop_with_a_heard_sub_object_notes_the_cut():
     for f in reply("m1", REPLY, prov="run:1"):
         s.on_app_frame(f)
     while len(ws.json_of("audio")) < 2:
-        await asyncio.sleep(0.002)
+        await pause(0.002)
     ws.push_json({"type": "stop_playback", "heard": {"gen": 0, "seq": 1, "played_ms": 60, "source": "server"}})
     await asyncio.sleep(0.45)
     assert host.of("abort") == []                     # a tap never aborts the turn

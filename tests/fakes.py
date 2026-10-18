@@ -31,6 +31,54 @@ from typing import Any, Literal
 import numpy as np
 from fastapi import Request  # module level: FastAPI resolves the gate's annotation here
 
+from dispatch_voice import fsperm
+
+
+#: Keys 1.6.0 added to GET/PATCH /api/voice/settings (the tests that pin the older shape strip them;
+#: tests/host/test_settings_routes.py asserts the new ones).
+SETTINGS_ADDED = ("sources", "env", "tts_engine", "tts_provider", "stt_provider", "stt_url", "stt_model", "hq_url", "hq_model",
+                  "extensions", "overridden", "warnings")
+
+
+def core_settings(out: dict) -> dict:
+    """``out`` without the 1.6.0 additions (see SETTINGS_ADDED)."""
+    d = {k: v for k, v in out.items() if k not in SETTINGS_ADDED}
+    if isinstance(d.get("rig"), dict):
+        d["rig"] = {k: v for k, v in d["rig"].items() if k not in ("allow", "token")}
+    return d
+
+
+def make_private(path, *, private: bool = True) -> None:
+    """Give ``path`` the protection the token-file rules look at: owner-only (``private``)
+    or readable by everyone. POSIX: chmod 600 / 644. Windows: the ACL (restrict, or grant
+    Everyone read)."""
+    import os
+    import subprocess
+    if fsperm.IS_WINDOWS:
+        if private:
+            assert fsperm.restrict(path)
+        else:
+            subprocess.run(["icacls", str(path), "/grant", "*S-1-1-0:R"], capture_output=True, check=True)
+        return
+    os.chmod(path, 0o600 if private else 0o644)
+
+
+def assert_private(path, *, directory: bool = False) -> None:
+    """POSIX: exactly 0600 (0700 for a directory). Windows: the mode bits mean nothing there
+    (always 0o666/0o777), so the ACL is checked instead: nobody but the owner and the system
+    may be granted access. A filesystem whose ACL cannot be read is skipped, not failed."""
+    import os
+    import stat
+    if fsperm.IS_WINDOWS:
+        got = fsperm.others_can_read(path)
+        if got is None:
+            import pytest
+            pytest.skip("cannot read the ACL on this filesystem")
+        assert got is False, f"{path} grants access to other users"
+        return
+    want = 0o700 if directory else 0o600
+    assert stat.S_IMODE(os.stat(path).st_mode) == want, oct(stat.S_IMODE(os.stat(path).st_mode))
+
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 Backend = Literal["gateway", "api", "advisor"]
@@ -69,10 +117,10 @@ class ExtPaths:
     def under(cls, data: Path, models_dir: Path | None = None) -> ExtPaths:
         state = data / "ext" / "voice"
         state.mkdir(parents=True, exist_ok=True)
-        state.chmod(0o700)
+        fsperm.ensure_private(state, directory=True)
         return cls(voice_yaml=data / "voice.yaml", acks_yaml=data / "voice-acks.yaml",
                    voices_dir=data / "voices", cache_dir=data / "voice-cache",
-                   models_dir=models_dir or data / "speech-models", state_dir=state)
+                   models_dir=models_dir or data / "models", state_dir=state)
 
 
 @dataclass

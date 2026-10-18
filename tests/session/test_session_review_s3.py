@@ -19,6 +19,7 @@ from dispatch_voice.host.vad_turn import (
 from dispatch_voice.rt.endpoint import TurnPolicy
 from dispatch_voice.rt.settings import RtSettings
 from dispatch_voice.rt.stt_stream import ParakeetTailSTT
+from settling import pause as real_pause
 from session.test_session import THREAD, kit_with_lines, settings, settle
 from session.test_session_s2 import frame, reply
 from session.test_session_s3 import (
@@ -47,7 +48,7 @@ async def _until(cond, timeout: float = 6.0) -> bool:
     while not cond():
         if asyncio.get_running_loop().time() - t > timeout:
             return False
-        await asyncio.sleep(0.01)
+        await real_pause(0.01)
     return True
 
 

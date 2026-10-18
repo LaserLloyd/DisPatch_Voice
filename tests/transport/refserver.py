@@ -592,7 +592,7 @@ def main() -> None:
                     help="look like DisPatch: PIN unlock + lc_session cookie gate + threads/messages API")
     ap.add_argument("--pin-file", type=Path, help="--dispatch-api: a file holding the PIN (never on argv)")
     a = ap.parse_args()
-    pin = a.pin_file.read_text().strip() if a.pin_file else None
+    pin = a.pin_file.read_text(encoding="utf-8").strip() if a.pin_file else None
     if a.dispatch_api and not pin:
         ap.error("--dispatch-api needs --pin-file")
     app = make_app(a.state, a.reply, a.stt, open_mark=not a.no_open_mark, dispatch_api=a.dispatch_api,

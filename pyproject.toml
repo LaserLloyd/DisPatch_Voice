@@ -1,6 +1,6 @@
 [project]
 name = "dispatch-voice"
-version = "1.5.0"
+version = "1.6.0"
 description = "Voice chat for DisPatch Chat: the DisPatch Voice add-on (local speech, cloned voices, Chatterbox-Turbo ONNX on the CPU)"
 license = "MIT"
 requires-python = ">=3.12"
@@ -16,7 +16,14 @@ dependencies = [
     "httpx>=0.27",
     "fastapi>=0.115.0",
     "python-multipart>=0.0.9",
+    "websockets>=13.0",           # the GPU-rig client (host/rig.py); was only a dev dependency
 ]
+
+# Programs pip cannot install. `dispatch-voice doctor` and GET /api/voice/status check them and print
+# the install command for the operating system (host/sysreq.py; a test keeps this table equal to it).
+[tool.dispatch-voice.system-requirements]
+ffmpeg = "decodes the voice clip you upload when you clone a voice (required for cloning)"
+libopus = "the Opus codec of the low-bandwidth voice link (optional; without it the link stays PCM16)"
 
 [project.urls]
 Homepage = "https://github.com/LaserLloyd/DisPatch_Voice"

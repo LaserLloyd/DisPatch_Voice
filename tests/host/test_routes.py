@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import yaml
-from fakes import BotView
+from fakes import BotView, assert_private, core_settings
 
 from dispatch_voice.host import config as vconfig
 from dispatch_voice.host import registry, routes
@@ -75,7 +75,7 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
     c, ctx, _ = app_voice
     r = c.get("/api/voice/settings")
     assert r.status_code == 200
-    assert r.json() == {"enabled": True, "forced": "on",
+    assert core_settings(r.json()) == {"enabled": True, "forced": "on",
                         "default_voice": "builtin:af_heart", "speed": 1.05,
                         "voice_turn_thinking": "off", "merge_window_s": 1.8,
                         "hard_silence_s": 1.4, "max_sessions": 3, "max_sessions_live": 3,
@@ -89,7 +89,7 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
     r = c.patch("/api/voice/settings", json={"speed": 1.2, "voice_turn_thinking": "low",
                                              "default_voice": "builtin:am_michael"})
     assert r.status_code == 200, r.text
-    assert r.json() == {"enabled": True, "forced": "on",
+    assert core_settings(r.json()) == {"enabled": True, "forced": "on",
                         "default_voice": "builtin:am_michael", "speed": 1.2,
                         "voice_turn_thinking": "low", "merge_window_s": 1.8,
                         "hard_silence_s": 1.4, "max_sessions": 3, "max_sessions_live": 3,
@@ -101,10 +101,11 @@ def test_settings_round_trip_persist_and_apply_live(app_voice):
                               "alpha": {"backchannel": False, "follow_up": True}},
                      "rig": RIG_OUT}
     f = ctx.paths.voice_yaml
-    assert f.exists() and (f.stat().st_mode & 0o777) == 0o600
+    assert f.exists()
+    assert_private(f)
     st = vconfig.load_settings()                       # what the next turn reads
     assert (st.builtin_voice, st.speed, st.voice_turn_thinking) == ("am_michael", 1.2, "low")
-    assert yaml.safe_load(f.read_text()) == {"builtin_voice": "am_michael", "speed": 1.2,
+    assert yaml.safe_load(f.read_text(encoding="utf-8")) == {"builtin_voice": "am_michael", "speed": 1.2,
                                              "voice_turn_thinking": "low"}
     assert c.get("/api/voice/settings").json()["speed"] == 1.2
 

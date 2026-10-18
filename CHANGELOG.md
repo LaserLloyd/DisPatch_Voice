@@ -4,6 +4,128 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Added
+- `dispatch-voice --version` prints `dispatch-voice <version>` (it was rejected as a missing subcommand).
+
+### Fixed
+- **Security:** a `module:setup` target in the `extensions` setting (writable by any operator
+  through Settings / `PATCH /api/voice/settings`) was imported and called at the next start, so
+  `sys:exit` stopped DisPatch at every boot. Module targets are honoured only from
+  `DISPATCH_VOICE_EXTENSIONS`; the setting names installed plugins.
+- **Security:** the profile-deletion sync and the doctor's probe sent the rig token to `rig.url`
+  without the network policy; an address the policy refuses never receives it now.
+- A public rig on the `rig.allow` list was refused at the voice-chat gate (the chat stayed on
+  the CPU while the status page said the rig was ready).
+- Windows: a token file or `voice.yaml` whose ACL granted a second account (or any group other
+  than the well-known "everybody" ones) counted as private; now anybody but you, SYSTEM and
+  Administrators makes it not private.
+- A Chatterbox model move that stopped half way (a file in use on Windows) left the engine
+  pointed at the half-filled new folder and the rest of the move marked done; it now keeps
+  loading from the complete set and a retry finishes the move.
+- A plugin's STT/TTS provider (or `stt_provider: rig`) could be selected but voice chats never
+  used it; the status health and the provider row now say what runs instead.
+- The README screenshots moved to `docs/screenshots/` with an `ALLOWED.txt`, so the privacy
+  check (CI and the git hooks) passes again.
+- `dispatch-voice doctor` inside the DisPatch container read `~/.local/share/local-chat` and so
+  reported the models missing and the switch off: it now honours `LOCAL_CHAT_DATA_DIR` (the legacy
+  name DisPatch still answers to) after `DISPATCH_DATA_DIR`, the same order DisPatch uses. The rig
+  token file path follows the same rule.
+- `dispatch-voice doctor` reported "no SPEECHFORGE_TOKEN" for a token saved in the host's file
+  credential store (`<data>/ext/voice/secrets.json`); it now finds it there, and when it finds no
+  token the line names every place it looked.
+
+## [1.6.0] — 2026-10-18
+
+One Settings → Voice page, one definition per setting, providers behind one interface, and the
+first Windows-supported release. No change to the voice session itself.
+
+### Added
+- **Settings → Voice in four sections**, in order: 1 Speech to text, 2 Text to speech, 3 Input
+  and devices (input mode, patience, barge-in, microphone and speaker, and a **microphone test**
+  with a level bar and a latency readout), 4 **Voices per character** (voice, role-play speech,
+  locked-device voice, back-channel and follow-up for each character, saved at once). The
+  Bots-tab Voice pill is now a link to that character's card (it opened a popover whose voice
+  choices waited for the Bots tab's Save).
+- **Fields that had no UI**: the rig address and a **write-only rig token**
+  (`PUT/DELETE /api/voice/rig/token`), the TTS provider and engine, an OpenAI-compatible speech
+  server and transcription server, and **provider plugin** switches. A setting the server's
+  environment decides is shown "Set by environment (NAME)" and disabled.
+- **In-app model download** with progress and Cancel (`POST /api/voice/models/fetch`,
+  `GET .../status`, `POST .../cancel`), the same code as `dispatch-voice fetch-models`; and
+  **one models folder** with `speech/` and `chatterbox/` subfolders (`dispatch-voice
+  migrate-models`, `POST /api/voice/models/migrate`; dry run first, never overwrites; an
+  install from before keeps working where its files are).
+- **Provider interface** (`host/providers.py`): `STTProvider.transcribe`, `TTSProvider.synthesize`,
+  `VADProvider`, each with `health()`, `capabilities()` and `settings_schema()`. Adapters for
+  the CPU pipeline, the SpeechForge rig (one `RigLink` feeding an STT and a TTS provider) and
+  OpenAI-compatible `/v1/audio/speech` and **`/v1/audio/transcriptions`** (new; also selectable
+  as `stt_provider: openai`). Plugins register with `api.register_provider` (`ExtensionAPI` 4)
+  through the `dispatch_voice.providers` entry-point group. `GET /api/voice/providers`.
+- **`GET /api/voice/settings/schema`**: every setting with type, default, range, scope, level,
+  secret flag and environment names. `GET /settings` reports `sources` (env / file / default)
+  and `env` per key.
+- **`GET /api/voice/status` health**: a `health` list with a reason and a fix for each part
+  that is not fine, `system` (ffmpeg, libopus with the install command for this OS), the
+  provider catalog and the download state.
+- `migrate_voice_yaml(store_writer, dry_run=True)` (not wired yet): the one-shot move of
+  `voice.yaml` into the host's settings store.
+- A **Windows job in CI**, and `fsperm.py` (owner-only files on POSIX and by ACL on Windows).
+
+### Changed
+- **The environment now beats `voice.yaml`** (it was the other way round for everything except
+  `DISPATCH_VOICE`). A PATCH over a variable-held key is saved but reported `overridden`.
+- **One definition per setting** (`host/settings_schema.py`): `clean_prefs`, the PATCH
+  validation and the `rt` / `rig` subtrees are generated from it. `stt_engine`, `hard_silence_s`,
+  `power_hold` and `bots` are no longer defined twice; the old spellings still read. The
+  README's environment table is generated from the schema and a test keeps it current.
+- `websockets` is a runtime dependency (the rig client imported it but only dev installs had it).
+  ffmpeg and libopus are declared as system requirements (`pyproject.toml`, README,
+  `dispatch-voice doctor`).
+- `DISPATCH_VOICE_EXTENSIONS` is deprecated (it still loads, with a warning): install the
+  plugin and switch it on in Settings.
+- `ExtensionAPI.api_version` is 4.
+
+### Security
+- **The rig address is checked** (it receives the token and the live microphone): loopback,
+  private, tailnet and LAN names are allowed; link-local and cloud-metadata addresses never;
+  public addresses only on the administrator's allow-list (`rig.allow`); plain `ws://` off the
+  machine warns; a name that resolves somewhere forbidden is not dialled. The same policy
+  applies to the OpenAI-compatible speech and transcription servers.
+- The bearer token no longer appears in DEBUG logs of the websockets client; a test pins that no
+  log line carries it.
+
+### Fixed (host wiring, W6b)
+- **Speech works right after the in-app download, with no restart** (review F6). The Chatterbox
+  engine and the voice resolver were registered once, at setup, so a download finished
+  afterwards left `status.ready` true while the first voice socket failed ("voice models failed
+  to load"). `tts.build_engine` / `shared_engine` and `resolve_profile` now register them as
+  soon as the models are on disk. `ready` is also exact now: it is true only when the whole
+  Chatterbox set (all four graphs and their weights) and the whole Parakeet set are present, not
+  while the download has written the tokenizer or the encoder but not the rest. Only the
+  cloned-voice management routes (`/api/voice/profiles`) still mount at the next start, and the
+  page says so.
+- **The rig token lives in DisPatch's data folder** (review F7c): the host's credential store
+  (`ctx.secrets`) first, else `<data>/ext/voice/speechforge.env`, so it survives a container
+  image update and `PUT /api/voice/rig/token` no longer answers 500 under a read-only root. The
+  1.6.0 file `~/.config/local-chat/speechforge.env` and `SPEECHFORGE_TOKEN` are still read.
+
+### Changed (host wiring, W6b)
+- **One models folder named `models`** (review F8): the default is `<data>/models` with
+  `speech/` and `chatterbox/` (it was `<data>/speech-models`, which held Chatterbox too). An
+  install that still has `<data>/speech-models` keeps working; `migrate-models` moves it.
+
+### Fixed (Windows)
+- The rig token file was rejected on every Windows file (POSIX mode bits are always 0666 there):
+  the ACL is checked instead. Text files are read and written as UTF-8 (a non-ASCII bot id or
+  profile name misread on cp1252). The power hold reports "needs Linux" instead of a missing
+  `/usr/bin/python3`. A cursor store whose file is corrupt is moved aside (the failed sqlite
+  handle is closed first). The `voice.yaml` cache no longer serves a stale file after two writes
+  in one 15 ms tick. The rig ping carries `box_load` on Windows too.
+- The test suite is green on Windows (it was 27 failed, 1 error): the session tests' 5 ms
+  settle loops returned at once there (asyncio fires timers shorter than the 15.6 ms clock tick
+  immediately), and file-mode checks are ACL checks on Windows.
+
+
 ## [1.5.0] — 2026-10-17
 
 Background noise and people talking in the room kept pausing and cutting replies.

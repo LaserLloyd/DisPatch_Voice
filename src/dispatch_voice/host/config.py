@@ -19,7 +19,7 @@ drops the loaded speech models; turning it on starts the background prewarm
 (routes.apply_switch).
 
 Model files (VAD, Smart Turn, Parakeet) live in ``DISPATCH_SPEECH_MODELS``
-(default ``<data>/speech-models``) with the layout ``dispatch-voice
+(default ``<data>/models``) with the layout ``dispatch-voice
 fetch-models`` produces; the Chatterbox models in ``DISPATCH_VOICE_MODELS``.
 
 A few choices are PREFERENCES, not install decisions, and are changed from the
@@ -62,8 +62,10 @@ import threading
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
+from .. import fsperm
 from ..rt.settings import RtSettings
-from .rig import RigSettings, clean_rig
+from . import settings_schema as _sch
+from .rig import RigSettings
 
 log = logging.getLogger("dispatch.voice")
 
@@ -87,55 +89,32 @@ def _int(name: str, default: int) -> int:
 
 
 def _default_models_dir() -> Path:
-    from . import context
-    return context.paths().models_dir
+    """Where the speech models are: the unified folder's ``speech`` subfolder, or the old flat
+    location while models still sit there (host/models.py)."""
+    from . import models
+    return models.speech_dir()
 
 
-#: Patience presets the driver can pick (multiplies the merge window and the
-#: hard-silence fallback). "patient" suits a driver who pauses mid-thought.
-PATIENCE = {"quick": 0.7, "normal": 1.0, "patient": 1.5}
-
-#: How long a spoken reply should be (``start.reply_style``; persona.py).
-REPLY_STYLES = ("short", "normal", "longer")
-#: Allowed thinking levels for voice turns (``voice_turn_thinking``).
-THINKING_LEVELS = ("off", "low", "medium")
-#: Speaking-speed bounds (engines that support a speed, e.g. a built-in voice
-#: plugin; a cloned voice speaks at its own pace).
-SPEED_MIN, SPEED_MAX = 0.8, 1.3
-#: Voice lab timing bounds (seconds). Outside these the endpointer either cuts
-#: people off mid-sentence or makes every reply wait noticeably; the env
-#: variables are not limited, the app is.
-MERGE_WINDOW_MIN, MERGE_WINDOW_MAX = 0.5, 4.0
-HARD_SILENCE_MIN, HARD_SILENCE_MAX = 0.8, 3.0
-#: Open voice chats the server allows at once (contracts §F.1 ``max_sessions``;
-#: DisPatch's gate answers 1013 "busy" beyond it).
-MAX_SESSIONS_MIN, MAX_SESSIONS_MAX, MAX_SESSIONS_DEFAULT = 1, 8, 3
-#: ``rt.power_hold``: hold the performance profile while a chat is open, or not.
-POWER_HOLD_MODES = ("performance", "off")
-#: ``rp_speech`` (server default) and a bot's ``voice_rp`` (contracts §B.3 / §F.5):
-#: how a role-play reply is spoken. The prototype names ``quotes`` /
-#: ``quotes+narrator`` are mapped inside ``text/speech_text.py``.
-RP_MODES = ("all", "skip_actions", "dialogue", "dialogue_narrator")
-#: ``gateway_trailer``: the full app note at the end of a gateway agent's text,
-#: or the bare ``[voice chat]`` tag once the standing rule is in its brief.
-GATEWAY_TRAILERS = ("full", "tag")
-#: A voice id as stored in ``narrator_voice`` / a bot's ``voice`` (opaque: a
-#: profile id or ``builtin:<id>``); the routes check that it exists.
-VOICE_ID_MAX = 80
-#: ``opus``: negotiate Opus with clients that can (``auto``), or never (``off``: PCM16
-#: both ways). ``DISPATCH_VOICE_OPUS=off`` also turns it off (``transport.opus.available``).
-OPUS_MODES = ("auto", "off")
-#: Downlink / uplink Opus bitrate rungs (kbps; contracts §F.1).
-OPUS_DOWN_KBPS = (24, 16)
-OPUS_UP_KBPS = (16, 12)
-#: Per-bot keys of ``bots.<id>`` (contracts §F.1).
-BOT_KEYS = ("backchannel", "follow_up")
-#: The per-bot voice a LOCKED (Safe-Mode) device hears instead of the bot's standard
-#: voice: a voice id, "" = the same as standard. A string, so it is not in BOT_KEYS.
-BOT_LOCKED_VOICE = "locked_voice"
-#: Values of DISPATCH_VOICE that force voice on; ``auto`` (or unset) leaves it
-#: to the switch; anything else forces it off.
-FORCE_ON = ("1", "true", "on", "yes")
+#: The vocabularies and ranges below live in ``settings_schema`` (the one table); the names
+#: are kept here because the rest of the add-on, and its plugins, import them from here.
+PATIENCE = _sch.PATIENCE
+REPLY_STYLES = _sch.REPLY_STYLES
+THINKING_LEVELS = _sch.THINKING_LEVELS
+SPEED_MIN, SPEED_MAX = _sch.SPEED_MIN, _sch.SPEED_MAX
+MERGE_WINDOW_MIN, MERGE_WINDOW_MAX = _sch.MERGE_WINDOW_MIN, _sch.MERGE_WINDOW_MAX
+HARD_SILENCE_MIN, HARD_SILENCE_MAX = _sch.HARD_SILENCE_MIN, _sch.HARD_SILENCE_MAX
+MAX_SESSIONS_MIN, MAX_SESSIONS_MAX, MAX_SESSIONS_DEFAULT = (
+    _sch.MAX_SESSIONS_MIN, _sch.MAX_SESSIONS_MAX, _sch.MAX_SESSIONS_DEFAULT)
+POWER_HOLD_MODES = _sch.POWER_HOLD_MODES
+RP_MODES = _sch.RP_MODES
+GATEWAY_TRAILERS = _sch.GATEWAY_TRAILERS
+VOICE_ID_MAX = _sch.VOICE_ID_MAX
+OPUS_MODES = _sch.OPUS_MODES
+OPUS_DOWN_KBPS = _sch.OPUS_DOWN_KBPS
+OPUS_UP_KBPS = _sch.OPUS_UP_KBPS
+BOT_KEYS = _sch.BOT_KEYS
+BOT_LOCKED_VOICE = _sch.BOT_LOCKED_VOICE
+FORCE_ON = _sch.FORCE_ON
 
 
 @dataclass(frozen=True)
@@ -145,11 +124,19 @@ class VoiceSettings:
     #: when ``flag`` is ``auto``. Off by default.
     switch: bool = False
     models_dir: Path = field(default_factory=_default_models_dir)
-    stt_engine: str = "parakeet"          # parakeet
+    stt_engine: str = "parakeet"          # parakeet | moonshine (ONE setting: also RtSettings.stt_engine)
+    #: Who recognises speech: cpu (this computer) | openai (an OpenAI-compatible server) | a plugin's
+    #: provider id. The GPU rig is a separate switch (``rig.enabled``) with the CPU behind it.
+    stt_provider: str = "cpu"
+    stt_url: str = ""
+    stt_model: str = ""
+    stt_timeout_s: float = 20.0
     #: auto (the cloned-voice engine ``chatterbox`` when its models are
     #: fetched, else the first ready registered engine) | chatterbox | minimax
     #: | any name a plugin registered (e.g. ``kokoro`` from dispatch-voice-kokoro)
     tts_engine: str = "auto"
+    #: auto (the HQ server when ``hq_url`` is set) | cpu (never the HQ server) | openai | a plugin's id.
+    tts_provider: str = "auto"
     #: Built-in voice (a provider's id, without ``builtin:``) used when no
     #: profile applies. "" = the provider's own default.
     builtin_voice: str = ""
@@ -224,6 +211,12 @@ class VoiceSettings:
     #: The optional GPU rig (``rig:``; host/rig.py). Off unless ``rig.enabled`` AND
     #: ``rig.url`` AND the SPEECHFORGE_TOKEN are all present.
     rig: RigSettings = field(default_factory=RigSettings)
+    #: Hosts / ``*.suffix`` / CIDRs a PUBLIC rig or speech-server address may be (netpolicy).
+    rig_allow: tuple = ()
+    #: Enabled provider plugins: entry-point names or legacy ``module:setup`` targets.
+    extensions: tuple = ()
+    #: Where each setting's value came from: ``{id: {"source": "env"|"file"|"default", "env": NAME}}``.
+    sources: dict = field(default_factory=dict, compare=False, repr=False)
 
     # ---- derived paths -------------------------------------------------- #
     @property
@@ -256,10 +249,21 @@ class VoiceSettings:
                 out.append(f"python package {mod}")
         if not self.silero_path.exists():
             out.append(f"model {self.silero_path.name}")
-        if self.stt_engine == "parakeet":
+        if self.stt_provider == "openai":
+            if not self.stt_url:
+                out.append("a transcription server address (stt_url)")
+            else:
+                # The microphone audio goes to this address: the policy applies when it is USED,
+                # not only on PATCH (a value from the environment never went through the route).
+                from . import netpolicy
+                v = netpolicy.check_url_policy(self.stt_url, tuple(self.rig_allow), schemes=("http", "https"))
+                if not v.ok:
+                    out.append(f"a transcription server address the network policy allows (stt_url: {v.code})")
+        elif self.stt_engine in ("parakeet", "moonshine"):         # Moonshine falls back to Parakeet
             if importlib.util.find_spec("onnx_asr") is None:
                 out.append("python package onnx-asr")
-            if not (self.parakeet_dir / "encoder-model.int8.onnx").exists():
+            from . import models
+            if not models.parakeet_complete(self.parakeet_dir):
                 out.append("model parakeet-tdt-0.6b-v2")
         out += self._tts_missing()
         return out
@@ -351,8 +355,10 @@ class VoiceSettings:
             "ready": not miss,
             "missing": miss,
             "stt": self.stt_engine,
+            "stt_provider": self.stt_provider,
             "tts": self.tts_engine,
-            "hq": bool(self.hq_url),
+            "tts_provider": self.tts_provider,
+            "hq": bool(self.hq_url) and self.tts_provider != "cpu",
             "smart_turn": self.smart_turn_path.exists(),
             "patience": self.patience,
             "patience_presets": PATIENCE,
@@ -391,102 +397,37 @@ def _bool(name: str, default: bool) -> bool:
 
 
 # --------------------------------------------------------------------------- #
-# <data>/voice.yaml — the in-app preferences (see the module docstring)
+# <data>/voice.yaml: the in-app preferences (see the module docstring)
+#
+# What a key may hold, its range, its aliases and its environment names are in
+# ``settings_schema``; this section only reads and writes the file.
 # --------------------------------------------------------------------------- #
 
-PREF_KEYS = ("enabled", "builtin_voice", "speed", "voice_turn_thinking",
-             "merge_window_s", "hard_silence_s", "max_sessions", "rt",
-             "rp_speech", "narrator_voice", "expressive_tags", "gateway_trailer", "bots",
-             "opus", "opus_down_kbps", "opus_up_kbps", "rig")
-#: voice.yaml keys from 2.1 → today's names.
-PREF_ALIASES = {"kokoro_voice": "builtin_voice", "kokoro_speed": "speed"}
-#: voice.yaml key → VoiceSettings field, where the two differ.
-PREF_FIELDS = {"enabled": "switch", "hard_silence_s": "turn_hard_silence_s"}
-#: Keys of the ``rt:`` tree (contracts §F.1): ``power_hold`` plus every
-#: ``RtSettings`` field except the per-bot block and the copied hard silence.
-RT_KEYS = ("power_hold", *[f.name for f in fields(RtSettings)
-                           if f.name not in ("bots", "hard_silence_s", "power_hold")])
+#: voice.yaml keys from 2.1 -> today's names.
+PREF_ALIASES = dict(_sch.LEGACY_FILE_KEYS)
+#: Keys of the ``rt:`` tree (contracts section F.1): ``power_hold`` plus every ``RtSettings``
+#: field except the per-bot block and the copied hard silence.
+RT_KEYS = _sch.rt_keys()
+#: Top-level keys of voice.yaml.
+PREF_KEYS = tuple(sorted({s.parts[0] for s in _sch.FILE_SETTINGS} | {"bots"}))
 
-
-def _num_in(v, lo: float, hi: float) -> float | None:
-    if isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= float(v) <= hi:
-        return round(float(v), 3)
-    return None
-
-
-def _int_in(v, lo: int, hi: int) -> int | None:
-    if isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi:
-        return int(v)
-    if isinstance(v, float) and v.is_integer() and lo <= v <= hi:
-        return int(v)
-    return None
-
-
-_VOICE_ID_RE = __import__("re").compile(rf"\A[A-Za-z0-9][A-Za-z0-9:._-]{{0,{VOICE_ID_MAX - 1}}}\Z")
-_BOT_ID_RE = __import__("re").compile(r"\A[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
-
-
-def clean_voice_id(v) -> str | None:
-    """A stored voice id ("" = none), or None when the value is not one."""
-    if v is None or v == "":
-        return ""
-    if isinstance(v, str) and _VOICE_ID_RE.match(v.strip()):
-        return v.strip()
-    return None
-
-
-def clean_bots(raw) -> dict:
-    """The ``bots:`` subtree: ``{bot id: {backchannel?: bool, follow_up?: bool}}``,
-    validated (unknown keys and non-boolean values dropped, empty entries gone)."""
-    out: dict = {}
-    if not isinstance(raw, dict):
-        return out
-    for bot_id, conf in raw.items():
-        if not isinstance(bot_id, str) or not _BOT_ID_RE.match(bot_id) or not isinstance(conf, dict):
-            continue
-        entry = {k: conf[k] for k in BOT_KEYS if isinstance(conf.get(k), bool)}
-        lv = clean_voice_id(conf.get(BOT_LOCKED_VOICE)) if BOT_LOCKED_VOICE in conf else None
-        if lv is not None:
-            entry[BOT_LOCKED_VOICE] = lv        # "" is kept: it is how a PATCH clears the override
-        if entry:
-            out[bot_id] = entry
-    return out
+clean_voice_id = _sch.clean_voice_id
+clean_bots = _sch.clean_bots
 
 
 def clean_rt(raw) -> dict:
-    """The ``rt:`` subtree, validated (unknown keys dropped): ``power_hold`` by
-    hand (a hand-edited ``off`` is YAML's boolean false), every other key through
-    ``RtSettings.from_mapping`` — a value outside the §F.1 range is clamped, a
-    wrong type is dropped (the default applies)."""
-    out: dict = {}
-    if not isinstance(raw, dict):
-        return out
-    ph = raw.get("power_hold")
-    if isinstance(ph, bool):
-        out["power_hold"] = "performance" if ph else "off"
-    elif isinstance(ph, str) and ph.strip().lower() in POWER_HOLD_MODES:
-        out["power_hold"] = ph.strip().lower()
-    rest = {k: v for k, v in raw.items() if k in RT_KEYS and k != "power_hold"}
-    if rest:
-        clean = RtSettings.from_mapping(rest)
-        defaults = RtSettings()
-        for k, v in rest.items():
-            got = getattr(clean, k)
-            # from_mapping falls back to the default on a wrong type; keep the key
-            # only when the raw value was of the right kind (so a typo'd string
-            # does not silently pin the default into the file).
-            if isinstance(getattr(defaults, k), bool):
-                ok = isinstance(v, bool)
-            elif isinstance(getattr(defaults, k), (int, float)):
-                ok = isinstance(v, (int, float)) and not isinstance(v, bool)
-            else:
-                ok = isinstance(v, str) and got == v
-            if ok:
-                out[k] = got
-    return out
+    """The ``rt:`` subtree, validated (unknown keys dropped, a number outside its range clamped,
+    a wrong type dropped so the default applies)."""
+    return _sch.clean_subtree("rt", raw)
 
 
-_PREFS_CACHE: tuple[float, dict] | None = None
+def clean_prefs(raw) -> dict:
+    """Only known keys with valid values survive; anything else is dropped. Aliases fold into
+    the canonical key (``kokoro_speed`` -> ``speed``, a top-level ``power_hold`` -> ``rt.power_hold``)."""
+    return _sch.clean_prefs(raw)
+
+
+_PREFS_CACHE: tuple[tuple[int, int], dict] | None = None
 _PREFS_LOCK = threading.Lock()
 #: Serialises the read-modify-write of voice.yaml: two PATCHes at once used
 #: to drop each other's key. (A save keeps only known keys; comments and
@@ -499,70 +440,6 @@ def prefs_path() -> Path:
     return context.paths().voice_yaml
 
 
-def clean_prefs(raw) -> dict:
-    """Only known keys with valid values survive; anything else is dropped."""
-    out: dict = {}
-    if not isinstance(raw, dict):
-        return out
-    raw = dict(raw)
-    for old, new in PREF_ALIASES.items():
-        if old in raw and new not in raw:
-            raw[new] = raw[old]
-    v = raw.get("builtin_voice")
-    if isinstance(v, str) and v.strip() and len(v) <= 64 and v.replace("_", "").replace("-", "").isalnum():
-        out["builtin_voice"] = v.strip()
-    sp = raw.get("speed")
-    if isinstance(sp, (int, float)) and not isinstance(sp, bool) and SPEED_MIN <= float(sp) <= SPEED_MAX:
-        out["speed"] = round(float(sp), 3)
-    th = raw.get("voice_turn_thinking")
-    if isinstance(th, str) and th.strip().lower() in THINKING_LEVELS:
-        out["voice_turn_thinking"] = th.strip().lower()
-    if isinstance(raw.get("enabled"), bool):
-        out["enabled"] = raw["enabled"]
-    mw = _num_in(raw.get("merge_window_s"), MERGE_WINDOW_MIN, MERGE_WINDOW_MAX)
-    if mw is not None:
-        out["merge_window_s"] = mw
-    hs = _num_in(raw.get("hard_silence_s"), HARD_SILENCE_MIN, HARD_SILENCE_MAX)
-    if hs is not None:
-        out["hard_silence_s"] = hs
-    ms = _int_in(raw.get("max_sessions"), MAX_SESSIONS_MIN, MAX_SESSIONS_MAX)
-    if ms is not None:
-        out["max_sessions"] = ms
-    rt = clean_rt(raw.get("rt"))
-    if rt:
-        out["rt"] = rt
-    rp = raw.get("rp_speech")
-    if isinstance(rp, str) and rp.strip().lower() in RP_MODES:
-        out["rp_speech"] = rp.strip().lower()
-    nv = clean_voice_id(raw.get("narrator_voice")) if "narrator_voice" in raw else None
-    if nv is not None:
-        out["narrator_voice"] = nv
-    if isinstance(raw.get("expressive_tags"), bool):
-        out["expressive_tags"] = raw["expressive_tags"]
-    gt = raw.get("gateway_trailer")
-    if isinstance(gt, str) and gt.strip().lower() in GATEWAY_TRAILERS:
-        out["gateway_trailer"] = gt.strip().lower()
-    op = raw.get("opus")
-    if isinstance(op, bool):                       # a hand-edited `off` is YAML's false
-        out["opus"] = "auto" if op else "off"
-    elif isinstance(op, str) and op.strip().lower() in OPUS_MODES:
-        out["opus"] = op.strip().lower()
-    dk = _int_in(raw.get("opus_down_kbps"), min(OPUS_DOWN_KBPS), max(OPUS_DOWN_KBPS))
-    if dk in OPUS_DOWN_KBPS:
-        out["opus_down_kbps"] = dk
-    uk = _int_in(raw.get("opus_up_kbps"), min(OPUS_UP_KBPS), max(OPUS_UP_KBPS))
-    if uk in OPUS_UP_KBPS:
-        out["opus_up_kbps"] = uk
-    if "bots" in raw:
-        bots = clean_bots(raw.get("bots"))
-        if bots or raw.get("bots") == {}:
-            out["bots"] = bots
-    rig = clean_rig(raw.get("rig"))
-    if rig:
-        out["rig"] = rig
-    return out
-
-
 def forget_prefs(keys) -> dict:
     """Remove ``keys`` from voice.yaml (back to the env/default value)."""
     with _PREFS_WRITE_LOCK:
@@ -570,11 +447,14 @@ def forget_prefs(keys) -> dict:
 
 
 def load_prefs() -> dict:
-    """voice.yaml, validated; {} when absent or unreadable. Cached on mtime."""
+    """voice.yaml, validated; {} when absent or unreadable. Cached on (mtime, size)."""
     global _PREFS_CACHE
     p = prefs_path()
     try:
-        mtime = p.stat().st_mtime
+        st = p.stat()
+        # (mtime_ns, size): two writes inside one filesystem clock tick (15 ms on Windows)
+        # share an mtime, and a hand edit that changes the text changes the size.
+        mtime = (st.st_mtime_ns, st.st_size)
     except OSError:
         return {}
     with _PREFS_LOCK:
@@ -582,7 +462,7 @@ def load_prefs() -> dict:
             return dict(_PREFS_CACHE[1])
     try:
         import yaml
-        prefs = clean_prefs(yaml.safe_load(p.read_text()) or {})
+        prefs = clean_prefs(yaml.safe_load(p.read_text(encoding="utf-8")) or {})
     except Exception:
         log.warning("voice: %s is unreadable; using the defaults", p)
         prefs = {}
@@ -592,10 +472,9 @@ def load_prefs() -> dict:
 
 
 def save_prefs(update: dict) -> dict:
-    """Merge ``update`` (already validated) into voice.yaml atomically. The
-    ``rt`` subtree is merged key by key, and ``bots`` per bot per key (a PATCH
-    of one bot's ``backchannel`` leaves every other bot and its ``follow_up``
-    alone), never replaced wholesale."""
+    """Merge ``update`` (already validated) into voice.yaml atomically. The ``rt`` and ``rig``
+    subtrees are merged key by key, and ``bots`` per bot per key (a PATCH of one bot's
+    ``backchannel`` leaves every other bot and its ``follow_up`` alone), never replaced wholesale."""
     with _PREFS_WRITE_LOCK:
         current = load_prefs()
         clean = clean_prefs(update)
@@ -617,53 +496,55 @@ def _write_prefs(prefs: dict) -> dict:
     p = prefs_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".yaml.tmp")
-    tmp.write_text(yaml.safe_dump(prefs, sort_keys=True))
-    os.chmod(tmp, 0o600)
+    tmp.write_text(yaml.safe_dump(prefs, sort_keys=True), encoding="utf-8")
+    fsperm.ensure_private(tmp)
     os.replace(tmp, p)
     with _PREFS_LOCK:
         _PREFS_CACHE = None
     return prefs
 
 
-def _power_hold_env() -> str:
-    v = _env("VOICE_POWER_HOLD", "performance").strip().lower()
-    return v if v in POWER_HOLD_MODES else "performance"
+#: Schema ids that are not ``VoiceSettings`` fields (read where they are used, or kept elsewhere).
+_NOT_FIELDS = frozenset({"models_root", "chatterbox_models", "model_revision", "data_dir", "ack_render",
+                         "extensions", "rig.allow", "bots", "enabled"})
+#: ``rt.*`` ids that ARE ``VoiceSettings`` fields (one definition, two readers).
+_RT_FIELDS = frozenset({"rt.power_hold", "rt.stt_engine"})
 
 
 def load_settings() -> VoiceSettings:
-    models = _env("SPEECH_MODELS")
-    base = VoiceSettings(
-        flag=_env("VOICE", "auto"),
-        models_dir=Path(models).expanduser() if models else _default_models_dir(),
-        stt_engine=_env("VOICE_STT", "parakeet").strip().lower(),
-        tts_engine=_env("VOICE_TTS", "auto").strip().lower(),
-        builtin_voice=_env("VOICE_BUILTIN_VOICE", _env("VOICE_KOKORO_VOICE", "")).strip(),
-        speed=_float("VOICE_SPEED", _float("VOICE_KOKORO_SPEED", 1.05)),
-        minimax_model=_env("VOICE_MINIMAX_MODEL", "speech-2.8-turbo"),
-        minimax_voice=_env("VOICE_MINIMAX_VOICE", "Wise_Woman"),
-        minimax_base_url=_env("VOICE_MINIMAX_BASE_URL", "https://api.minimax.io"),
-        hq_url=_env("VOICE_HQ_URL", ""),
-        hq_model=_env("VOICE_HQ_MODEL", ""),
-        hq_timeout_s=_float("VOICE_HQ_TIMEOUT", 4.0),
-        turn_hard_silence_s=_float("VOICE_HARD_SILENCE", 1.4),
-        no_smart_turn_silence_s=_float("VOICE_SILENCE", 0.8),
-        merge_window_s=_float("VOICE_MERGE_WINDOW", 1.8),
-        patience=_float("VOICE_PATIENCE", 1.0),
-        barge_abort_turn=_env("VOICE_BARGE_ABORT", "1").strip().lower() in ("1", "true", "on", "yes"),
-        voice_turn_thinking=_env("VOICE_THINKING", "off").strip(),
-        threads=_int("VOICE_THREADS", 6),
-        tts_threads=_int("VOICE_TTS_THREADS", 8),
-        prewarm=_bool("VOICE_PREWARM", True),
-        max_sessions=min(MAX_SESSIONS_MAX, max(MAX_SESSIONS_MIN, _int("VOICE_MAX_SESSIONS", MAX_SESSIONS_DEFAULT))),
-        power_hold=_power_hold_env(),
-    )
-    prefs = {PREF_FIELDS.get(k, k): v for k, v in load_prefs().items()}
-    rt = prefs.pop("rt", None) or {}
-    if "rig" in prefs:
-        prefs["rig"] = RigSettings.from_mapping(prefs["rig"])
-    if "power_hold" in rt:
-        prefs["power_hold"] = rt["power_hold"]
-    s = replace(base, **prefs) if prefs else base
-    rt_settings = RtSettings.from_mapping({**rt, "power_hold": s.power_hold, "bots": s.bots},
-                                          hard_silence_s=s.turn_hard_silence_s)
-    return replace(s, rt=rt_settings)
+    """The settings in force: environment beats voice.yaml beats the default (1.6.0; 1.5.0 let
+    voice.yaml beat every variable except DISPATCH_VOICE). ``settings.sources`` says which won."""
+    prefs = load_prefs()
+    values, sources = _sch.resolve(prefs, os.environ)
+    names = {f.name for f in fields(VoiceSettings)}
+    kw: dict = {}
+    for s in _sch.SETTINGS:
+        if s.scope != "server" or s.id not in values or s.secret or s.id in _NOT_FIELDS:
+            continue
+        head = s.id.split(".")[0]
+        if head in ("rt", "rig") and s.id not in _RT_FIELDS:
+            continue
+        name = s.field or s.id.split(".")[-1]
+        if name in names:
+            kw[name] = values[s.id]
+    kw["flag"] = _env("VOICE", "auto")
+    kw["switch"] = bool(values.get("enabled", False))
+    models = values.get("models_root") or ""
+    kw["models_dir"] = Path(models).expanduser() if models else _default_models_dir()
+    kw["bots"] = dict(values.get("bots") or {})
+    kw["extensions"] = tuple(values.get("extensions") or ())
+    kw["rig_allow"] = tuple(values.get("rig.allow") or ())
+
+    def explicit(prefix: str) -> dict:
+        """The keys of a subtree that something set (a default must not look like a choice)."""
+        return {k[len(prefix):]: v for k, v in values.items()
+                if k.startswith(prefix) and sources[k]["source"] != "default"}
+
+    rt_raw = {k: v for k, v in explicit("rt.").items() if k != "power_hold"}
+    rig_fields = {f.name for f in fields(RigSettings)}
+    kw["rig"] = RigSettings.from_mapping({k: v for k, v in explicit("rig.").items() if k in rig_fields})
+    kw["rt"] = RtSettings.from_mapping(
+        {**rt_raw, "power_hold": kw["power_hold"], "stt_engine": kw["stt_engine"], "bots": kw["bots"]},
+        hard_silence_s=kw["turn_hard_silence_s"])
+    kw["sources"] = sources
+    return VoiceSettings(**kw)

@@ -97,7 +97,7 @@ def test_validators_registered_by_setup(host_env, monkeypatch):
 def test_max_sessions_from_voice_yaml_reaches_the_gate(host_env, monkeypatch):
     monkeypatch.setattr(chatterbox, "available", lambda: False)
     host_env.paths.voice_yaml.parent.mkdir(parents=True, exist_ok=True)
-    host_env.paths.voice_yaml.write_text("max_sessions: 5\n")
+    host_env.paths.voice_yaml.write_text("max_sessions: 5\n", encoding="utf-8")
     setup(host_env)
     assert host_env.websockets["voice"]["max_total"] == 5
 
@@ -131,7 +131,7 @@ def test_plugin_seam_runs_inside_setup_and_mounts_under_api_voice(host_env, monk
     monkeypatch.setattr(chatterbox, "available", lambda: False)
 
     def plug(api):
-        assert api.api_version == 3
+        assert api.api_version == 4
         r = APIRouter(prefix="/kokoro")
 
         @r.get("/voices")
@@ -243,6 +243,6 @@ def test_the_client_entry_reports_the_package_version():
     """The client's `EXT.version` (static/index.js) is the package's version (T7b note: it
     still said 0.1.0 at 1.0.0); a release bumps both, this keeps them together."""
     import re
-    src = (STATIC_DIR / "index.js").read_text()
+    src = (STATIC_DIR / "index.js").read_text(encoding="utf-8")
     m = re.search(r"export const EXT = \{[^}]*version: '([0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)'", src)
     assert m is not None and m.group(1) == __version__

@@ -9,7 +9,7 @@ use it sit behind the session's existing seams: ``rt/stt_rig.py``
 
 **Off unless set up.** ``rig.enabled`` in ``<data>/voice.yaml`` only takes
 effect when ``rig.url`` is set AND the ``SPEECHFORGE_TOKEN`` is present (the
-environment, else ``~/.config/local-chat/speechforge.env``, mode 0600). With no
+environment, else the host credential store, else ``<data>/ext/voice/speechforge.env``, mode 0600). With no
 rig, :func:`open_for_session` returns None and the session is exactly the CPU
 one. The token is read at each voice-chat open (a rotation needs no restart),
 sent only in the upgrade header, never logged, never shown to the browser and
@@ -42,7 +42,6 @@ import os
 import queue
 import re
 import secrets
-import stat
 import struct
 import threading
 import time
@@ -55,6 +54,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import numpy as np
+
+from .. import fsperm
+from . import settings_schema as _schema
 
 log = logging.getLogger("dispatch.voice")
 
@@ -127,14 +129,9 @@ SERVING_LEASES = ("held", "unleased")
 # Settings (voice.yaml `rig:`)
 # --------------------------------------------------------------------------- #
 
-#: (lo, hi) for the numeric keys of ``rig:``.
-RIG_RANGES: dict[str, tuple[int, int]] = {
-    "stt_final_deadline_ms": (100, 1000),
-    "tts_start_deadline_ms": (200, 2000),
-    "ahead_ms": (1000, 10000),
-    "first_chunk_tokens": (4, 100),
-}
-URL_MAX = 256
+#: (lo, hi) for the numeric keys of ``rig:`` (generated from the settings table).
+RIG_RANGES: dict[str, tuple[int, int]] = _schema.rig_ranges()
+URL_MAX = _schema.URL_MAX
 
 
 @dataclass(frozen=True)
@@ -159,43 +156,38 @@ class RigSettings:
     def to_dict(self) -> dict:
         return {f.name: getattr(self, f.name) for f in fields(self)}
 
-    def active(self, token: str) -> bool:
-        """The rig is in play for a voice chat: switched on, an address, a token."""
-        return bool(self.enabled and self.url and valid_url(self.url) and token)
+    def active(self, token: str, allow: tuple[str, ...] = ()) -> bool:
+        """The rig is in play for a voice chat: switched on, an address the policy accepts, a token."""
+        return bool(self.enabled and self.url and valid_url(self.url) and token and url_verdict(self.url, allow).ok)
 
 
 def valid_url(url: str) -> bool:
     """``ws://`` / ``wss://`` with a host, no credentials, no query or fragment (the
-    token travels in a header, never in a URL that lands in logs)."""
-    if not isinstance(url, str) or not url or len(url) > URL_MAX or any(c.isspace() for c in url):
-        return False
-    try:
-        u = urlsplit(url)
-        _ = u.port                                   # raises on a bad port
-    except ValueError:
-        return False
-    return (u.scheme in ("ws", "wss") and bool(u.hostname) and not u.username and not u.password
-            and not u.query and not u.fragment)
+    token travels in a header, never in a URL that lands in logs). The SHAPE only: which
+    hosts are acceptable is :func:`url_verdict`."""
+    return _schema.check_url(url, schemes=("ws", "wss"))
+
+
+def url_verdict(url: str, allow: tuple[str, ...] | None = None):
+    """Is ``url`` an address the rig may be at (netpolicy: loopback, private, tailnet and LAN
+    names yes; link-local and cloud-metadata never; public only on the admin allow-list)?
+    ``allow=None`` reads the configured allow-list."""
+    from . import netpolicy
+    if allow is None:
+        try:
+            from .config import load_settings
+            allow = tuple(load_settings().rig_allow)
+        except Exception:       # noqa: BLE001 - the policy must not depend on a readable voice.yaml
+            allow = ()
+    return netpolicy.check_url_policy(url, tuple(allow))
 
 
 def clean_rig(raw) -> dict:
     """The ``rig:`` subtree, validated: unknown keys dropped, a number outside its
-    range clamped, a wrong type or a bad URL dropped (the default applies)."""
-    out: dict = {}
-    if not isinstance(raw, dict):
-        return out
-    if isinstance(raw.get("enabled"), bool):
-        out["enabled"] = raw["enabled"]
-    url = raw.get("url")
-    if url == "" or url is None and "url" in raw:
-        out["url"] = ""
-    elif isinstance(url, str) and valid_url(url.strip()):
-        out["url"] = url.strip()
-    for k, (lo, hi) in RIG_RANGES.items():
-        v = raw.get(k)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            out[k] = int(min(hi, max(lo, round(float(v)))))
-    return out
+    range clamped, a wrong type or a bad URL dropped (the default applies). Only the
+    keys ``RigSettings`` has (the allow-list is the server's, not a per-connection value)."""
+    names = {f.name for f in fields(RigSettings)}
+    return {k: v for k, v in _schema.clean_subtree("rig", raw).items() if k in names}
 
 
 def http_base(url: str) -> str:
@@ -215,8 +207,34 @@ def host_of(url: str) -> str:
 # The token (never logged, never sent to the browser, never in voice.yaml)
 # --------------------------------------------------------------------------- #
 
-def token_path() -> Path:
+TOKEN_SECRET = "speechforge_token"
+
+
+def legacy_token_path() -> Path:
+    """Where 1.5.0 to 1.6.0 kept the token: under the user's home, which is NOT in DisPatch's
+    data folder (it is lost on a container image update and read-only under ``read_only: true``).
+    Still read, as a fallback; never written."""
     return Path.home() / ".config" / "local-chat" / "speechforge.env"
+
+
+def token_path() -> Path:
+    """The token FILE: ``<state_dir>/speechforge.env`` (``<data>/ext/voice/``), so it lives with the
+    rest of the add-on's state, survives an image update and works under a read-only root. Outside
+    DisPatch with no ``DISPATCH_DATA_DIR`` / ``LOCAL_CHAT_DATA_DIR`` (the standalone page, a plain shell) it is the old
+    home-folder file."""
+    from . import context
+    if context.get_context() is not None or context.data_dir_override():
+        return context.paths().state_dir / "speechforge.env"
+    return legacy_token_path()
+
+
+def _secret_store():
+    """The host's credential store (``ctx.secrets``: get/set/delete by name), or None outside a
+    DisPatch that offers one. The token is a credential, so the host's store is its first home."""
+    from . import context
+    ctx = context.get_context()
+    store = getattr(ctx, "secrets", None) if ctx is not None else None
+    return store if store is not None and all(hasattr(store, m) for m in ("get", "set", "delete")) else None
 
 
 @dataclass(frozen=True)
@@ -229,24 +247,50 @@ class Token:
         return f"Token(source={self.source!r}, set={bool(self.value)}, problem={self.problem!r})"
 
 
+#: One warning per process when the token file's permissions cannot be read.
+_WARNED_PERMS: list[bool] = []
+_AUTH_HEADER = re.compile(r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)\S+")
+
+
+class _RedactTokens(logging.Filter):
+    """The websockets library logs every request header at DEBUG, ``Authorization: Bearer <token>``
+    included. Records that pass through this filter have the value replaced."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+        except Exception:       # noqa: BLE001 - a malformed record is not ours to fix
+            return True
+        red = _AUTH_HEADER.sub(r"\1***", msg)
+        if red != msg:
+            record.msg, record.args = red, ()
+        return True
+
+
+def ws_logger() -> logging.Logger:
+    """The logger handed to ``websockets.connect``: a child of ``websockets.client`` that redacts the
+    bearer token, so turning DEBUG on for the websockets library never writes it to a log."""
+    lg = logging.getLogger("websockets.client.dispatch_voice")
+    if not any(isinstance(f, _RedactTokens) for f in lg.filters):
+        lg.addFilter(_RedactTokens())
+    return lg
+
+
 _ENV_LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
 
-def read_token() -> Token:
-    """``SPEECHFORGE_TOKEN`` from the environment, else from the env file. A file
-    that other users can read is refused (and named, by path, in the status)."""
-    env = (os.environ.get(TOKEN_ENV) or "").strip()
-    if env:
-        return Token(env, "env")
-    p = token_path()
-    try:
-        st = p.stat()
-    except OSError:
-        return Token()
-    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        log.warning("voice: %s is readable by other users; the rig token in it is ignored "
-                    "(chmod 600 it)", p)
+def _token_from_file(p: Path) -> Token | None:
+    """The token in env-file ``p``, a Token that says why not, or None when there is no file."""
+    if not p.exists():
+        return None
+    readable = fsperm.others_can_read(p)
+    if readable:
+        log.warning("voice: %s is readable by other users; the rig token in it is ignored (%s)", p,
+                    "chmod 600 it" if not fsperm.IS_WINDOWS else "remove Everyone/Users from its permissions")
         return Token(problem="permissions")
+    if readable is None and not _WARNED_PERMS:
+        _WARNED_PERMS.append(True)
+        log.warning("voice: cannot check who can read %s on this filesystem; make sure only you can", p)
     try:
         text = p.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -261,6 +305,126 @@ def read_token() -> Token:
             if v:
                 return Token(v, "file")
     return Token(problem="no_token")
+
+
+def read_token() -> Token:
+    """The rig token, first found of: ``SPEECHFORGE_TOKEN`` in the environment; the host's
+    credential store (``ctx.secrets``); the token file in the add-on's state folder; the pre-1.6.1
+    file under the home folder. A file that other users can read is refused (and named in the
+    status). ``source`` is ``env``, ``secret`` or ``file``."""
+    env = (os.environ.get(TOKEN_ENV) or "").strip()
+    if env:
+        return Token(env, "env")
+    store = _secret_store()
+    if store is not None:
+        try:
+            v = (store.get(TOKEN_SECRET) or "").strip()
+        except Exception:       # noqa: BLE001 - a locked keyring falls through to the files
+            log.warning("voice: the host credential store could not be read; trying the token file")
+            v = ""
+        if v:
+            return Token(v, "secret")
+    first: Token | None = None
+    for p in dict.fromkeys([token_path(), legacy_token_path()]):         # the new place first, once each
+        t = _token_from_file(p)
+        if t is None:
+            continue
+        if t.value:
+            return t
+        first = first or t
+    return first or Token()
+
+
+def host_secrets_file() -> Path:
+    """DisPatch's file-backed credential store for this add-on (``<data>/ext/voice/secrets.json``,
+    ``FileSecretProvider`` in DisPatch's ``agents/secrets.py``): where ``ctx.secrets`` keeps the token
+    on a host with no OS keyring (a container, a headless box)."""
+    from . import context
+    return context.paths().state_dir / "secrets.json"
+
+
+def read_host_secrets_file_token() -> Token:
+    """The rig token as DisPatch's file credential store holds it, read straight from the file, for
+    a process OUTSIDE DisPatch (``dispatch-voice doctor`` in the container shell has no
+    ``ctx.secrets``). Read-only: the runtime never calls it, so :func:`write_token` and
+    :func:`clear_token` keep their meaning. An OS-keyring store is not read from here."""
+    p = host_secrets_file()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return Token()
+    except (OSError, ValueError):
+        return Token(problem="unreadable")
+    v = data.get(TOKEN_SECRET) if isinstance(data, dict) else None
+    v = v.strip() if isinstance(v, str) else ""
+    return Token(v, "secret") if v else Token()
+
+
+TOKEN_MIN, TOKEN_MAX = 8, 512
+_TOKEN_OK = re.compile(r"\A[\x21-\x7e]+\Z")       # printable ASCII, no space, no control characters
+
+
+def write_token(value: str) -> Path | None:
+    """Save the rig token: in the host's credential store when it has one (``ctx.secrets``; nothing
+    on disk but the host's own protected store), else to :func:`token_path` as
+    ``SPEECHFORGE_TOKEN=<value>``, readable by the owner only (0600 / an owner-only ACL),
+    atomically. Returns the file written, or None for the credential store. The value is never
+    logged and never echoed. ``ValueError`` (its message names the rule, not the value) for a
+    malformed token."""
+    v = value.strip() if isinstance(value, str) else ""
+    if not (TOKEN_MIN <= len(v) <= TOKEN_MAX) or not _TOKEN_OK.match(v) or any(c in v for c in "'\"`$\\"):
+        raise ValueError(f"The token must be {TOKEN_MIN}-{TOKEN_MAX} visible characters with no spaces or quotes.")
+    store = _secret_store()
+    if store is not None:
+        try:
+            store.set(TOKEN_SECRET, v)
+        except Exception:       # noqa: BLE001 - no usable store: the private file is the fallback
+            log.warning("voice: the host credential store refused the rig token; saving it to a private file")
+        else:
+            with contextlib.suppress(OSError):
+                token_path().unlink()           # the old file must not outlive a later clear()
+            _MISCONFIGURED.clear()
+            log.info("voice: the rig token was saved to the host credential store")
+            return None
+    p = token_path()
+    made = not p.parent.exists()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if made:
+        fsperm.ensure_private(p.parent, directory=True)
+    tmp = p.with_name(p.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        f.write(f"{TOKEN_ENV}={v}\n")
+    fsperm.ensure_private(tmp)
+    os.replace(tmp, p)
+    _MISCONFIGURED.clear()                  # a new token deserves a fresh try
+    log.info("voice: the rig token was saved to %s", p.name)
+    return p
+
+
+def clear_token() -> bool:
+    """Forget the rig token everywhere the add-on can: the credential store and both token files
+    (the environment variable is the operator's). True when there was one to remove."""
+    had = False
+    store = _secret_store()
+    if store is not None:
+        try:
+            had = bool(store.get(TOKEN_SECRET))
+            store.delete(TOKEN_SECRET)
+        except Exception:       # noqa: BLE001
+            log.warning("voice: the host credential store could not remove the rig token")
+    for p in dict.fromkeys([token_path(), legacy_token_path()]):
+        try:
+            p.unlink()
+            had = True
+        except FileNotFoundError:
+            pass
+        except OSError:
+            log.warning("voice: could not remove %s", p.name)
+    if had:
+        _MISCONFIGURED.clear()
+        log.info("voice: the rig token was removed")
+    return had
 
 
 def _fingerprint(url: str, token: str) -> str:
@@ -318,6 +482,35 @@ def _pct(xs, q: float) -> int | None:
         return None
     s = sorted(xs)
     return int(round(s[min(len(s) - 1, max(0, int(round(q * (len(s) - 1)))))]))
+
+
+_CPU_PREV: list[tuple[int, int]] = []
+
+
+def box_load() -> float | None:
+    """This box's CPU load for the rig's ``ping.box_load``: the 1-minute load average per
+    core where the OS has one, else (Windows) the share of CPU time busy since the last
+    call (0..1; the first call reads 0.0). None when neither can be read."""
+    with contextlib.suppress(Exception):
+        return round(os.getloadavg()[0] / max(1, os.cpu_count() or 1), 2)
+    if os.name != "nt":
+        return None
+    with contextlib.suppress(Exception):
+        import ctypes
+        from ctypes import wintypes
+        idle, kern, user = (wintypes.FILETIME() for _ in range(3))
+        if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kern), ctypes.byref(user)):
+            return None
+        q = lambda ft: (ft.dwHighDateTime << 32) | ft.dwLowDateTime       # noqa: E731
+        busy_total = (q(kern) + q(user), q(idle))                           # kernel time includes idle
+        prev = _CPU_PREV[-1] if _CPU_PREV else None
+        _CPU_PREV[:] = [busy_total]
+        if prev is None:
+            return 0.0
+        total = busy_total[0] - prev[0]
+        idle_d = busy_total[1] - prev[1]
+        return round(max(0.0, min(1.0, (total - idle_d) / total)), 2) if total > 0 else 0.0
+    return None
 
 
 class RigMetrics:
@@ -558,12 +751,18 @@ class VoiceSync:
 
 
 def _delete_target() -> tuple[str, str] | None:
-    """(url, token) when a rig address and token are set, else None."""
+    """(url, token) when a rig address and token are set AND the network policy accepts the
+    address, else None. The token goes in the request header, so an address the policy refuses
+    (a metadata or link-local host, a public host off the allow-list, e.g. a 1.5.0 voice.yaml or an
+    environment value that never passed the PATCH check) is never sent it."""
     try:
         from .config import load_settings
-        rs = getattr(load_settings(), "rig", None)
+        settings = load_settings()
+        rs = getattr(settings, "rig", None)
         tok = read_token()
         if rs is None or not rs.url or not valid_url(rs.url) or not tok.value:
+            return None
+        if not url_verdict(rs.url, tuple(getattr(settings, "rig_allow", ()) or ())).ok:
             return None
         return rs.url, tok.value
     except Exception:
@@ -594,6 +793,11 @@ def delete_voice_async(sha: str) -> None:
 
     def run() -> None:
         try:
+            from . import netpolicy
+            if not netpolicy.check_resolved(url).ok:       # a NAME pointed at a never-allowed address
+                log.warning("voice: the rig address resolves somewhere that is never used; voice %s not "
+                            "deleted there", sha[:8])
+                return
             import httpx
             r = httpx.delete(f"{http_base(url)}/v1/voices/{sha}", timeout=10.0, trust_env=False,
                              headers={"Authorization": f"Bearer {token}"})
@@ -831,12 +1035,17 @@ class RigConnection:
     async def _open_socket(self):
         if self._connect_fn is not None:
             return await self._connect_fn(self.settings.url, self._token)
+        from . import netpolicy
+        v = await asyncio.to_thread(netpolicy.check_resolved, self.settings.url)
+        if not v.ok:          # a NAME that resolves to a link-local / metadata address (DNS rebinding)
+            log.warning("voice: the rig address resolves somewhere that is never used (%s)", v.code)
+            raise OSError(v.code)
         from websockets.asyncio.client import connect
         return await connect(self.settings.url, subprotocols=[PROTO],
                              additional_headers={"Authorization": f"Bearer {self._token}"},
                              max_size=MAX_MESSAGE_BYTES, compression=None,
                              open_timeout=OPEN_TIMEOUT_S, ping_interval=None, close_timeout=1.0,
-                             user_agent_header=f"dispatch-voice/{self.version or '1'}")
+                             user_agent_header=f"dispatch-voice/{self.version or '1'}", logger=ws_logger())
 
     async def _connect(self, *, resume: bool) -> None:
         self.state = "connecting"
@@ -1178,9 +1387,7 @@ class RigConnection:
             return
         t = self.clock()
         self._outstanding.append(t)
-        load = None
-        with contextlib.suppress(Exception):
-            load = round(os.getloadavg()[0] / max(1, os.cpu_count() or 1), 2)
+        load = box_load()
         msg: dict = {"type": "ping", "t": t}
         if load is not None:
             msg["box_load"] = load
@@ -1464,9 +1671,11 @@ def status(settings) -> dict:
     """What the browser may know: no token, the address reduced to its host."""
     rs: RigSettings = getattr(settings, "rig", None) or RigSettings()
     tok = read_token()
-    configured = bool(rs.url and valid_url(rs.url) and tok.value)
+    verdict = url_verdict(rs.url) if rs.url and valid_url(rs.url) else None
+    configured = bool(rs.url and valid_url(rs.url) and tok.value and (verdict is None or verdict.ok))
     live = [c for c in list(_LIVE) if c.state != "closed"]
     out: dict = {"configured": configured, "enabled": rs.enabled, "url_set": bool(rs.url),
+                 "url_check": verdict.to_dict() if verdict is not None else None,
                  "token": tok.source, "token_problem": tok.problem, "host": host_of(rs.url),
                  "active": bool(configured and rs.enabled), "sessions": len(live),
                  "metrics": METRICS.snapshot()}
@@ -1590,6 +1799,13 @@ def open_for_session(settings, *, token: str | None = None, connect=None,
     if not valid_url(rs.url):
         log.warning("voice: rig.url is not a ws:// or wss:// address; the rig is not used")
         return None
+    verdict = url_verdict(rs.url, tuple(getattr(settings, "rig_allow", ()) or ()))
+    if not verdict.ok:
+        log.warning("voice: the rig address is refused (%s); the rig is not used", verdict.code)
+        return None
+    if verdict.warning:
+        log.warning("voice: the rig address is not encrypted (ws://) and is not this machine: audio and the "
+                    "token cross the network in the clear")
     value = token if token is not None else read_token().value
     if not value:
         log.info("voice: rig.enabled is on but %s is not set; the rig is not used", TOKEN_ENV)

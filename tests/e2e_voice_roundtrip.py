@@ -131,7 +131,7 @@ def _wait_up(port: int, proc: subprocess.Popen, log: Path, timeout_s: float = 18
 def start_fake_host(port: int, data: Path, *, power_hold: str | None = None) -> subprocess.Popen:
     data.mkdir(parents=True, exist_ok=True)
     if power_hold is not None:
-        (data / "voice.yaml").write_text(json.dumps({"rt": {"power_hold": power_hold}}) + "\n")
+        (data / "voice.yaml").write_text(json.dumps({"rt": {"power_hold": power_hold}}) + "\n", encoding="utf-8")
         os.chmod(data / "voice.yaml", 0o600)
     env = dict(os.environ, DISPATCH_DATA_DIR=str(data), DISPATCH_VOICE="1")
     log = data / "server.log"
@@ -167,19 +167,19 @@ def start_dispatch(port: int, data: Path, backend: Path, llm_base_url: str, *, o
     if bot_kind == "advisor":
         know = data / "knowledge"
         (know / "notes").mkdir(parents=True, exist_ok=True)
-        (know / "_profile.md").write_text("# Profile\nThe owner keeps a family calendar.\n")
+        (know / "_profile.md").write_text("# Profile\nThe owner keeps a family calendar.\n", encoding="utf-8")
         bot["advisor"] = {"owner": "Sam", "providers": [prov], "knowledge_dir": str(know),
                           "agents": ["worker"], "research_agent": "worker", "action_agent": "worker",
                           "embeddings": {"base_url": llm_base_url, "model": "stub-embed",
                                          "api_key": "not-a-key"}}
     else:
         bot["api"] = prov
-    (data / "config.yaml").write_text(json.dumps({"bots": [bot]}, ensure_ascii=False))
+    (data / "config.yaml").write_text(json.dumps({"bots": [bot]}, ensure_ascii=False), encoding="utf-8")
                                         # JSON is YAML; ascii escapes of an emoji
                                         # would parse as lone surrogates
     os.chmod(data / "config.yaml", 0o600)
     (data / "tools.yaml").write_text(
-        "tools:\n- {id: voice-cloning, kind: builtin, enabled: true}\n")
+        "tools:\n- {id: voice-cloning, kind: builtin, enabled: true}\n", encoding="utf-8")
     env = dict(os.environ, DISPATCH_DATA_DIR=str(data),
                DISPATCH_MIRROR="0", DISPATCH_GATEWAY_WS="0",
                OPENCLAW_BIN="/nonexistent/openclaw")
@@ -198,7 +198,7 @@ def start_dispatch(port: int, data: Path, backend: Path, llm_base_url: str, *, o
     if rig_url:
         voice_yaml["rig"] = {"enabled": True, "url": rig_url}   # the token stays in the environment
     if voice_yaml:
-        (data / "voice.yaml").write_text(json.dumps(voice_yaml) + "\n")     # JSON is YAML
+        (data / "voice.yaml").write_text(json.dumps(voice_yaml) + "\n", encoding="utf-8")     # JSON is YAML
         os.chmod(data / "voice.yaml", 0o600)
     uv = shutil.which("uv") or os.path.expanduser("~/.local/bin/uv")
     argv = [uv, "run", "--quiet", "--no-sync", *([] if online else ["--offline"]),

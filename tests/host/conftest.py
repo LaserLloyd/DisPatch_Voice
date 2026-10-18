@@ -66,7 +66,7 @@ def host_env(fake_ctx, monkeypatch):
     from dispatch_voice.host import config as vconfig
     from dispatch_voice.host import context
     for k in list(os.environ):
-        if k.startswith("DISPATCH_VOICE") or k in ("DISPATCH_SPEECH_MODELS", "DISPATCH_DATA_DIR"):
+        if k.startswith("DISPATCH_VOICE") or k in ("DISPATCH_SPEECH_MODELS", "DISPATCH_DATA_DIR", "LOCAL_CHAT_DATA_DIR"):
             monkeypatch.delenv(k, raising=False)
     monkeypatch.setattr(vconfig, "_PREFS_CACHE", None)
     _clear_caches()

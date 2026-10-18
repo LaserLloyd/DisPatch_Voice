@@ -214,11 +214,16 @@ class HQTTS(_Base):
     another machine. NOT verified against a live server — no such server
     exists yet; this is the contract it is wired against."""
 
-    def __init__(self, url: str, model: str, timeout_s: float, sample_rate: int) -> None:
-        self.url = url.rstrip("/") + "/v1/audio/speech"
+    def __init__(self, url: str, model: str, timeout_s: float, sample_rate: int, *,
+                 api_key: str = "", transport=None) -> None:
+        base = url.rstrip("/")
+        base = base[:-3] if base.endswith("/v1") else base          # a base URL that already ends in /v1
+        self.url = base + "/v1/audio/speech"
         self.model = model
         self.timeout_s = timeout_s
         self.sample_rate = sample_rate
+        self.api_key = api_key                # sent as a bearer token, never logged
+        self.transport = transport            # tests; None = httpx's own
 
     def synth(self, text: str, profile_id: str | None = None) -> tuple[np.ndarray, int]:
         import httpx
@@ -226,7 +231,12 @@ class HQTTS(_Base):
                 "sample_rate": self.sample_rate}
         if profile_id:
             body["voice"] = profile_id
-        r = httpx.post(self.url, json=body, timeout=self.timeout_s)
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        if self.transport is None:
+            r = httpx.post(self.url, json=body, timeout=self.timeout_s, headers=headers)
+        else:
+            with httpx.Client(transport=self.transport, timeout=self.timeout_s) as c:
+                r = c.post(self.url, json=body, headers=headers)
         r.raise_for_status()      # 409 (lease) / 503 (priority hold) -> fallback
         return np.frombuffer(r.content, dtype="<i2"), self.sample_rate
 
@@ -367,7 +377,8 @@ def build_engine(settings):
     goes BEHIND the chosen one. Wrapped with the HQ fallback when
     DISPATCH_VOICE_HQ_URL is set.
     """
-    from . import registry
+    from . import profiles_bridge, registry
+    profiles_bridge.ensure_engine()      # models downloaded since setup: no restart needed (review F6)
     name = settings.tts_engine
     if name == "auto":
         name = _auto_engine(settings, registry)
@@ -384,9 +395,18 @@ def build_engine(settings):
         raise RuntimeError("no TTS engine is installed (see /api/voice/status)")
     else:
         raise RuntimeError(f"unknown TTS engine {name!r}")
-    if settings.hq_url:
-        eng = FallbackTTS(HQTTS(settings.hq_url, settings.hq_model,
-                                settings.hq_timeout_s, eng.sample_rate), eng)
+    if settings.hq_url and getattr(settings, "tts_provider", "auto") != "cpu":
+        # The reply text goes to this address, so the network policy is checked HERE too, not only
+        # on PATCH: an address from the environment never passed through the route.
+        from . import netpolicy
+        verdict = netpolicy.check_url_policy(settings.hq_url, tuple(getattr(settings, "rig_allow", ()) or ()),
+                                             schemes=("http", "https"))
+        if not verdict.ok:
+            log.warning("voice: the speech server address (hq_url) is refused by the network policy (%s); "
+                        "this computer speaks instead", verdict.code)
+        else:
+            eng = FallbackTTS(HQTTS(settings.hq_url, settings.hq_model, settings.hq_timeout_s, eng.sample_rate,
+                                    api_key=os.environ.get("DISPATCH_VOICE_HQ_API_KEY", "").strip()), eng)
     return eng
 
 
@@ -415,8 +435,17 @@ _ENGINES_LOCK = threading.Lock()
 
 
 def shared_engine(settings):
-    from . import registry
-    key = f"{settings.tts_engine}:{settings.hq_url}:{registry.engine_names()}"
+    from . import profiles_bridge, registry
+    profiles_bridge.ensure_engine()      # before the cache key reads the registered names (review F6)
+    # Whether the policy accepts hq_url is part of the key: build_engine decides it once per build, so
+    # an allow-list entry removed later must not leave the cached engine sending reply text there.
+    hq_ok = None
+    if settings.hq_url:
+        from . import netpolicy
+        hq_ok = netpolicy.check_url_policy(settings.hq_url, tuple(getattr(settings, "rig_allow", ()) or ()),
+                                           schemes=("http", "https")).ok
+    key = (f"{settings.tts_engine}:{settings.hq_url}:{hq_ok}:{getattr(settings, 'tts_provider', 'auto')}:"
+           f"{registry.engine_names()}")
     with _ENGINES_LOCK:
         if key not in _ENGINES:
             _ENGINES[key] = build_engine(settings)

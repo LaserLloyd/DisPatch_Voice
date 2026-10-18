@@ -21,6 +21,7 @@ from dispatch_voice.host.vad_turn import Discarded, SpeechStart
 from dispatch_voice.transport import CommitCursor, Transport, opus, wire3
 from session.test_session import THREAD, settings, settle
 from session.test_session_s2 import Host, frame, reply
+from settling import pause
 
 REPLY = "You have two things this afternoon. A dentist appointment at three. Want a reminder?"
 STREAM = "str-0123456789ab"
@@ -471,7 +472,7 @@ async def test_barge_in_drops_the_cut_gens_audio_on_the_wire():
     task = await start(s, ws)
     s.on_app_frame(frame(type="message", message={"id": "m1", "role": "assistant", "content": REPLY}))
     while not binaries(ws):
-        await asyncio.sleep(0.002)
+        await pause(0.002)
     ws.push_json({"type": "stop_playback"}); await settle(20)
     gen = ws.json_of("barge_in")[0]["gen"]
     assert gen == 1

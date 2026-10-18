@@ -234,6 +234,32 @@ def fillers(profile_id: str | None) -> list[np.ndarray] | None:
 # Wiring
 # --------------------------------------------------------------------------- #
 
+_ENSURE_LOCK = threading.Lock()
+
+
+def ensure_engine() -> bool:
+    """Register the ``chatterbox`` engine and the profile resolver if they are not yet and the
+    Chatterbox models are all on disk. Called at setup (:func:`install`) AND lazily by
+    ``tts.build_engine`` / ``registry.resolve_profile``: a download finished in the app puts the
+    models on disk after setup ran, and speech must work then without restarting DisPatch
+    (review F6). Idempotent and cheap (a few ``stat`` calls); False while the models are missing."""
+    from . import registry
+    from .engines import chatterbox
+    with _ENSURE_LOCK:
+        have_engine = registry.engine_spec("chatterbox") is not None
+        have_resolver = registry.has_profile_resolver()
+        if have_engine and have_resolver:
+            return True
+        if not chatterbox.available():
+            return have_engine
+        if not have_engine:
+            chatterbox.register()
+            log.info("voice: the Chatterbox models are on disk; the speech engine is registered")
+        if not have_resolver:
+            registry.set_profile_resolver(resolve_profile)
+        return True
+
+
 def install():
     """Register the engine, resolver and fillers; return the profiles router
     (to be included under ``/api/voice/profiles``), or None when the
@@ -247,12 +273,8 @@ def install():
     only other caller of ``build_router`` and runs on loopback."""
     from dispatch_voice.router import build_router
 
-    from . import registry
-    from .engines import chatterbox
-    if not chatterbox.available():
+    if not ensure_engine():
         return None
-    chatterbox.register()
-    registry.set_profile_resolver(resolve_profile)
     # The profile fillers are NOT registered as acknowledgements any more: the
     # session plays the render queue's lines (SPEC §6.2, host/acks.py).
     log.info("voice: cloned voices mounted at /api/voice/profiles (unlocked tier only)")

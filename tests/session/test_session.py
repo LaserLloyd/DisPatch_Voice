@@ -18,6 +18,7 @@ from dispatch_voice.host.config import VoiceSettings
 from dispatch_voice.host.session import VoiceHost, VoiceSession
 from dispatch_voice.host.vad_turn import SpeechStart
 from dispatch_voice.text.acks import AckSelector, EtaEstimator, Pools
+from settling import pause, settle, wait_until
 
 THREAD = "t-1"
 
@@ -90,22 +91,6 @@ def make_session(script, stt_text="what's the weather", **host_kw):
                      tts_engine=tts, host=host)
     return s, ws, tts, submitted
 
-
-async def settle(n=30):
-    for _ in range(n):
-        await asyncio.sleep(0.005)
-
-
-async def wait_until(cond, timeout: float = 5.0, step: float = 0.01) -> bool:
-    """Poll ``cond()`` until it is true or ``timeout`` passes (a loaded box makes fixed
-    sleeps flaky: review-T3s3 #13). Returns the last value."""
-    loop = asyncio.get_running_loop()
-    end = loop.time() + timeout
-    while not cond():
-        if loop.time() >= end:
-            return bool(cond())
-        await asyncio.sleep(step)
-    return True
 
 
 # --------------------------------------------------------------------------- #

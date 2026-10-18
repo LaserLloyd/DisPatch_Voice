@@ -217,9 +217,25 @@ def set_persona_provider(fn) -> None:
     _persona_provider = fn
 
 
+def has_profile_resolver() -> bool:
+    return _profile_resolver is not None
+
+
+def _lazy_cloned_voices() -> None:
+    """The models may have landed after setup (the in-app download): register the engine and the
+    resolver now (profiles_bridge.ensure_engine; review F6)."""
+    try:
+        from . import profiles_bridge
+        profiles_bridge.ensure_engine()
+    except Exception:       # noqa: BLE001 - resolving a voice never fails because of this
+        log.debug("voice: lazy cloned-voice registration failed", exc_info=True)
+
+
 def resolve_profile(bot_id: str | None, voice: str | None = None) -> str | None:
     """The profile that speaks for ``bot_id``. ``voice`` (a locked device's
     override, already checked to exist) takes the place of the bot's saved voice."""
+    if _profile_resolver is None:
+        _lazy_cloned_voices()
     if _profile_resolver is None:
         # No profile store (Chatterbox models not fetched): a bot can still
         # pick a built-in voice. The bot's saved voice comes from DisPatch
@@ -277,6 +293,15 @@ def reset() -> None:
     _builtin_list = _builtin_preview = None
     _builtin_info = {}
     _release_hooks.clear()
+    from . import providers
+    providers.REGISTRY.drop_plugins()
+
+
+def register_provider(kind: str, id: str, name: str, factory: Callable) -> None:
+    """A plugin's STT / TTS / turn-taking provider (``providers.STTProvider`` and friends):
+    ``factory(settings) -> provider``. Listed in ``GET /api/voice/providers`` with its health."""
+    from . import providers
+    providers.REGISTRY.register(kind, id, name, factory, origin="plugin")
 
 
 PLUGIN_PREFIX = "/api/voice"
@@ -292,9 +317,10 @@ class ExtensionAPI:
     require_full: Callable | None = None
     #: 2 = role/missing/sample_rate on register_engine + the built-in voices
     #: provider. 3 = ``info=`` on set_builtin_voices_provider and
-    #: add_release_hook. A plugin can check it and refuse politely, or pass
-    #: the newer arguments only when they exist.
-    api_version: int = 3
+    #: add_release_hook. 4 = ``register_provider`` (STT / TTS / turn-taking providers) and
+    #: discovery through the ``dispatch_voice.providers`` entry-point group. A plugin can
+    #: check it and refuse politely, or pass the newer arguments only when they exist.
+    api_version: int = 4
 
     def include_router(self, router, *, prefix: str = "") -> None:
         """Mount ``router`` under ``/api/voice<prefix>`` behind DisPatch's gate.
@@ -314,6 +340,7 @@ class ExtensionAPI:
         self.ctx.include_router(router, prefix=PLUGIN_PREFIX + prefix.rstrip("/"))
 
     register_engine = staticmethod(register_engine)
+    register_provider = staticmethod(register_provider)
     set_builtin_voices_provider = staticmethod(set_builtin_voices_provider)
     add_release_hook = staticmethod(add_release_hook)
     set_profile_resolver = staticmethod(set_profile_resolver)
@@ -321,22 +348,59 @@ class ExtensionAPI:
     set_persona_provider = staticmethod(set_persona_provider)
 
 
-def mount_extensions(ctx=None, spec: str | None = None) -> list[str]:
-    """Load every ``module:callable`` in DISPATCH_VOICE_EXTENSIONS. Returns
-    the targets that loaded. ``ctx`` is the DisPatch extension context (None
-    for the CLI: plugins then register engines but cannot mount routers)."""
-    import os
-    spec = spec if spec is not None else os.environ.get("DISPATCH_VOICE_EXTENSIONS", "")
+def mount_extensions(ctx=None, spec: str | None = None, *, eps=None) -> list[str]:
+    """Load the enabled provider plugins; returns the names/targets that loaded. ``ctx`` is the
+    DisPatch extension context (None for the CLI: plugins then register engines but cannot mount
+    routers).
+
+    What is loaded is the ``extensions`` setting (Settings > Voice, ``extensions:`` in voice.yaml,
+    or the DISPATCH_VOICE_EXTENSIONS variable, which wins): each item is
+
+    * the NAME of an installed plugin in the ``dispatch_voice.providers`` entry-point group
+      (``kokoro``), or
+    * a ``module:callable`` target, or a bare module name (calls its ``setup``), the 1.5.0
+      form, honoured ONLY from the environment variable (with a deprecation warning that says
+      to enable the plugin in Settings > Voice instead). The setting is written by any operator
+      through ``PATCH /api/voice/settings``; letting it name an arbitrary importable module and
+      callable (``sys:exit`` stops DisPatch at every boot) would hand the web tier what only
+      the machine's owner should choose, so a module target found in voice.yaml is skipped
+      with a warning. Installed entry-point plugins are the operator's choice.
+
+    ``spec`` (a comma list, treated as the environment's) replaces the setting; ``eps`` replaces
+    entry-point discovery (tests). A plugin that raises is logged and skipped; it never stops
+    the add-on or DisPatch booting."""
+    from . import providers
+    if spec is None:
+        from .config import load_settings
+        s = load_settings()
+        items = list(s.extensions)
+        from_env = s.sources.get("extensions", {}).get("source") == "env"
+    else:
+        items = [t.strip() for t in spec.split(",") if t.strip()]
+        from_env = True
+    if eps is None:
+        from importlib.metadata import entry_points
+        eps = list(entry_points(group=providers.ENTRY_POINT_GROUP))
+    ep_names = {ep.name for ep in eps}
+    named = {t for t in items if ":" not in t and t in ep_names}
+    legacy = [t for t in items if t not in named]
+    if legacy and not from_env:
+        log.warning("voice: `extensions` in voice.yaml names %s, which is not an installed plugin; skipped "
+                    "(a module:setup target is loaded only from DISPATCH_VOICE_EXTENSIONS)", ", ".join(legacy))
+        legacy = []
+    if legacy:
+        log.warning("voice: DISPATCH_VOICE_EXTENSIONS is deprecated; install the plugin and enable it in "
+                    "Settings > Voice (or list it under `extensions:` in voice.yaml). Still loading: %s",
+                    ", ".join(legacy))
     loaded: list[str] = []
-    for target in (t.strip() for t in spec.split(",")):
-        if not target:
-            continue
+    for target in legacy:
         mod_name, _, attr = target.partition(":")
         try:
             fn = getattr(importlib.import_module(mod_name), attr or "setup")
             fn(ExtensionAPI(ctx))
             loaded.append(target)
             log.info("voice: extension %s loaded", target)
-        except Exception:
+        except (Exception, SystemExit):        # a target that exits must not stop DisPatch booting
             log.exception("voice: extension %s failed to load; skipped", target)
+    loaded += providers.load_entry_points(ExtensionAPI(ctx), named, eps=eps)
     return loaded

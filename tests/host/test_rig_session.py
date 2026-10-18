@@ -18,6 +18,7 @@ from dispatch_voice.host import power, rig, routes, vad_turn
 from dispatch_voice.host import ws as ws_mod
 from dispatch_voice.host.engines import chatterbox
 from dispatch_voice.host.engines.rig_tts import ReplyEngine
+from settling import pause, settle, wait_until
 
 THREAD = "t-voice-1"
 
@@ -48,10 +49,6 @@ async def fake_rig():
         await r.stop()
 
 
-async def settle(n=30):
-    for _ in range(n):
-        await asyncio.sleep(0.005)
-
 
 @pytest.fixture
 def served(host_env, monkeypatch, fake_engines, no_models, tmp_path):
@@ -59,6 +56,10 @@ def served(host_env, monkeypatch, fake_engines, no_models, tmp_path):
     monkeypatch.setattr(chatterbox, "available", lambda: False)
     monkeypatch.setenv("DISPATCH_VOICE", "1")
     monkeypatch.setenv("DISPATCH_VOICE_MERGE_WINDOW", "0")
+    # The acknowledgement lines render on a background thread through the same fake engine
+    # as soon as a session builds its kit, before the session counts as "a chat is open";
+    # on a slow runner all of them landed in `said` and broke "the CPU engine said nothing".
+    monkeypatch.setenv("DISPATCH_VOICE_ACK_RENDER", "0")
 
     async def fake_warm(settings):
         return fake_engines.stt, fake_engines.tts
@@ -87,7 +88,7 @@ async def test_no_rig_configured_is_byte_for_byte_the_cpu_session(served, fake_e
     vconfig.save_prefs({"rig": {"enabled": False, "url": fake_rig.url}})     # set up, switched off
     ws = fake_engines.FakeWS()
     task = asyncio.create_task(ctx.connect("voice", THREAD, ws))
-    await settle(10)
+    assert await wait_until(lambda: _session() is not None, 10.0)    # a cold first connect is slow
     s = _session()
     assert s.tts is fake_engines.tts and s.rig is None and s.heard.words_of is None
     assert fake_rig.headers == []                                           # never dialled
@@ -114,7 +115,7 @@ async def test_with_the_rig_the_reply_is_spoken_by_it_and_no_hold_is_taken(serve
     ctx.reply_for = lambda text: "Two meetings today. Want details?"
     ws = fake_engines.FakeWS()
     task = asyncio.create_task(ctx.connect("voice", THREAD, ws))
-    await settle(10)
+    assert await wait_until(lambda: _session() is not None, 10.0)    # a cold first connect is slow
     s = _session()
     assert isinstance(s.tts, ReplyEngine) and s.rig is s.tts and s.heard.words_of is not None
     # The streaming STT handed to the session is the rig's, with the CPU recogniser behind it.
@@ -165,7 +166,7 @@ async def test_barge_in_cancels_on_the_rig_before_the_host_abort(served, fake_en
     vconfig.save_prefs({"rig": {"enabled": True, "url": fake_rig.url}})
     ws = fake_engines.FakeWS()
     task = asyncio.create_task(ctx.connect("voice", THREAD, ws))
-    await settle(10)
+    assert await wait_until(lambda: _session() is not None, 10.0)    # a cold first connect is slow
     s = _session()
     order: list = []
     real_cancel = s.rig.cancel_gen

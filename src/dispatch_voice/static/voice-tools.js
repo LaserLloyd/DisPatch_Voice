@@ -172,7 +172,7 @@ export function rigLabRow(rg) {
   return blockRow(t('vtools.rig'), rigLabLine(r, fmtMs), [
     ...facts.map((f) => el('p', { class: 'dev-row-hint vtool-rig-fact', text: f })),
     el('p', { class: 'dev-row-hint', text: t('vtools.rig_how') }),
-    el('pre', { class: 'voice-cmd', dir: 'ltr' }, [el('code', { text: 'rig:\n  enabled: true\n  url: ws://<rig>:1236/v1/realtime\n# ~/.config/local-chat/speechforge.env (chmod 600)\nSPEECHFORGE_TOKEN=…' })]),
+    el('pre', { class: 'voice-cmd', dir: 'ltr' }, [el('code', { text: 'rig:\n  enabled: true\n  url: ws://<rig>:1236/v1/realtime\n# <data>/ext/voice/speechforge.env (chmod 600)\nSPEECHFORGE_TOKEN=…' })]),
   ], 'vtool-rig');
 }
 

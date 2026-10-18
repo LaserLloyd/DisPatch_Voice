@@ -3,6 +3,7 @@ behave as the v3 contracts say, so every track can build on them."""
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -13,6 +14,7 @@ import httpx
 import numpy as np
 import pytest
 from fakes import (
+    assert_private,
     FIXTURES,
     FakeContext,
     ToolSpec,
@@ -74,7 +76,7 @@ def test_owned_paths_exist(track):
 
 
 def test_docs_index_lists_the_eight_files():
-    index = (ROOT / "docs/voice-chat/index.md").read_text()
+    index = (ROOT / "docs/voice-chat/index.md").read_text(encoding="utf-8")
     files = ["index.md", "host.md", "turn-taking.md", "persona-acks-rp.md", "low-bandwidth.md",
              "client.md", "audio-modules.md", "protocol.md"]
     for f in files:
@@ -121,10 +123,11 @@ def test_standalone_page_moved_and_static_is_assets_only():
 
 def test_locale_bundles_pass_check_locales():
     r = subprocess.run([sys.executable, str(ROOT / "scripts/check-locales.py")],
-                       check=False, capture_output=True, text=True)
+                       check=False, capture_output=True, text=True, encoding="utf-8",
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     assert r.returncode == 0, r.stdout + r.stderr
     assert "0 errors" in r.stdout
-    en = json.loads((PKG / "static/locales/en.json").read_text())
+    en = json.loads((PKG / "static/locales/en.json").read_text(encoding="utf-8"))
     # C-§E.3: chat.drive/chat.drive_aria moved into the add-on's namespace as
     # drive.button/drive.button_aria; settings.voice_hint is drive.settings_hint (T7).
     assert en["drive"]["title"] and en["drive"]["button"] and en["drive"]["settings_hint"]
@@ -152,7 +155,7 @@ def test_clips_are_16k_mono_and_match_meta():
 
 
 def test_addendum_has_two_seconds_of_silence_between_the_halves():
-    info = json.loads((FIXTURES / "addendum.json").read_text())
+    info = json.loads((FIXTURES / "addendum.json").read_text(encoding="utf-8"))
     x = load_clip("addendum")
     a, b = info["first_end_sample"], info["second_start_sample"]
     assert abs((b - a) / 16000 - 2.0) < 0.002
@@ -176,7 +179,7 @@ def test_clips_8k_are_band_limited():
 
 
 def test_wire3_placeholder_has_the_schema():
-    w = json.loads((FIXTURES / "wire3.json").read_text())
+    w = json.loads((FIXTURES / "wire3.json").read_text(encoding="utf-8"))
     assert set(w["schema"]) == {"up", "down", "bad_up", "bad_down"}
 
 
@@ -340,7 +343,8 @@ def test_validators_tools_lifecycle(fake_ctx):
     fake_ctx.on_shutdown(lambda: None)
     assert [t.id for t in fake_ctx.tools] == ["voice-lab"] and fake_ctx.startup[0][1] is True
     assert fake_ctx.bot_backend("sage") == "advisor" and fake_ctx.bot_backend("nova") == "gateway"
-    assert fake_ctx.paths.state_dir.is_dir() and oct(fake_ctx.paths.state_dir.stat().st_mode)[-3:] == "700"
+    assert fake_ctx.paths.state_dir.is_dir()
+    assert_private(fake_ctx.paths.state_dir, directory=True)
 
 
 def test_fake_engines_drive_the_moved_detector_types(fake_engines):

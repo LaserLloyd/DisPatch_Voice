@@ -122,7 +122,7 @@ def _make_handler(state: StubState):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-            except (BrokenPipeError, ConnectionResetError):
+            except ConnectionError:
                 # The caller hung up first (an Undo, a barge-in on an API bot): not an
                 # error, and not a traceback in every e2e log (V2 #2).
                 self.close_connection = True
@@ -229,7 +229,7 @@ def _make_handler(state: StubState):
                         "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
                 self.wfile.write(f"data: {json.dumps(done)}\n\ndata: [DONE]\n\n".encode())
                 self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            except (ConnectionError, TimeoutError):
                 entry["aborted"] = True
                 entry["aborted_at"] = time.time()
 
