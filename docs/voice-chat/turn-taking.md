@@ -216,7 +216,7 @@ Smart Turn again at +0.4 s on the real silence, like the session.
 
 ## Tests
 
-* `tests/rt/` — 101 unit tests with fakes: the policy table incl. `partial=None`, the learned
+* `packages/forge-voice-core/tests/rt/` — 101 unit tests with fakes: the policy table incl. `partial=None`, the learned
   EMA, the speculator caps, fail-soft start and `similar()` on the churn cases, the classifier
   incl. stop phrases, the two-backchannels rule and the contiguous-run echo rule, the heard
   map on the markdown golden rows (snake_case, `a < b`, code spans, tags), the tail STT

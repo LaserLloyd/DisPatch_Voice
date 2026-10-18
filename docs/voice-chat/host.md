@@ -556,7 +556,7 @@ engine is unchanged and still uses `StreamingSTT` and `TTSEngine`:
 | `rig` | `RigSTTProvider` over `RigStreamingSTT` | `RigTTSProvider` over `ReplyEngine`; both share one `RigLink` (one `RigConnection`) |
 | `openai` | `OpenAISTTProvider`: `POST /v1/audio/transcriptions` (also reaches the session as `stt_provider: openai`) | `HQTTS`: `POST /v1/audio/speech` with the CPU voice as the fallback |
 
-`tests/rig/test_providers_contract.py` runs every adapter against the same fake audio and text
+`packages/forge-voice-core/tests/rig/test_providers_contract.py` runs every adapter against the same fake audio and text
 streams (and the SpeechForge fake) through one set of assertions.
 
 **Plugins.** A plugin is a package that exposes `setup(api)` in the `dispatch_voice.providers`
