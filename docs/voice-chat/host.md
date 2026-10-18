@@ -13,8 +13,8 @@ switch and the models behave, and the power-profile hold.
 |---|---|---|
 | DisPatch ↔ add-on, Python | DisPatch `app/extensions.py: EXT_API`; add-on `dispatch_voice.EXTENSION["api"]` | `1`; the add-on accepts `[1, 1]` |
 | DisPatch ↔ add-on, JS | `shell.EXT_API`; `static/index.js: EXT.api` | `1`; `[1, 1]` |
-| Add-on ↔ its plugins (Kokoro) | `dispatch_voice.host.registry.ExtensionAPI.api_version` | `3` (unchanged since DisPatch 2.1) |
-| Release numbers | `dispatch-voice 1.1.0`, `dispatch-voice-kokoro 0.1.1` | informational, never compared |
+| Add-on ↔ its plugins (Kokoro) | `dispatch_voice.host.registry.ExtensionAPI.api_version` | `4` since 1.6.0 (`register_provider`, entry-point discovery); `3` through 1.5.0 |
+| Release numbers | `dispatch-voice 1.6.0`, `dispatch-voice-kokoro 0.1.1` | informational, never compared |
 
 DisPatch discovers the add-on through the `dispatch.extensions` entry point
 (`voice = dispatch_voice:EXTENSION`), or `DISPATCH_EXTENSIONS=dispatch_voice:EXTENSION`
@@ -62,9 +62,11 @@ and whether the `--with-editable` overlay resolves offline.
 6. `ctx.on_startup(prewarm, thread=True)` — the models load in the background
    after boot when the switch is on, so the first chat is fast.
 7. `ctx.on_shutdown(shutdown)` — the power hold is released and the models dropped.
-8. `registry.mount_extensions(ctx)` — the add-on's **own** plugin seam
-   (`DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`), where the
-   optional Kokoro plugin registers its engine and built-in voices. A plugin's
+8. `registry.mount_extensions(ctx)` — the add-on's **own** plugin seam: the
+   provider plugins the `extensions` setting names (Settings → Voice → *Provider
+   plugins*, `extensions:` in `voice.yaml`, or the deprecated
+   `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`), where the optional
+   Kokoro plugin registers its engine and built-in voices. A plugin's
    `api.include_router(router)` mounts under `/api/voice` through the same
    DisPatch gate; its router's paths are relative to that prefix.
 

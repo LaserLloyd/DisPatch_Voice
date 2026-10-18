@@ -49,22 +49,27 @@ discovers through an entry point; nothing in DisPatch names it.
 
    (`v1` moves with each 1.x release. A later `uv sync` removes a pip-installed
    add-on; `dispatch-voice doctor` tells you when that happened.)
-2. **Fetch the models** (~1.4 GB: Silero VAD, Smart Turn, Parakeet, Chatterbox-Turbo, the stock voice):
-
-   ```sh
-   dispatch-voice fetch-models
-   ```
-
-   The speech models go to `DISPATCH_SPEECH_MODELS` (else `<data>/speech-models`),
-   Chatterbox to `DISPATCH_VOICE_MODELS` (else `~/.local/share/dispatch-voice/models`).
-3. **Restart DisPatch**, then in Settings → Voice turn the switch on. The page lists
-   anything still missing with the command that fixes it. `dispatch-voice doctor`
+2. **Restart DisPatch once**, so it discovers the add-on. Everything after this is
+   Settings → Voice.
+3. **In Settings → Voice**: turn the switch on and press **Download** under *Models*
+   (~1.4 GB: Silero VAD, Smart Turn, Parakeet, Chatterbox-Turbo, the stock voice; a
+   progress bar and Cancel). The page lists anything still missing with the fix. The
+   same download from a shell is `dispatch-voice fetch-models`; since 1.6.0 the files go
+   into ONE folder, DisPatch's `models_dir`, as `speech/` and `chatterbox/`
+   (`DISPATCH_SPEECH_MODELS` / `DISPATCH_VOICE_MODELS` still point a family elsewhere,
+   and an older install keeps working where its files are until `dispatch-voice
+   migrate-models --apply` or the Move button). Speech recognition works as soon as the
+   download finishes; speaking (the stock voice and cloned voices both run on the
+   Chatterbox engine, which the add-on registers at start-up) needs one more DisPatch
+   restart, and the page says so. `dispatch-voice doctor`
    prints the same from the shell, plus the handshake and the running version
    (`--unit <name>` reads the voice settings and backend directory of a systemd
    `--user` unit, so it checks what the service really uses).
 4. Optional: the Kokoro built-in voices (`dispatch-voice-kokoro`, a separate,
-   GPL-3.0-or-later plugin package: `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup`),
-   a cloned voice from a clip in the Voice cloning tool, or the stock synthetic voice as it is.
+   GPL-3.0-or-later plugin package): install it and switch it on under Settings →
+   Voice → *Provider plugins* (the `extensions` setting; the old
+   `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup` still works and is deprecated).
+   Or a cloned voice from a clip in the Voice cloning tool, or the stock synthetic voice as it is.
 5. Optional: give your bots a character in their acknowledgements (`<data>/voice-acks.yaml`:
    `bots: {<bot id>: {flavour: wry|bright|trainer|gruff}}`) and name your own tools'
    status lines (`tools: [{match: <pattern>, say: <line>}]`); see
