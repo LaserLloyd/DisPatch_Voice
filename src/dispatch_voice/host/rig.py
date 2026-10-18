@@ -260,9 +260,7 @@ def read_token() -> Token:
     if env:
         return Token(env, "env")
     p = token_path()
-    try:
-        st = p.stat()
-    except OSError:
+    if not p.exists():
         return Token()
     readable = fsperm.others_can_read(p)
     if readable:
