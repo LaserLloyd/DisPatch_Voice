@@ -1021,7 +1021,10 @@ SUGGESTED_BUILTIN = {
         {"where": "backend", "cmd": "uv run --offline --with-editable /path/to/dispatch-voice "
                                     "--with-editable /path/to/dispatch-voice-kokoro uvicorn app.main:app"},
     ],
-    "enable": [{"where": "env", "cmd": "DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup"}],
+    # 1.6.0: the switch is in Settings > Voice > Provider plugins (the `extensions` setting);
+    # the environment variable still works and is deprecated.
+    "enable": [{"where": "settings", "cmd": "Settings > Voice > Provider plugins > Enable kokoro"},
+               {"where": "env", "cmd": "DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup   # deprecated"}],
 }
 
 
