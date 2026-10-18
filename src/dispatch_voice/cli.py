@@ -232,9 +232,14 @@ def probe_rig(settings) -> dict:
     from .host import rig
     rs = settings.rig
     tok = rig.read_token()
+    if tok.source is None and tok.problem is None:
+        # Outside DisPatch there is no ctx.secrets; read the host's file store itself, which is where
+        # the token is when it was pasted in Settings > Voice on a host without an OS keyring.
+        tok = rig.read_host_secrets_file_token()
     out: dict = {"enabled": rs.enabled, "url_set": bool(rs.url), "url_ok": bool(rs.url) and rig.valid_url(rs.url),
                  "host": rig.host_of(rs.url), "token": tok.source, "token_problem": tok.problem,
-                 "token_file": str(rig.token_path())}
+                 "token_file": str(rig.token_path()),
+                 "secrets_file": str(rig.host_secrets_file())}
     if not (out["url_ok"] and tok.value):
         return out
     import httpx
@@ -270,7 +275,9 @@ def rig_line(r: dict) -> tuple[str, int]:
     if r.get("token_problem") == "permissions":
         return f"GPU rig: {r['token_file']} is readable by other users: chmod 600 it", 1
     if not r.get("token"):
-        line = f"GPU rig{where}: no SPEECHFORGE_TOKEN (set it in {r['token_file']}, mode 600)"
+        looked = ", ".join(x for x in ("SPEECHFORGE_TOKEN", r.get("secrets_file"), r["token_file"]) if x)
+        line = (f"GPU rig{where}: no rig token found (looked in: {looked}; paste it in Settings > Voice, "
+                f"or put SPEECHFORGE_TOKEN=... in {r['token_file']}, mode 600)")
         return line, 1 if r["enabled"] else 0
     if not r["url_set"]:
         return "GPU rig: a token is set but rig.url is not (voice.yaml)", 1 if r["enabled"] else 0
