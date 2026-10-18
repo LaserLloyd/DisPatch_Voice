@@ -342,9 +342,8 @@ def doctor_report(*, backend: Path | None, url: str, check_update: bool) -> dict
     # DISPATCH_VOICE_EXTENSIONS variable, which wins); entry-point plugins that are installed but off.
     from .host import providers
     declared = list(settings.extensions)
-    spec = ",".join(declared)
     routers = DoctorContext()
-    loaded = registry.mount_extensions(routers, spec) if spec else []
+    loaded = registry.mount_extensions(routers) if declared else []     # same rule as the server (env-only module targets)
     if chatterbox.available():
         chatterbox.register()
     enabled = {t for t in declared if ":" not in t}

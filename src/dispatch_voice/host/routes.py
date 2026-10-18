@@ -923,6 +923,13 @@ def _check_targets(update: dict, settings: VoiceSettings) -> list[str]:
             raise HTTPException(422, f"{key}: {v.reason} {v.fix}")
         if v.warning:
             warnings.append(f"{key}: {v.warning}")
+    if "extensions" in update:
+        # A module:setup target runs arbitrary code at the next start: only the environment may
+        # name one (registry.mount_extensions skips it in voice.yaml). Installed plugin names only.
+        new = [t for t in update["extensions"] if ":" in t and t not in settings.extensions]
+        if new:
+            raise HTTPException(422, "extensions takes installed plugin names; a module:setup target can only "
+                                     "be set in DISPATCH_VOICE_EXTENSIONS on the server")
     if "tts_engine" in update and update["tts_engine"] not in _engine_names():
         raise HTTPException(422, "Unknown TTS engine: " + update["tts_engine"][:32]
                             + " (available: " + ", ".join(_engine_names()) + ")")

@@ -579,8 +579,11 @@ GPL-licensed `dispatch-voice-kokoro` package (installed separately) is the refer
 `kokoro` engine behind the cloned-voice engine and the `builtin:<id>` voices.
 
 **`DISPATCH_VOICE_EXTENSIONS=pkg.module:setup[,...]` is deprecated** but still loads, with a
-warning that says to enable the plugin in Settings instead. An `extensions` item without a colon
-is an entry-point name when one is installed, otherwise a module whose `setup` is called.
+warning that says to enable the plugin in Settings instead. A module target (`pkg.module:setup`,
+or a bare module name that is not an installed plugin) is honoured ONLY from that variable: the
+`extensions` setting is written by any operator from Settings, so in `voice.yaml` it names
+installed entry-point plugins only (a module target there is skipped with a warning, and
+`PATCH /api/voice/settings` refuses a new one with 422).
 
 ## Running DisPatch with the add-on
 
