@@ -142,7 +142,10 @@ class FetchJob:
             self.finished_at = time.time()
             if state == "done":
                 self.percent = 100.0
-                self.restart_required = self.only in (None, "chatterbox")
+                # Speech needs no restart (tts.build_engine registers the engine once the models are
+                # on disk, review F6); only the sealed cloned-voices router, mounted at setup when the
+                # models were already there, waits for the next start.
+                self.restart_required = self.only in (None, "chatterbox") and not _router_mounted()
             self.log.append({"done": "finished", "cancelled": "cancelled", "failed": "failed"}[state])
 
     def status(self) -> dict:
@@ -152,6 +155,14 @@ class FetchJob:
                     "only": self.only, "started_at": self.started_at, "finished_at": self.finished_at,
                     "log": list(self.log), "cancellable": self.state == "running",
                     "restart_required": self.restart_required}
+
+
+def _router_mounted() -> bool:
+    try:
+        from . import routes
+        return "dispatch-voice" in routes._LOADED
+    except Exception:       # noqa: BLE001 - the flag only decides which sentence the page shows
+        return False
 
 
 JOB = FetchJob()

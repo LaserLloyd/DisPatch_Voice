@@ -346,7 +346,7 @@
     "models_cancel": "取消",
     "models_progress": "正在下载 {file}：{pct}%",
     "models_done": "模型已下载。",
-    "models_restart": "重启 DisPatch 后才能使用克隆声音。",
+    "models_restart": "语音回复现已可用。重启 DisPatch 后才能管理克隆声音。",
     "models_cancelled": "下载已取消。",
     "models_failed": "下载失败：{error}",
     "models_missing": "缺少部分模型。",

@@ -348,7 +348,7 @@
     "models_cancel": "Cancelar",
     "models_progress": "Baixando {file}: {pct}%",
     "models_done": "Modelos baixados.",
-    "models_restart": "Reinicie o DisPatch para usar as vozes clonadas.",
+    "models_restart": "As respostas faladas já funcionam. Reinicie o DisPatch para gerenciar as vozes clonadas.",
     "models_cancelled": "Download cancelado.",
     "models_failed": "O download falhou: {error}",
     "models_missing": "Faltam alguns modelos.",

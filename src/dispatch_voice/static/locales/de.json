@@ -347,7 +347,7 @@
     "models_cancel": "Abbrechen",
     "models_progress": "{file} wird heruntergeladen: {pct} %",
     "models_done": "Modelle heruntergeladen.",
-    "models_restart": "DisPatch neu starten, um geklonte Stimmen zu nutzen.",
+    "models_restart": "Gesprochene Antworten funktionieren jetzt. DisPatch neu starten, um geklonte Stimmen zu verwalten.",
     "models_cancelled": "Download abgebrochen.",
     "models_failed": "Download fehlgeschlagen: {error}",
     "models_missing": "Einige Modelle fehlen.",

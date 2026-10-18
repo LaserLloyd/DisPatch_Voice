@@ -351,7 +351,7 @@
     "models_cancel": "إلغاء",
     "models_progress": "جارٍ تنزيل {file}: {pct}%",
     "models_done": "تم تنزيل النماذج.",
-    "models_restart": "أعد تشغيل DisPatch لاستخدام الأصوات المستنسخة.",
+    "models_restart": "الردود المنطوقة تعمل الآن. أعد تشغيل DisPatch لإدارة الأصوات المستنسخة.",
     "models_cancelled": "أُلغي التنزيل.",
     "models_failed": "فشل التنزيل: {error}",
     "models_missing": "بعض النماذج مفقودة.",

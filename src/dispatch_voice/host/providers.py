@@ -257,7 +257,8 @@ class StreamingSTTProvider(STTProvider):
             return self._health_fn()
         s = self.settings
         if s is not None and getattr(s, "stt_engine", "parakeet") in ("parakeet", "moonshine"):
-            if not (s.parakeet_dir / "encoder-model.int8.onnx").exists():
+            from . import models
+            if not models.parakeet_complete(s.parakeet_dir):
                 return Health("unconfigured", "The Parakeet speech-recognition model is not downloaded.",
                               "Settings > Voice > Models > Download, or run `dispatch-voice fetch-models`.",
                               "model_missing")
