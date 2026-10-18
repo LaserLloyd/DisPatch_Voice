@@ -61,7 +61,7 @@ docker compose logs app | Select-String "SETUP TOKEN"
 
 Open <http://localhost:8765>, create the owner with that token, then Settings, Voice, which lists what is
 missing (the models, until you press Download). `ffmpeg -version` proves the system program is in the image. The default `VOICE_REF` installs the add-on
-from this repository's `refactor/prosumer-2026` branch; set `VOICE_REF=refs/tags/<tag>` in `.env` to pin a
+from this repository's `main` branch; set `VOICE_REF=refs/tags/<tag>` in `.env` to pin a
 release. `VOICE_REF` takes a full ref (`refs/heads/<branch>`, `refs/tags/<tag>`) or a bare tag name. With
 `VOICE_SRC=local` and `--build-context voice-src=<dir>` the add-on is installed from a local directory
 instead. The speech models are not baked into the image; download them from Settings, Voice. DisPatch Chat's
