@@ -848,6 +848,10 @@ async def status_payload(settings: VoiceSettings) -> dict:
     st["settings_env"] = {k: v["env"] for k, v in settings.sources.items()
                           if v.get("source") == "env" and v.get("env") and not k.startswith(("device.", "bots."))}
     st["tts_engines"] = _engine_names()
+    # The non-secret values the Settings pane edits in place (never a key or a token).
+    st["config"] = {"rig_url": settings.rig.url, "stt_url": settings.stt_url, "stt_model": settings.stt_model,
+                    "hq_url": settings.hq_url, "hq_model": settings.hq_model,
+                    "extensions": list(settings.extensions), "rig_allow": list(settings.rig_allow)}
     return st
 
 

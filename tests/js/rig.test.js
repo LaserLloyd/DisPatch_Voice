@@ -92,7 +92,7 @@ test('rig: switching it on saves rig.enabled and the status line follows', dom, 
   assert.equal(cb.checked, true);
 }));
 
-test('rig: the row sits in the Voices group of Settings › Voice', dom, () => inShell(async () => {
+test('rig: the row sits in the Speech-to-text section of Settings › Voice', dom, () => inShell(async () => {
   const host = document.createElement('div');
   document.body.append(host);
   mountDriveSettings(host, {
@@ -100,8 +100,8 @@ test('rig: the row sits in the Voices group of Settings › Voice', dom, () => i
       profiles: [], builtin_voices: [], rig: READY },
     bots: () => [], voices: [], android: false,
   });
-  const voices = host.querySelector('#drive-group-voices');
-  assert.ok(voices.querySelector('#drive-rig'));
+  const stt = host.querySelector('#drive-group-stt');
+  assert.ok(stt.querySelector('#drive-rig'));
   assert.equal(host.querySelector('#drive-rig-input').checked, true);
   assert.match(host.querySelector('#drive-rig-status').textContent, /Using the rig now/);
 }));

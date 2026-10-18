@@ -1862,23 +1862,19 @@ def dispatch_settings(pw, a, c: Checks, base: str, width: int, height: int) -> d
         br.ev("() => { const g = document.getElementById('drive-group-connection'); g && g.scrollIntoView({block: 'center'}); }")
         p.wait_for_timeout(200)
         br.shot(a.shots, f"dispatch-{width}-settings-connection")
-        # Bots tab: the pill and its popover, inside the pane (review T7a M1/M2)
+        # Bots tab: the Voice pill (a link to the character's voice settings since 1.6.0)
         p.click("#stab-bots")
         br.wait("() => document.querySelectorAll('.bm-voice-pill').length > 0", 8)
         pills = p.locator(".bm-voice-pill").count()
         c.ok(f"{tag}: Voice pills on the Bots tab in the same Settings session"
              + (" (voice switched on just now)" if flipped else ""), pills > 0, pills)
         if pills:
+            # 1.6.0: the pill is a link to Settings → Voice → Voices per character (no popover any more)
             p.locator(".bm-voice-pill").first.click()
-            p.wait_for_selector(".bm-voice-pop", timeout=5000)
-            p.wait_for_timeout(150)
-            r = br.ev("""() => { const a = document.querySelector('.bm-voice-pop').getBoundingClientRect();
-                const b = document.getElementById('spane-bots').getBoundingClientRect();
-                return { l: a.left, r: a.right, pl: b.left, pr: b.right, vw: innerWidth }; }""")
-            c.ok(f"{tag}: the Bots popover stays inside the pane and the screen (left edge too)",
-                 r["l"] >= max(0, r["pl"]) - 0.5 and r["r"] <= min(r["vw"], r["pr"]) + 0.5, r)
-            br.shot(a.shots, f"dispatch-{width}-bots-popover")
-            p.keyboard.press("Escape")
+            ok = br.wait("() => !!document.querySelector('#drive-group-characters .drive-char[open]')", 8)
+            c.ok(f"{tag}: the Bots-tab pill opens Voices per character on that character", ok)
+            br.shot(a.shots, f"dispatch-{width}-bots-pill-link")
+            p.click("#stab-bots")
         p.click("#bm-close")
         errs = br.script_errors()
         c.ok(f"{tag}: no script errors", not errs, errs[:3])
