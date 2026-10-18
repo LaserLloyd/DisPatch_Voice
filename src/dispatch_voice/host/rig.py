@@ -751,12 +751,18 @@ class VoiceSync:
 
 
 def _delete_target() -> tuple[str, str] | None:
-    """(url, token) when a rig address and token are set, else None."""
+    """(url, token) when a rig address and token are set AND the network policy accepts the
+    address, else None. The token goes in the request header, so an address the policy refuses
+    (a metadata or link-local host, a public host off the allow-list, e.g. a 1.5.0 voice.yaml or an
+    environment value that never passed the PATCH check) is never sent it."""
     try:
         from .config import load_settings
-        rs = getattr(load_settings(), "rig", None)
+        settings = load_settings()
+        rs = getattr(settings, "rig", None)
         tok = read_token()
         if rs is None or not rs.url or not valid_url(rs.url) or not tok.value:
+            return None
+        if not url_verdict(rs.url, tuple(getattr(settings, "rig_allow", ()) or ())).ok:
             return None
         return rs.url, tok.value
     except Exception:
@@ -787,6 +793,11 @@ def delete_voice_async(sha: str) -> None:
 
     def run() -> None:
         try:
+            from . import netpolicy
+            if not netpolicy.check_resolved(url).ok:       # a NAME pointed at a never-allowed address
+                log.warning("voice: the rig address resolves somewhere that is never used; voice %s not "
+                            "deleted there", sha[:8])
+                return
             import httpx
             r = httpx.delete(f"{http_base(url)}/v1/voices/{sha}", timeout=10.0, trust_env=False,
                              headers={"Authorization": f"Bearer {token}"})
