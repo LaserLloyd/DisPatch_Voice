@@ -1,6 +1,7 @@
 """dispatch-voice: fetch the models, check the install, run the Voices panel standalone, say a line.
 
     dispatch-voice fetch-models [--only speech|chatterbox] [--force] [--verify] [--no-stock]
+    dispatch-voice migrate-models [--apply]
     dispatch-voice doctor [--unit local-chat] [--backend DIR] [--url http://127.0.0.1:8765] [--check-update] [--json]
     dispatch-voice serve --data DIR [--port 8769]
     dispatch-voice say <profile> "text" [-o out.wav]
@@ -75,8 +76,8 @@ def standalone_app(store, port: int):
 def _speech_models_dir(arg: str | None) -> Path:
     if arg:
         return Path(arg).expanduser()
-    from .host import context
-    return context.paths().models_dir
+    from .host import models
+    return models.speech_dir()
 
 
 # --------------------------------------------------------------------------- #
@@ -84,27 +85,27 @@ def _speech_models_dir(arg: str | None) -> Path:
 # --------------------------------------------------------------------------- #
 
 def cmd_fetch_models(a) -> int:
-    rc = 0
-    if a.only in (None, "speech"):
-        from .host.download import fetch_speech_models
-        rc = fetch_speech_models(_speech_models_dir(a.speech_models), force=a.force, verify=a.verify)
-    if a.only in (None, "chatterbox"):
-        from .engine import ChatterboxOnnx, fetch_models
-        models = Path(a.models) if a.models else None
-        if a.verify:
-            from .host.engines import chatterbox
-            ok = chatterbox.available()
-            print(f"Chatterbox models ({chatterbox.model_dir()}): {'have' if ok else 'MISSING'}")
-            rc = rc or (0 if ok else 1)
-        else:
-            d = fetch_models(models, a.dtype)
-            print(f"Chatterbox models -> {d}")
-            if not a.no_stock:
-                from .stock import build_tensors
-                t = time.perf_counter()
-                path = build_tensors(ChatterboxOnnx(d, a.dtype, watermark=False), d)
-                print(f"stock voice: {path} ({time.perf_counter() - t:.1f}s)")
-    return rc
+    """The same code the in-app Download button runs (host.download.fetch_all)."""
+    from .host import download
+    return download.fetch_all(only=a.only, force=a.force, verify=a.verify, stock=not a.no_stock, dtype=a.dtype,
+                              speech_dir=_speech_models_dir(a.speech_models),
+                              models_dir=Path(a.models) if a.models else None)
+
+
+def cmd_migrate_models(a) -> int:
+    """Move the models from the old two folders into the unified one (dry run unless --apply)."""
+    from .host import models
+    rep = models.migrate(dry_run=not a.apply)
+    if not rep["moves"]:
+        print("nothing to move: the models are already in the unified folder (or not downloaded yet)")
+        return 0
+    for m in rep["moves"]:
+        print(f"  {m['state']:11} {m['family']:10} {m['src']} -> {m['dst']}")
+    if rep["dry_run"]:
+        print("dry run: nothing was moved. Re-run with --apply to move.")
+    else:
+        print(f"moved {rep['moved']}" + (f"; errors: {rep['errors']}" if rep["errors"] else ""))
+    return 1 if rep["errors"] else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -507,20 +508,25 @@ def cmd_doctor(a) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="dispatch-voice")
-    p.add_argument("--models", help="Chatterbox model directory (default DISPATCH_VOICE_MODELS or "
-                                    "~/.local/share/dispatch-voice/models)")
+    p.add_argument("--models", help="Chatterbox model directory (default DISPATCH_VOICE_MODELS, else the "
+                                    "chatterbox folder of the unified models folder)")
     p.add_argument("--dtype", default="q4", help="ONNX precision: q4 (default, fastest on CPU), q8, fp16, fp32")
     sub = p.add_subparsers(dest="cmd", required=True)
     fm = sub.add_parser("fetch-models", help="download every core model: Silero VAD, Smart Turn, Parakeet "
                                              "(~680 MB) and Chatterbox-Turbo (~720 MB at q4), then build the stock voice")
     fm.add_argument("--speech-models", help="where the VAD/Smart Turn/Parakeet files go (default "
-                                            "DISPATCH_SPEECH_MODELS or <data>/speech-models)")
+                                            "DISPATCH_SPEECH_MODELS, else the speech folder of the unified "
+                                            "models folder)")
     fm.add_argument("--only", choices=("speech", "chatterbox"), default=None, help="fetch one set only")
     fm.add_argument("--force", action="store_true", help="re-download the speech models even if present")
     fm.add_argument("--verify", action="store_true", help="only check what is on disk (sha256 for the speech models)")
     fm.add_argument("--no-stock", action="store_true",
                     help="skip building the stock voice tensors (built on first use instead)")
     fm.set_defaults(fn=cmd_fetch_models)
+    mm = sub.add_parser("migrate-models", help="move the models from the old two folders into the one models "
+                                               "folder (dry run unless --apply; safe to repeat)")
+    mm.add_argument("--apply", action="store_true", help="actually move the files")
+    mm.set_defaults(fn=cmd_migrate_models)
     dr = sub.add_parser("doctor", help="print the DisPatch handshake, the models, the engines and the "
                                        "running-vs-checkout version")
     dr.add_argument("--backend", help="DisPatch's backend directory (default $DISPATCH_BACKEND): also checks "
@@ -545,7 +551,7 @@ def main(argv: list[str] | None = None) -> int:
     say.add_argument("--data")
     a = p.parse_args(argv)
 
-    if a.cmd in ("fetch-models", "doctor"):
+    if a.cmd in ("fetch-models", "doctor", "migrate-models"):
         return a.fn(a)
 
     if a.cmd == "serve":

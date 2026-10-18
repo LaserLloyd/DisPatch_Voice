@@ -39,8 +39,18 @@ TAGS = ("[laugh]", "[chuckle]", "[sigh]", "[gasp]", "[cough]", "[clear throat]",
 
 
 def default_model_dir() -> Path:
-    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    return Path(os.environ.get("DISPATCH_VOICE_MODELS", os.path.join(base, "dispatch-voice", "models")))
+    """Where the Chatterbox graphs are: ``DISPATCH_VOICE_MODELS``; else (1.6.0) the ``chatterbox``
+    subfolder of the unified models folder, or the old ``~/.local/share/dispatch-voice/models``
+    while models still sit there (host/models.py has the rule and the one-time move)."""
+    explicit = os.environ.get("DISPATCH_VOICE_MODELS", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    try:
+        from .host import models
+        return models.chatterbox_dir()
+    except Exception:               # noqa: BLE001 - the engine must work without the host package's context
+        base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        return Path(base) / "dispatch-voice" / "models"
 
 
 def _filename(component: str, dtype: str) -> str:
@@ -48,23 +58,36 @@ def _filename(component: str, dtype: str) -> str:
     return f"{component}{suffix}.onnx"
 
 
-def fetch_models(model_dir: Path | None = None, dtype: str = "q4", revision: str = MODEL_REVISION) -> Path:
+def fetch_models(model_dir: Path | None = None, dtype: str = "q4", revision: str = MODEL_REVISION, *,
+                 on_file=None, cancel=None, download=None) -> Path:
     """Download the ONNX graphs + weights into a plain directory.
 
     A plain directory, not the HF cache: onnxruntime refuses external-data files
-    reached through the cache's symlinks.
+    reached through the cache's symlinks. ``on_file(name, index, total, done)`` reports each
+    file (the in-app progress bar); ``cancel`` (a ``threading.Event``) is checked between
+    files (a single Hugging Face download cannot be interrupted; the files are 40-600 MB).
+    ``download`` replaces ``hf_hub_download`` (tests).
     """
-    from huggingface_hub import hf_hub_download
+    if download is None:
+        from huggingface_hub import hf_hub_download as download
     if dtype not in DTYPES:
         raise ValueError(f"dtype must be one of {DTYPES}")
     d = Path(model_dir or default_model_dir())
     d.mkdir(parents=True, exist_ok=True)
-    for f in ("tokenizer.json", "config.json"):
-        hf_hub_download(MODEL_REPO, f, revision=revision, local_dir=d)
+    jobs = [(f, None) for f in ("tokenizer.json", "config.json")]
     for c in COMPONENTS:
         fn = _filename(c, dtype)
-        hf_hub_download(MODEL_REPO, fn, subfolder="onnx", revision=revision, local_dir=d)
-        hf_hub_download(MODEL_REPO, fn + "_data", subfolder="onnx", revision=revision, local_dir=d)
+        jobs += [(fn, "onnx"), (fn + "_data", "onnx")]
+    for i, (name, sub) in enumerate(jobs, 1):
+        if cancel is not None and cancel.is_set():
+            from .host.download import Cancelled
+            raise Cancelled("cancelled")
+        if on_file is not None:
+            on_file(name, i, len(jobs), False)
+        kw = {"subfolder": sub} if sub else {}
+        download(MODEL_REPO, name, revision=revision, local_dir=d, **kw)
+        if on_file is not None:
+            on_file(name, i, len(jobs), True)
     return d
 
 
