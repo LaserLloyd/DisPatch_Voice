@@ -1,5 +1,6 @@
 """dispatch-voice: fetch the models, check the install, run the Voices panel standalone, say a line.
 
+    dispatch-voice --version
     dispatch-voice fetch-models [--only speech|chatterbox] [--force] [--verify] [--no-stock]
     dispatch-voice migrate-models [--apply]
     dispatch-voice doctor [--unit local-chat] [--backend DIR] [--url http://127.0.0.1:8765] [--check-update] [--json]
@@ -16,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import audio
+from . import __version__, audio
 
 REPO_URL = "https://github.com/LaserLloyd/DisPatch_Voice"
 #: The moving tag the absent page installs from; its VERSION file says what the latest 1.x is.
@@ -516,6 +517,7 @@ def cmd_doctor(a) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="dispatch-voice")
+    p.add_argument("--version", action="version", version=f"dispatch-voice {__version__}")
     p.add_argument("--models", help="Chatterbox model directory (default DISPATCH_VOICE_MODELS, else the "
                                     "chatterbox folder of the unified models folder)")
     p.add_argument("--dtype", default="q4", help="ONNX precision: q4 (default, fastest on CPU), q8, fp16, fp32")
