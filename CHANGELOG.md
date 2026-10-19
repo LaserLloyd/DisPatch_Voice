@@ -5,6 +5,14 @@ All notable changes to DisPatch Voice.
 ## [Unreleased]
 
 ### Fixed (ops check 2026-10-19)
+- **DisPatch 3.0 no longer copies `voice.yaml` into its settings store at start.** The host calls
+  `migrate_voice_yaml(writer, dry_run=False)` once its store exists, but this release reads and
+  writes `voice.yaml` only: the store kept a frozen copy of the first start (a later Settings change
+  went to `voice.yaml` alone, so `GET /api/settings` and the backups' `settings.json` showed stale
+  voice values), and the `voice.yaml.migrated` marker would have kept the release that reads the
+  store from ever taking the current file. A real run now answers `deferred` and writes nothing
+  until the add-on reads the store (`migration.STORE_IS_READ`); a dry run and `force=True` are
+  unchanged. A rollback to 1.5.0 was never affected (`voice.yaml` is left as it was).
 - **The test suites can no longer touch the real home folder.** `DELETE /api/voice/rig/token`
   (`rig.clear_token()`) removes every token file it knows, including the pre-1.6 one under the
   home folder; a test isolated only the new path, so running the suite on a machine with DisPatch

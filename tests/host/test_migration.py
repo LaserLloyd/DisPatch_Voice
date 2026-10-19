@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+from dispatch_voice.host import migration
 from dispatch_voice.host.migration import flatten, migrate_voice_yaml
 
 OLD = """\
@@ -36,6 +39,14 @@ class Store:
         if self.fail_after is not None and len(self.data) >= self.fail_after:
             raise RuntimeError("store is down")
         self.data[key] = value
+
+
+@pytest.fixture(autouse=True)
+def _store_is_read(request, monkeypatch):
+    """The move itself (writes, marker, backup) is what most tests here pin; it runs for real only in
+    a release that reads the store back. ``store_not_read`` tests see this release's behaviour."""
+    if request.node.get_closest_marker("store_not_read") is None:
+        monkeypatch.setattr(migration, "STORE_IS_READ", True)
 
 
 def write(tmp_path, text=OLD):
@@ -130,3 +141,30 @@ def test_flatten_keeps_maps_and_lists_whole():
                         "extensions": ["k"], "speed": 1.0}))
     assert got == {"voice.rt.a": 1, "voice.rig.allow": ["x"], "voice.rig.url": "u",
                    "voice.bots": {"n": {"follow_up": False}}, "voice.extensions": ["k"], "voice.speed": 1.0}
+
+
+@pytest.mark.store_not_read
+def test_a_real_run_is_deferred_while_the_addon_does_not_read_the_store(tmp_path):
+    """Ops check 2026-10-19: DisPatch 3.0 calls the move for real at start, but 1.6 reads and writes
+    voice.yaml only. The store copy was a frozen snapshot from that first start (a later Settings
+    change went to voice.yaml alone, so GET /api/settings and the backups' settings.json showed
+    stale voice values), and the marker would stop the release that does read the store from ever
+    taking the current file. So a host's real run writes nothing yet: no key, no marker, no backup."""
+    assert migration.STORE_IS_READ is False
+    p = write(tmp_path)
+    store = Store()
+    rep = migrate_voice_yaml(store, dry_run=False, path=p)
+    assert rep["status"] == "deferred" and rep["written"] == 0
+    assert store.data == {}
+    assert rep["items"]                                          # still says what it would move
+    assert not (tmp_path / "voice.yaml.migrated").exists()
+    assert not (tmp_path / "voice.yaml.bak").exists()
+    assert p.read_text(encoding="utf-8") == OLD
+    # an explicit operator run still works
+    assert migrate_voice_yaml(Store(), dry_run=False, path=p, force=True)["status"] == "migrated"
+
+
+@pytest.mark.store_not_read
+def test_the_dry_run_report_is_unchanged_while_deferred(tmp_path):
+    rep = migrate_voice_yaml(Store(), path=write(tmp_path))
+    assert rep["status"] == "dry_run" and rep["items"]

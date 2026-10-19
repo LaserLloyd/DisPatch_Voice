@@ -81,4 +81,5 @@ markers = [
     "models: needs the downloaded speech/Chatterbox models (slow, CPU-heavy; run under the models lock)",
     "contract: runs against a DisPatch backend checkout with the extension host (DISPATCH_BACKEND)",
     "interrupt_default: the session starts at the shipped interrupt sensitivity (normal), not the 1.4.0 rules (high)",
+    "store_not_read: migrate_voice_yaml as this release ships it (voice.yaml is the only settings source)",
 ]

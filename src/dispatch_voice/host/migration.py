@@ -13,9 +13,13 @@ nothing here knows what the store is: the only contract is the callable.
 * **Idempotent**: after a real run a marker file ``voice.yaml.migrated`` records it and a second
   call reports ``already_migrated`` without writing (``force=True`` runs it again).
 * **Reversible**: once the store holds every key the file is copied to ``voice.yaml.bak``, and it
-  is NOT deleted (a failed run leaves it untouched and makes no copy). The add-on
-  keeps reading ``voice.yaml`` as the lowest-priority source for one release (environment >
-  store > voice.yaml > default).
+  is NOT deleted (a failed run leaves it untouched and makes no copy).
+* **Deferred in this release** (:data:`STORE_IS_READ` is False): the add-on still reads and writes
+  ``voice.yaml`` only, so a host's real run (``dry_run=False``) reports ``deferred`` and writes
+  nothing, no marker and no backup. Moving the values now would leave the store a frozen copy
+  of the first start (every later Settings change goes to ``voice.yaml``) and the marker would
+  keep the release that reads the store from ever taking the current file. ``force=True`` (an
+  operator's explicit run) still moves it.
 * **Secrets** are never in voice.yaml (the rig token is a credential file, not a setting), so
   none are moved here.
 * A ``store_writer`` that raises stops the run: no marker is written, the error is in the report,
@@ -41,6 +45,13 @@ BACKUP_SUFFIX = ".bak"
 
 #: Top-level keys of voice.yaml that are written as one value (a map), not flattened.
 WHOLE_VALUE = frozenset({"bots"})
+
+#: Whether the add-on reads its settings back from the host's store. Until it does, ``voice.yaml``
+#: is the one source and a host's real run is deferred (see the module docstring).
+STORE_IS_READ = False
+
+#: One log line per process for a deferred run.
+_SAID_DEFERRED: list[bool] = []
 
 
 def flatten(prefs: Mapping[str, Any]) -> list[tuple[str, Any]]:
@@ -91,7 +102,7 @@ def migrate_voice_yaml(store_writer: Callable[[str, Any], None], dry_run: bool =
     Returns ``{"dry_run", "source", "items": [{"key", "value"}], "dropped": [...], "written": n,
     "backup": path|None, "marker": path|None, "status": ...}`` where ``status`` is one of
     ``nothing_to_migrate`` (no file or an empty one), ``already_migrated``, ``dry_run``,
-    ``migrated`` or ``error`` (``error`` carries the reason, never a value)."""
+    ``deferred`` (a real run while :data:`STORE_IS_READ` is False), ``migrated`` or ``error`` (``error`` carries the reason, never a value)."""
     if path is None:
         from .config import prefs_path
         path = prefs_path()
@@ -119,6 +130,13 @@ def migrate_voice_yaml(store_writer: Callable[[str, Any], None], dry_run: bool =
         return report
     if dry_run:
         report["status"] = "dry_run"
+        return report
+    if not STORE_IS_READ and not force:
+        report["status"] = "deferred"
+        if not _SAID_DEFERRED:
+            _SAID_DEFERRED.append(True)
+            log.info("voice: voice.yaml stays the settings source in this release; "
+                     "its move into the settings store waits for the release that reads it")
         return report
     backup = p.with_name(p.name + BACKUP_SUFFIX)
     try:

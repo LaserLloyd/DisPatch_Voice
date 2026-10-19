@@ -481,8 +481,11 @@ schema and calls `store_writer("voice.<id>", value)` for every key (`voice.speed
 `voice.rt.power_hold`, `voice.rig.url`, `voice.bots` as one map), then copies the file to
 `voice.yaml.bak` and writes `voice.yaml.migrated`. A dry run only reports (including the keys the
 schema refuses, by name); a second run is a no-op unless forced; a failing writer leaves no
-marker. Not called by the add-on yet: the host calls it once when its store exists, and then
-reads `voice.yaml` only as the lowest-priority source for one release.
+marker. Not called by the add-on itself: the host calls it at start once its store exists. In
+1.6 the add-on still reads and writes `voice.yaml` only, so that real run answers `deferred` and
+writes nothing (no key, no marker, no backup): moved values would be a frozen copy of the first
+start, and the marker would stop the release that reads the store from taking the current file.
+`force=True` still moves it.
 
 **Where audio and text may go.** `rig.url`, `hq_url` and `stt_url` receive the bearer token, the
 live microphone or the reply text, so `host/netpolicy.py` checks them on `PATCH` and again when
