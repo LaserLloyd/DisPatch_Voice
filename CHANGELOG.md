@@ -4,6 +4,14 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Fixed (ops check 2026-10-19)
+- **The test suites can no longer touch the real home folder.** `DELETE /api/voice/rig/token`
+  (`rig.clear_token()`) removes every token file it knows, including the pre-1.6 one under the
+  home folder; a test isolated only the new path, so running the suite on a machine with DisPatch
+  installed deleted the live rig token (`~/.config/local-chat/speechforge.env`) and the running
+  DisPatch fell back to the CPU. Both suites now give every test its own empty `HOME` (a `models`
+  test keeps the real one for the downloaded models, with the token file redirected).
+
 ### Changed
 - **The host-independent engines are their own package, `forge-voice-core`** (`packages/forge-voice-core/`, import
   `forge_voice_core`): the CPU engines (Silero VAD, Smart Turn, Parakeet, Moonshine, Chatterbox-Turbo, the OpenAI-compatible
