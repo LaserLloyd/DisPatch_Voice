@@ -374,6 +374,8 @@ Every setting has ONE definition ([`host/settings_schema.py`](src/dispatch_voice
 
 **Order of precedence: the environment, then `voice.yaml`, then the default** (1.5.0 let `voice.yaml` beat every variable except `DISPATCH_VOICE`). `GET /api/voice/settings` reports `sources` (`env`, `file` or `default` for each key) and `env` (the variable that is winning); Settings → Voice shows "set by environment" next to such a setting and disables it. A value saved over a variable is kept in `voice.yaml` for when the variable goes (`overridden` in the PATCH answer says so). The environment is not range-limited (the app limits people, not the operator), except `DISPATCH_VOICE_MAX_SESSIONS`.
 
+The owner PIN and owner login for the voice add-on are managed by the DisPatch host, not by this add-on: to list accounts run `python -m app users list`, and to reset the owner's password and PIN run `python -m app owner reset --yes` in DisPatch (see DisPatch_Chat's README).
+
 The table below is generated from the schema (`python -m dispatch_voice.host.settings_schema --write-readme`); a test fails when it is stale.
 
 <!-- env-table:start -->
