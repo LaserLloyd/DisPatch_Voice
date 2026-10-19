@@ -13,6 +13,11 @@ All notable changes to DisPatch Voice.
   store from ever taking the current file. A real run now answers `deferred` and writes nothing
   until the add-on reads the store (`migration.STORE_IS_READ`); a dry run and `force=True` are
   unchanged. A rollback to 1.5.0 was never affected (`voice.yaml` is left as it was).
+- **A rig on the tailnet is no longer "degraded".** A plain `ws://` rig address on the tailnet
+  (the 100.64/10 range or a MagicDNS name) made the status page show the rig degraded and the
+  journal warn "not encrypted" at every voice chat, although WireGuard encrypts that hop and the
+  warning's own advice was "keep it on a VPN or tailnet". Other plain `ws://` addresses off the
+  machine still warn.
 - **The test suites can no longer touch the real home folder.** `DELETE /api/voice/rig/token`
   (`rig.clear_token()`) removes every token file it knows, including the pre-1.6 one under the
   home folder; a test isolated only the new path, so running the suite on a machine with DisPatch

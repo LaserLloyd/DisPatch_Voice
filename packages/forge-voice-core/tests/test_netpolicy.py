@@ -79,6 +79,17 @@ def test_plain_ws_off_the_machine_warns_but_works_and_loopback_does_not():
     assert verdict("ws://127.0.0.1:1236/x").warning == ""
 
 
+def test_plain_ws_on_the_tailnet_does_not_warn():
+    """WireGuard already encrypts a tailnet hop, and the warning's own advice is "keep it on a VPN or
+    tailnet": a tailnet rig (the 100.64/10 range or a MagicDNS name) is not degraded (ops check
+    2026-10-19: the live rig showed "degraded" and warned on every voice chat)."""
+    for url in ("ws://100.64.1.1:1236/v1/realtime", "ws://box.tail1234.ts.net:1236/v1/realtime"):  # scrub-ok: address-range fixture
+        v = verdict(url)
+        assert v.ok and v.warning == "" and v.code == "ok", url
+    assert verdict("ws://10.0.0.5:1236/x").warning  # scrub-ok: address-range fixture
+    assert verdict("ws://rig.lan:1236/x").warning
+
+
 def test_http_schemes_for_the_speech_servers():
     assert N.check_url_policy("http://10.0.0.5:8000", (), schemes=("http", "https")).ok  # scrub-ok: address-range fixture
     assert not N.check_url_policy("ws://10.0.0.5:8000", (), schemes=("http", "https")).ok  # scrub-ok: address-range fixture

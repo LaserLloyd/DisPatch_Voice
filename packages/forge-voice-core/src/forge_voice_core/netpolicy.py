@@ -11,8 +11,9 @@ metadata addresses included):
   (``TAILNET_NETS``) and plain LAN names (a single label, or one of ``LAN_SUFFIXES``);
 * **everything else** (a public address or domain) only when the ADMIN allow-list names it:
   ``DISPATCH_VOICE_RIG_ALLOW`` / ``rig.allow``, entries being a host, ``*.suffix`` or a CIDR;
-* plain ``ws://`` / ``http://`` to anything but loopback is allowed with a warning
-  (the audio and the token cross the network unencrypted).
+* plain ``ws://`` / ``http://`` to anything but loopback or the tailnet (the CGNAT range or a
+  MagicDNS name: WireGuard encrypts that hop) is allowed with a warning (the audio and the token
+  cross the network unencrypted).
 
 A hostname is also resolved just before connecting (:func:`check_resolved`): a name that
 points at a link-local or metadata address is refused (DNS rebinding).
@@ -163,7 +164,10 @@ def check_url_policy(url: str, allow: tuple[str, ...] = (), *, schemes: tuple[st
                        "Use a private, tailnet or loopback address, or ask the administrator to add the host to "
                        "rig.allow (or DISPATCH_VOICE_RIG_ALLOW).")
     warning = ""
-    if u.scheme in ("ws", "http") and kind != "loopback":
+    # A tailnet hop is already encrypted (WireGuard): the warning's own advice is "keep it on a VPN or
+    # tailnet", so a tailnet address or MagicDNS name is not warned about.
+    on_tailnet = kind == "tailnet" or host.lower().rstrip(".").endswith(".ts.net")  # scrub-ok: suffix, no host
+    if u.scheme in ("ws", "http") and kind != "loopback" and not on_tailnet:
         secure = "wss://" if u.scheme == "ws" else "https://"
         warning = (f"This address is not encrypted ({u.scheme}://): your voice and the token cross the network in "
                    f"the clear. Use {secure} or keep it on a VPN or tailnet.")
