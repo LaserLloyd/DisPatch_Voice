@@ -13,7 +13,15 @@ All notable changes to DisPatch Voice.
   settings, wire and defaults are unchanged). Every moved import path (`dispatch_voice.host.tts`, `dispatch_voice.rt.*`,
   `dispatch_voice.engine`, `dispatch_voice.audio`, ...) stays as a deprecated alias of the core module (the same module object).
   The host contract another application implements is `packages/forge-voice-core/docs/HOST_API.md`.
-  Installing from a built archive or a git URL needs the core named too (README, "Two packages in this repository").
+
+### Fixed
+- **A plain `pip install` or `uv pip install` of the add-on works again** (git URL, archive, sdist, wheel). 1.6.0 reached
+  `forge-voice-core` only through `[tool.uv.sources]`, which pip never reads and uv reads only for a directory or a git
+  checkout: an archive URL failed with "No solution found" and a directory install left an editable `.pth` pointing at the
+  checkout (the Docker image then failed with `No module named 'forge_voice_core'`). `dispatch-voice` now declares
+  `forge-voice-core[speechforge]` as a direct reference to `packages/forge-voice-core` on `main`; the uv source stays for
+  checkouts. CI builds the wheel and the sdist and installs each into a clean venv with plain pip
+  (`scripts/check_installable.py`). The sdist now contains only the sources, not every untracked folder.
 
 ### Added
 - `forge_voice_core.hostlink`: the one seam between the engines and an application; `dispatch_voice/_core_bridge.py` is

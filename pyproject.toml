@@ -6,10 +6,12 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     # The host-independent engines (STT, turn detection, TTS, providers, model downloads, the GPU-rig
-    # client) are their own package, packages/forge-voice-core/ in this repository. The `speechforge`
-    # extra brings `websockets` for the rig client. A plain `pip install` of this project needs it
-    # installed first (see README "Install"); uv resolves it from [tool.uv.sources] below.
-    "forge-voice-core[speechforge]>=0.1.0",
+    # client) are their own package, packages/forge-voice-core/ in this repository. It is declared as a
+    # direct reference to that subdirectory so that a plain `pip install` / `uv pip install` of this project
+    # (a git URL, an archive, an sdist or a wheel) resolves it with no path dependency and no extra step.
+    # `[tool.uv.sources]` below swaps in the in-tree copy for a checkout (`uv sync`, `uv pip install <dir>`).
+    # The `speechforge` extra brings `websockets` for the rig client. See README "Install".
+    "forge-voice-core[speechforge] @ git+https://github.com/LaserLloyd/DisPatch_Voice@main#subdirectory=packages/forge-voice-core",
     "numpy>=1.26",
     "soundfile>=0.12",
     "pyyaml>=6.0",
@@ -40,9 +42,18 @@ dispatch-voice = "dispatch_voice.cli:main"
 [project.entry-points."dispatch.extensions"]
 voice = "dispatch_voice:EXTENSION"
 
+[tool.hatch.metadata]
+# The forge-voice-core direct reference above.
+allow-direct-references = true
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+# Only what a build needs. Without this the sdist swallows every untracked folder (virtualenvs, node_modules,
+# the scratch data dirs), which is slow and, with a virtualenv symlink in the tree, fails outright.
+include = ["/src", "/README.md", "/LICENSE", "/THIRD_PARTY_NOTICES.md", "/CHANGELOG.md", "/VERSION"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dispatch_voice"]

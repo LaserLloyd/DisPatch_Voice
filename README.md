@@ -243,29 +243,41 @@ applications embed the core through [its host contract](packages/forge-voice-cor
 (`dispatch_voice.host.tts`, `dispatch_voice.rt.*`, `dispatch_voice.engine`, ...) are kept as thin aliases of the moved
 modules, marked deprecated.
 
-How the two get installed:
+How the two get installed (every route installs both; no step to remember):
 
-* **From a checkout** (every `uv pip install ../../DisPatch_Voice` line above): uv reads the `[tool.uv.sources]` table in
-  `pyproject.toml` and installs `packages/forge-voice-core` from the same checkout. Nothing extra to type.
-* **From a built archive or a git URL** (what pip and a URL install see): the table is not read, so name the core too.
-  Core first or in the same command:
+* **A plain `pip install` or `uv pip install`** of the git URL, an archive, an sdist or a wheel: `dispatch-voice` declares
+  its engines as a direct reference (`forge-voice-core[speechforge] @ git+https://github.com/LaserLloyd/DisPatch_Voice@main#subdirectory=packages/forge-voice-core`),
+  which pip and uv both resolve with no path dependency. `scripts/check_installable.py` (CI job "Installable with plain
+  pip") builds the wheel and the sdist, installs each into a clean venv with plain pip and imports both packages.
+* **From a checkout** (every `uv pip install ../../DisPatch_Voice` line above, and `uv sync` here): the
+  `[tool.uv.sources]` table in `pyproject.toml` swaps that URL for `packages/forge-voice-core` in the same checkout
+  (editable, so edits to the core show up at once). The table is for development; delete the checkout and the editable
+  install goes with it.
+* **A pinned release**: the direct reference above follows `main`. To build a tag or branch against its own copy of the
+  engines, override the one requirement. uv's `--override` replaces it wherever it is declared:
 
   ```sh
-  uv pip install --python .venv/bin/python ./packages/forge-voice-core .
+  echo "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz#subdirectory=packages/forge-voice-core" > override.txt
+  uv pip install --python .venv/bin/python --no-sources --override override.txt \
+      "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz"
   ```
 
-* **DisPatch's Dockerfile with `VOICE=1`** (stage "Optional: voice chat" in the DisPatch_Chat `Dockerfile`) installs both
-  packages with one `uv pip install`:
+* **DisPatch's Dockerfile with `VOICE=1`** (stage "Optional: voice chat" in the DisPatch_Chat `Dockerfile`) does exactly
+  that override from the same `VOICE_REF` (or, with `VOICE_SRC=local`, from `/voice-src/packages/forge-voice-core`), and
+  fails the build unless `import dispatch_voice, forge_voice_core` works:
 
   ```sh
   # VOICE_SRC=local  (--build-context voice-src=<DisPatch_Voice checkout>)
-  uv pip install --python /app/.venv/bin/python /voice-src/packages/forge-voice-core /voice-src
+  echo "forge-voice-core[speechforge] @ file:///voice-src/packages/forge-voice-core" > /tmp/voice-override.txt
+  uv pip install --python /app/.venv/bin/python --no-sources --override /tmp/voice-override.txt /voice-src
   # VOICE_SRC=github (default; ${ref} is refs/heads/<branch> or refs/tags/<tag>)
-  uv pip install --python /app/.venv/bin/python     "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/${ref}.tar.gz#subdirectory=packages/forge-voice-core"     "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/${ref}.tar.gz"
+  echo "forge-voice-core[speechforge] @ ${url}#subdirectory=packages/forge-voice-core" > /tmp/voice-override.txt
+  uv pip install --python /app/.venv/bin/python --no-sources --override /tmp/voice-override.txt "dispatch-voice @ ${url}"
   ```
 
-  Everything else in that stage (ffmpeg and libopus in the runtime image, models downloaded into the data volume, not
-  baked in) stays as it is.
+  `--no-sources` matters for `VOICE_SRC=local`: without it uv honours the editable path source and leaves a `.pth`
+  pointing at `/voice-src`, a bind mount that does not exist in the finished image. Everything else in that stage (ffmpeg
+  and libopus in the runtime image, models downloaded into the data volume, not baked in) stays as it is.
 
 ### Upgrade and uninstall
 
