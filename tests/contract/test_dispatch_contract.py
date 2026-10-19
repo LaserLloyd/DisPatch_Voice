@@ -199,10 +199,13 @@ def test_voice_api_is_unlocked_only(client):
     assert st.json()["extension"]["name"] == "DisPatch Voice"
 
 
-def test_static_assets_are_operator_only_with_an_etag(client):
+def test_static_assets_have_an_etag_and_a_locked_device_may_read_them(client):
+    # Since DisPatch 2.3.4 / add-on 1.3.3 a locked (Restricted) device may use voice on a safe bot,
+    # so it reads the add-on's frontend too (DisPatch 3.0 route_policy: /ext/... needs use_voice).
     c, _, auth = client
     lock(c, auth)
-    assert c.get("/ext/voice/index.js").status_code == 403
+    assert c.get("/ext/voice/index.js").status_code == 200
+    assert c.get("/api/voice/status").status_code == 403         # the API stays operator-only
     unlock(c, auth)
     r = c.get("/ext/voice/index.js")
     assert r.status_code == 200 and r.headers.get("etag")
@@ -235,11 +238,20 @@ def test_cross_origin_handshake_is_refused_even_unlocked(client):
     assert refused(c, f"/ws/voice/{tid}", headers={"origin": "https://evil.example"}).code == 1008
 
 
-def test_safe_bot_thread_is_refused(client):
+def test_a_locked_device_gets_voice_on_a_safe_bot_only(client):
+    # 1.3.1: safe bots have voice; 1.3.3 + DisPatch 2.3.4: a locked device may open it on a safe
+    # bot's thread (the turn runs locked) and nowhere else.
     c, _, auth = client
     unlock(c, auth)
-    tid = thread_for(c, "alpha")
-    assert refused(c, f"/ws/voice/{tid}").code == 1008
+    safe = thread_for(c, "alpha")
+    other = thread_for(c)
+    origin = {"origin": "http://testserver"}
+    with c.websocket_connect(f"/ws/voice/{safe}", headers=origin) as ws:
+        assert json.loads(ws.receive_text())["type"] == "ready"
+    lock(c, auth)
+    with c.websocket_connect(f"/ws/voice/{safe}", headers=origin) as ws:
+        assert json.loads(ws.receive_text())["type"] == "ready"
+    assert refused(c, f"/ws/voice/{other}", headers=origin).code == 1008
 
 
 def test_feature_off_is_accept_then_1013_with_the_reason(client, monkeypatch):
