@@ -174,7 +174,7 @@ uv pip install --python .venv/bin/python ../../DisPatch_Voice
 `doctor --backend .` prints the handshake, the missing models and the system programs (run from `backend/`, `--backend .` points it at DisPatch's own environment). If DisPatch runs as a systemd
 service, restart it instead of starting it by hand (`systemctl --user restart dispatch`). A later `uv sync`
 removes a pip-installed add-on, so repeat the `uv pip install` line after one. To follow releases instead of a
-checkout, install `"dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1.6.0"` once that tag
+checkout, install `"dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz"` once that tag
 is published (the `v1` tag still names 1.5.0).
 
 | Pros | Cons |
@@ -243,36 +243,50 @@ applications embed the core through [its host contract](packages/forge-voice-cor
 (`dispatch_voice.host.tts`, `dispatch_voice.rt.*`, `dispatch_voice.engine`, ...) are kept as thin aliases of the moved
 modules, marked deprecated.
 
-How the two get installed:
+How the two get installed (every route installs both; no step to remember):
 
-* **From a checkout** (every `uv pip install ../../DisPatch_Voice` line above): uv reads the `[tool.uv.sources]` table in
-  `pyproject.toml` and installs `packages/forge-voice-core` from the same checkout. Nothing extra to type.
-* **From a built archive or a git URL** (what pip and a URL install see): the table is not read, so name the core too.
-  Core first or in the same command:
+* **A plain `pip install` or `uv pip install`** of the git URL, an archive, an sdist or a wheel: `dispatch-voice` declares
+  its engines as a direct reference (`forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/heads/main.tar.gz#subdirectory=packages/forge-voice-core`),
+  which pip and uv both resolve with no path dependency and no git on the machine. `scripts/check_installable.py` (CI job "Installable with plain
+  pip") builds the wheel and the sdist, installs each into a clean venv with plain pip and imports both packages.
+* **From a checkout** (every `uv pip install ../../DisPatch_Voice` line above, and `uv sync` here): the
+  `[tool.uv.sources]` table in `pyproject.toml` swaps that URL for `packages/forge-voice-core` in the same checkout
+  (editable, so edits to the core show up at once). The table is for development: the install is linked to that
+  checkout, so after moving or deleting it, reinstall (add `--no-sources` to get a copy instead of a link).
+* **A pinned release**: between releases the direct reference above follows `main`; the commit that is tagged names its
+  own tag instead. To build any other tag or branch against its own copy of the engines, override the one requirement
+  (uv only; pip has no `--override`). uv's `--override` replaces it wherever it is declared. In PowerShell write the file
+  with `Set-Content -Encoding utf8` (PowerShell 5.1 `>` writes UTF-16, which uv cannot read):
 
   ```sh
-  uv pip install --python .venv/bin/python ./packages/forge-voice-core .
+  echo "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz#subdirectory=packages/forge-voice-core" > override.txt
+  uv pip install --python .venv/bin/python --no-sources --override override.txt \
+      "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz"
   ```
 
-* **DisPatch's Dockerfile with `VOICE=1`** (stage "Optional: voice chat" in the DisPatch_Chat `Dockerfile`) installs both
-  packages with one `uv pip install`:
+* **DisPatch's Dockerfile with `VOICE=1`** (stage "Optional: voice chat" in the DisPatch_Chat `Dockerfile`) does exactly
+  that override from the same `VOICE_REF` (or, with `VOICE_SRC=local`, from `/voice-src/packages/forge-voice-core`), and
+  fails the build unless `import dispatch_voice, forge_voice_core` works:
 
   ```sh
   # VOICE_SRC=local  (--build-context voice-src=<DisPatch_Voice checkout>)
-  uv pip install --python /app/.venv/bin/python /voice-src/packages/forge-voice-core /voice-src
+  echo "forge-voice-core[speechforge] @ file:///voice-src/packages/forge-voice-core" > /tmp/voice-override.txt
+  uv pip install --python /app/.venv/bin/python --no-sources --override /tmp/voice-override.txt /voice-src
   # VOICE_SRC=github (default; ${ref} is refs/heads/<branch> or refs/tags/<tag>)
-  uv pip install --python /app/.venv/bin/python     "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/${ref}.tar.gz#subdirectory=packages/forge-voice-core"     "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/${ref}.tar.gz"
+  echo "forge-voice-core[speechforge] @ ${url}#subdirectory=packages/forge-voice-core" > /tmp/voice-override.txt
+  uv pip install --python /app/.venv/bin/python --no-sources --override /tmp/voice-override.txt "dispatch-voice @ ${url}"
   ```
 
-  Everything else in that stage (ffmpeg and libopus in the runtime image, models downloaded into the data volume, not
-  baked in) stays as it is.
+  `--no-sources` matters for `VOICE_SRC=local`: without it uv honours the editable path source and leaves a `.pth`
+  pointing at `/voice-src`, a bind mount that does not exist in the finished image. Everything else in that stage (ffmpeg
+  and libopus in the runtime image, models downloaded into the data volume, not baked in) stays as it is.
 
 ### Upgrade and uninstall
 
 | Method | Upgrade | Uninstall (models and voices are kept) |
 | --- | --- | --- |
 | Container image | `git pull` in the DisPatch clone, then `docker compose up -d --build` | Remove `VOICE=1` from `.env` and rebuild. The data volume keeps `models/`, `voices/` and `voice.yaml` |
-| Native, uv | `git pull` in the Voice clone, then the `uv pip install` line again; restart DisPatch | `uv pip uninstall --python .venv/bin/python dispatch-voice`. Data stays in DisPatch's data folder |
+| Native, uv | `git pull` in the Voice clone, then the `uv pip install` line again; restart DisPatch | `uv pip uninstall --python .venv/bin/python dispatch-voice forge-voice-core`. Data stays in DisPatch's data folder |
 | Overlay | `git -C <release-dir> checkout --detach <tag>`, run the warm-up `import` line online, restart | Drop `--with-editable` from the start line |
 
 ### Details

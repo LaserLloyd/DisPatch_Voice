@@ -131,3 +131,21 @@ jobs:
         run: python3 scripts/check-locales.py --selftest
       - name: Validate locale bundles
         run: python3 scripts/check-locales.py
+
+  installable:
+    name: Installable with plain pip
+    needs: privacy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.13"
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - name: Build the wheel and the sdist, pip install each into a clean venv, import
+        # No path dependency: pip never reads [tool.uv.sources], so this is what a git URL, an archive or
+        # a built artifact sees. Fails on "No matching distribution found for forge-voice-core".
+        # The plain-pip passes take the core from the archive URL of main that pyproject.toml names;
+        # a last pass overrides it with this checkout's packages/forge-voice-core.
+        run: python3 scripts/check_installable.py --python 3.13
