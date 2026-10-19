@@ -302,3 +302,49 @@ test('voice off: the hidden button names the real reason, not "unlock" (V3 #6)',
     } finally { h.unmount(); }
   }, { fetch: routes(status) });
 });
+
+
+// DisPatch 3.0 (2026-10-19): a Member uses voice but does not administer it.
+const MEMBER = ['use_chat', 'use_voice', 'use_images', 'use_tools', 'use_notifications', 'manage_history'];
+
+test('a Member (shell.can): the button and a device-only Settings pane; no server rows, no tools, no /api/bots/all', dom, async () => {
+  const fetch = routes();
+  await withDom(async () => {
+    const fs = fakeShell({ thread: { id: 't1', bot_id: 'nova', title: 'x' }, bots: BOTS, perms: MEMBER });
+    const h = await mount(fs.shell, {});
+    await settle(10);
+    try {
+      assert.equal(fs.header.querySelector('#drive-btn').hidden, false, 'voice on → the Member gets the button');
+      const pane = fs.paneHost;
+      assert.ok(pane.querySelector('#drive-member-status'), 'says whether voice is on');
+      assert.equal(pane.querySelector('#drive-switch-input'), null, 'no server switch');
+      for (const id of ['drive-group-tts', 'drive-group-stt', 'drive-default-voice', 'drive-group-characters', 'drive-group-status']) {
+        assert.equal(pane.querySelector(`#${id}`), null, `no ${id}`);
+      }
+      for (const id of ['drive-patience', 'drive-barge-in', 'drive-group-replies', 'drive-group-device']) {
+        assert.ok(pane.querySelector(`#${id}`), `has ${id}`);
+      }
+      assert.equal(fs.log.tools.length, 0, 'no voice tools (they are administration)');
+      const paths = fetch.calls.map((c) => c.path);
+      assert.ok(paths.includes('/api/voice/status'));
+      assert.ok(!paths.includes('/api/bots/all'), paths.join(' '));
+      assert.ok(!fetch.calls.some((c) => c.method && c.method !== 'GET'), 'nothing written');
+    } finally { h.unmount(); }
+  }, { fetch });
+});
+
+test('an Admin (shell.can holds manage_plugins) keeps the full pane and the tools', dom, async () => {
+  const fetch = routes();
+  await withDom(async () => {
+    const fs = fakeShell({ thread: { id: 't1', bot_id: 'nova', title: 'x' }, bots: BOTS,
+      perms: [...MEMBER, 'manage_plugins', 'manage_characters', 'admin_system'] });
+    const h = await mount(fs.shell, {});
+    await settle(10);
+    try {
+      assert.ok(fs.paneHost.querySelector('#drive-switch-input'));
+      assert.ok(fs.paneHost.querySelector('#drive-group-tts'));
+      assert.equal(fs.log.tools.length, 1);
+      assert.ok(fetch.calls.map((c) => c.path).includes('/api/bots/all'));
+    } finally { h.unmount(); }
+  }, { fetch });
+});

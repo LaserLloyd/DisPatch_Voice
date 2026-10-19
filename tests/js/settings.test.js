@@ -480,6 +480,32 @@ test('quick sheet on a locked device (1.3.3): device settings only — no bot vo
   } finally { bindShell(prev); }
 }));
 
+test('quick sheet for a Member (DisPatch 3.0): no bot voice row (character editing), All settings stays', dom, () => withDom(async () => {
+  const { shell } = fakeShell({ perms: ['use_voice'] });
+  const prev = bindShell(shell);
+  try {
+    const bot = { id: 'nova', name: 'Nova', voice: '' };
+    const sheet = buildQuickSheet({ status: ON_STATUS(), bot, voices: [], android: false, lang: 'en',
+      canSetBotVoice: false, onAllSettings: () => {} });
+    assert.equal(sheet.querySelector('#drive-sheet-voice'), null);
+    assert.ok(sheet.querySelector('#drive-sheet-all'), 'a Member has Settings -> Voice');
+    assert.ok(sheet.querySelector('#drive-sheet-interrupt'));
+  } finally { bindShell(prev); }
+}));
+
+test('mountDriveSettings for a Member (admin: false): voice off says so, nothing to switch', dom, () => withDom(async () => {
+  const { shell } = fakeShell({ perms: ['use_voice'] });
+  const prev = bindShell(shell);
+  try {
+    const host = document.createElement('div');
+    mountDriveSettings(host, { status: { ...ON_STATUS(), enabled: false, switch: false }, admin: false });
+    assert.ok(host.querySelector('#drive-member-status'));
+    assert.match(host.textContent, /Owner or an Admin can turn it on/);
+    assert.equal(host.querySelector('#drive-switch-input'), null);
+    assert.equal(host.querySelector('#drive-patience'), null, 'no device rows while voice is off');
+  } finally { bindShell(prev); }
+}));
+
 test('quick sheet: "Phone voice" is offered only when this device has one', dom, () => withDom(async () => {
   const { shell } = fakeShell();
   const prev = bindShell(shell);

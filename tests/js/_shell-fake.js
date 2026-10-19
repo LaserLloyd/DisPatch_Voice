@@ -62,7 +62,7 @@ function railIcon(paths) {
 }
 
 /**
- * The shell. `opts`: { lang, locked, thread, bots, roster, extApi }.
+ * The shell. `opts`: { lang, locked, thread, bots, roster, extApi, perms }.
  * Returns { shell, log, emitLocked(), setLocked(v), absent, paneHost, header }.
  */
 export function fakeShell(opts = {}) {
@@ -109,6 +109,8 @@ export function fakeShell(opts = {}) {
     botById: (id) => bots.find((b) => b.id === id) || null,
     allBots: async () => opts.roster || bots,
     isLocked: () => locked,
+    // DisPatch 3.0's shell.can(permission); absent unless the test passes `perms` (a 2.x shell).
+    ...(opts.perms ? { can: (perm) => opts.perms.includes(perm) } : {}),
     language: () => lang,
     features: () => ({ extensions: 1 }),
     threadFace: (th, bot) => ({ src: '', letter: bot && bot.name ? bot.name[0] : '?' }),

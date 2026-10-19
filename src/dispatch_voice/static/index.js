@@ -108,6 +108,13 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
   if (typeof removeButton === 'function') disposers.push(removeButton);
   else disposers.push(() => button.remove());
 
+  // DisPatch 3.0 (2026-10-19): a Member uses voice but does not administer it. `shell.can`
+  // says what this session holds; a DisPatch without it is the 2.x world, where an unlocked
+  // device could do everything. Asked at the moment of use: a profile switch keeps the mount.
+  const may = (perm) => !lockedMount && (typeof shell.can !== 'function' || !!shell.can(perm));
+  const voiceAdmin = () => may('manage_plugins');       // the switch, server settings, voices, lab, rig
+  const characterEditor = () => may('manage_characters'); // a bot's voice (PUT /api/bots/order)
+
   const getBot = (id) => (lockedMount ? (shell.botById ? shell.botById(id) : null) : null) || roster.find((b) => b && b.id === id && typeof b.voice === 'string')
     || (shell.botById ? shell.botById(id) : null) || null;
 
@@ -125,6 +132,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     getAvatar: (thread, bot) => (shell.threadFace ? shell.threadFace(thread, bot) : { src: '', letter: '' }) || {},
     voiceStatus: () => status,
     openDriveSettings: lockedMount ? null : () => openSettings(),
+    canSetBotVoice: () => characterEditor(),
     setBotVoice: lockedMount ? null : async (botId, v) => {
       const bots = await DS.setBotVoice(botId, v);
       if (bots.length) roster = bots;
@@ -168,6 +176,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     if (typeof paneRoot.paneDispose === 'function') { try { paneRoot.paneDispose(); } catch { /* keep going */ } }
     DS.mountDriveSettings(paneRoot, {
       status, loading,
+      admin: voiceAdmin(),
       bots: () => roster,
       setRoster: (bots) => { if (Array.isArray(bots) && bots.length) roster = bots; },
       setEnabled,
@@ -201,6 +210,12 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
 
   // ---- status -------------------------------------------------------------
   async function loadRoster() {
+    if (!characterEditor()) {
+      // The full roster (with each bot's voice) is the character editor's; anyone else reads
+      // the roster this session may see, and never collects a 403 for it.
+      try { const b = shell.allBots ? await shell.allBots() : []; if (Array.isArray(b) && b.length) roster = b; } catch { /* keep */ }
+      return;
+    }
     try {
       const r = await DS.voiceJson('/api/bots/all');
       const bots = Array.isArray(r) ? r : (r && r.bots) || [];
@@ -319,7 +334,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
   }
 
   function openTool(id) {
-    if (stopped || (shell.isLocked && shell.isLocked())) return;
+    if (stopped || (shell.isLocked && shell.isLocked()) || !voiceAdmin()) return;
     const tile = VT.VOICE_TOOL_TILES.find((x) => x.id === id);
     if (!tile || !shell.tools || !shell.tools.openPane) return;
     closeTool();
@@ -342,7 +357,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     });
   }
 
-  if (!lockedMount && shell.tools && shell.tools.register) {
+  if (!lockedMount && voiceAdmin() && shell.tools && shell.tools.register) {
     const dispose = shell.tools.register(VT.VOICE_TOOL_TILES.map((tile) => ({
       id: tile.id, feature: tile.feature, iconPaths: tile.iconPaths, nameKey: tile.nameKey, ariaKey: tile.ariaKey,
       open: (id) => openTool(id || tile.id),

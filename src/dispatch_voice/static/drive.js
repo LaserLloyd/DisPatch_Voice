@@ -1779,6 +1779,8 @@ export function openDrive(thread, ctx) {
       // and Settings › Voice change the server, which stays unlocked-only.
       locked: !!(ctx.isLocked && ctx.isLocked()),
       setBotVoice: ctx.setBotVoice,
+      // A Member (DisPatch 3.0): the bot's voice is the character editor's to change.
+      canSetBotVoice: ctx.canSetBotVoice ? !!ctx.canSetBotVoice() : true,
       onClose: () => closeSheet(),
       // Settings opens OVER this screen with the microphone paused; nothing
       // hangs up (experience L8). A tap on the picture resumes afterwards.

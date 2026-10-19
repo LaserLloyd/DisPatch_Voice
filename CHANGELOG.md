@@ -4,6 +4,19 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Changed (DisPatch 3.0 permissions, 2026-10-19)
+- **Members use voice; they do not administer it.** DisPatch 3.0 lets a Member reach the voice
+  user's reads (`/api/voice/status`, `/preview`, `/profiles`) and the call; everything else stays
+  `manage_plugins`. The add-on used to assume "unlocked = may configure the server", so a Member's
+  Settings › Voice showed the server switch, the voices, role-play, the rig, the models and the
+  characters (every save a 403) and the mount asked `/api/bots/all` (another 403). With a shell that
+  has `can(permission)` (DisPatch ≥ 3.0 + the 2026-10-19 host change) the add-on now asks: without
+  `manage_plugins` Settings › Voice shows whether voice is on and this device's settings only
+  (input and listening, replies, connection, this device), no voice tools are registered; without
+  `manage_characters` the quick sheet has no "{bot}'s voice" row and the roster comes from
+  `shell.allBots()` instead of `/api/bots/all`. A shell without `can` behaves exactly as before.
+  New strings `drive.member_hint`, `drive.member_on`, `drive.member_off` (all eight languages).
+
 ### Fixed (ops check 2026-10-19)
 - **DisPatch 3.0 no longer copies `voice.yaml` into its settings store at start.** The host calls
   `migrate_voice_yaml(writer, dry_run=False)` once its store exists, but this release reads and

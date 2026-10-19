@@ -666,14 +666,14 @@ function micRow(s, set) {
  */
 export function buildQuickSheet({
   status, bot, onClose, onAllSettings, notify, setBotVoice: saveBotVoice = setBotVoice,
-  voices = [], android = isAndroid(), lang = language(), locked = false,
+  voices = [], android = isAndroid(), lang = language(), locked = false, canSetBotVoice = true,
 }) {
   const s = loadDriveSettings(storage());
   const set = (patch) => saveDriveSettings(storage(), patch);
   const st = status || {};
   const body = el('div', { class: 'dev-group-body drive-sheet-body' });
 
-  if (!locked && bot && bot.id && voiceOptions(st).length) {
+  if (!locked && canSetBotVoice && bot && bot.id && voiceOptions(st).length) {
     let cur = typeof bot.voice === 'string' ? bot.voice : '';
     const sel = selectInput(t('drive.voice_of', { bot: bot.name || '' }),
       voiceOptions(st, { withDefault: true, current: cur }), cur, async (v) => {
@@ -1049,6 +1049,8 @@ export function mountDriveSettings(host, ctx) {
   }
   const s = loadDriveSettings(storage());
   const set = (patch) => saveDriveSettings(storage(), patch);
+  // DisPatch 3.0: a Member uses voice but does not administer it (ctx.admin === false).
+  if (ctx.admin === false) { mountMemberSettings(host, st, state, s, set, ctx); return; }
   const notify = (m) => ctx.toast && ctx.toast(m, true);
   const save = async (patch) => {
     try {
@@ -1164,20 +1166,7 @@ export function mountDriveSettings(host, ctx) {
   // ---- The four sections, in the order of the brief: 1 speech to text, 2 text to speech,
   // 3 input and devices (with a mic test), 4 voices per character. The server-wide voice rows
   // built above live in section 2; the device's listening rows in section 3.
-  const pickSpeaker = canPickSpeaker() && !isMobile();
-  const listeningRows = [
-    row(t('drive.patience'), t('drive.patience_hint'),
-      [segmented(t('drive.patience'), patienceOptions(), s.patience, (v) => set({ patience: v }))], { block: true, id: 'drive-patience' }),
-    row(t('drive.barge_in'), t('drive.barge_in_hint'),
-      [switchInput(s.bargeIn, t('drive.barge_in'), (v) => set({ bargeIn: v }))], { id: 'drive-barge-in' }),
-    sensitivityRow(s, set),
-    micRow(s, set),
-  ];
-  if (pickSpeaker) {
-    const spk = selectInput(t('drive.speaker'), [{ value: '', label: t('drive.device_default') }], s.sinkId, (v) => set({ sinkId: v }));
-    deviceOptions('audiooutput').then((o) => fillSelect(spk, o, o.some((x) => x.value === s.sinkId) ? s.sinkId : ''));
-    listeningRows.push(row(t('drive.speaker'), t('drive.speaker_hint'), [spk], { id: 'drive-speaker' }));
-  }
+  const listeningRows = deviceListeningRows(s, set);
   const H = helpers();
   const sctx = { ...ctx, saved: ctx.saved, toast: ctx.toast, voiceRows, listeningRows, extensions: null };
   const sttG = sections.sttSection(H, st, save, sctx);
@@ -1190,6 +1179,57 @@ export function mountDriveSettings(host, ctx) {
   groups.push(sttG, ttsG, inG, charG, modelsG);
   paneDisposers.push(...[sttG, ttsG, inG, charG, modelsG].map((g) => g && g.dispose).filter(Boolean));
 
+  groups.push(...deviceGroups(s, set, ctx));
+
+  // ---- Status (collapsed): everything an owner reads rather than changes.
+  const statusRows = [row(t('vtools.lab_engine'), engineLine(st), [], { id: 'drive-engine' })];
+  const levels = Array.isArray(st.thinking_levels) && st.thinking_levels.length ? st.thinking_levels : THINKING_LEVELS;
+  const thinkSel = selectInput(t('drive.thinking'), levels.map((v) => ({ value: v, label: t(`drive.thinking_${v}`) })),
+    THINKING_LEVELS.includes(st.voice_turn_thinking) ? st.voice_turn_thinking : 'off', (v) => save({ voice_turn_thinking: v }));
+  const thinkRow = row(t('drive.thinking'), t('drive.thinking_hint'), [thinkSel], { id: 'drive-thinking' });
+  addHint(thinkRow, t('drive.group_server_hint'));
+  statusRows.push(thinkRow);
+  statusRows.push(row(t('vtools.show_timings'), t('vtools.show_timings_hint'),
+    [switchInput(s.showTimings, t('vtools.show_timings'), (v) => set({ showTimings: v }))], { id: 'drive-show-timings' }));
+  if (typeof st.expressive_tags === 'boolean') {
+    const tagRow = row(t('vtools.expressive_tags'), t('vtools.expressive_tags_hint'),
+      [switchInput(st.expressive_tags, t('vtools.expressive_tags'), (v) => save({ expressive_tags: v }))], { id: 'drive-expressive' });
+    addHint(tagRow, t('drive.group_server_hint'));
+    statusRows.push(tagRow);
+  }
+  const lines = sessionLines(st);
+  if (lines.length) {
+    const r = row(t('drive.status_sessions'), lines[0], [], { id: 'drive-sessions' });
+    for (const l of lines.slice(1)) addHint(r, l);
+    statusRows.push(r);
+  }
+  groups.push(foldGroup('drive.group_status', statusRows, { id: 'drive-group-status' }));
+
+  host.replaceChildren(lead, ...groups);
+  host.paneDispose = () => paneDisposers.forEach((fn) => fn());
+}
+
+/** This device's listening rows (localStorage only): patience, barge-in, sensitivity, mic, speaker. */
+function deviceListeningRows(s, set) {
+  const rows = [
+    row(t('drive.patience'), t('drive.patience_hint'),
+      [segmented(t('drive.patience'), patienceOptions(), s.patience, (v) => set({ patience: v }))], { block: true, id: 'drive-patience' }),
+    row(t('drive.barge_in'), t('drive.barge_in_hint'),
+      [switchInput(s.bargeIn, t('drive.barge_in'), (v) => set({ bargeIn: v }))], { id: 'drive-barge-in' }),
+    sensitivityRow(s, set),
+    micRow(s, set),
+  ];
+  if (canPickSpeaker() && !isMobile()) {
+    const spk = selectInput(t('drive.speaker'), [{ value: '', label: t('drive.device_default') }], s.sinkId, (v) => set({ sinkId: v }));
+    deviceOptions('audiooutput').then((o) => fillSelect(spk, o, o.some((x) => x.value === s.sinkId) ? s.sinkId : ''));
+    rows.push(row(t('drive.speaker'), t('drive.speaker_hint'), [spk], { id: 'drive-speaker' }));
+  }
+  return rows;
+}
+
+/** The groups that are this device's alone (replies, connection, this device): every voice user's. */
+function deviceGroups(s, set, ctx) {
+  const groups = [];
   // ---- Replies (device)
   groups.push(group('drive.group_replies', [
     row(t('drive.reply_length'), t('drive.reply_length_hint'),
@@ -1216,31 +1256,29 @@ export function mountDriveSettings(host, ctx) {
       [segmented(t('drive.hangup_quiet'), hangupOptions(), s.hangupQuietMin, (v) => set({ hangupQuietMin: Number(v) }))],
       { block: true, id: 'drive-hangup-quiet' }),
   ], { id: 'drive-group-device' }));
+  return groups;
+}
 
-  // ---- Status (collapsed): everything an owner reads rather than changes.
-  const statusRows = [row(t('vtools.lab_engine'), engineLine(st), [], { id: 'drive-engine' })];
-  const levels = Array.isArray(st.thinking_levels) && st.thinking_levels.length ? st.thinking_levels : THINKING_LEVELS;
-  const thinkSel = selectInput(t('drive.thinking'), levels.map((v) => ({ value: v, label: t(`drive.thinking_${v}`) })),
-    THINKING_LEVELS.includes(st.voice_turn_thinking) ? st.voice_turn_thinking : 'off', (v) => save({ voice_turn_thinking: v }));
-  const thinkRow = row(t('drive.thinking'), t('drive.thinking_hint'), [thinkSel], { id: 'drive-thinking' });
-  addHint(thinkRow, t('drive.group_server_hint'));
-  statusRows.push(thinkRow);
-  statusRows.push(row(t('vtools.show_timings'), t('vtools.show_timings_hint'),
-    [switchInput(s.showTimings, t('vtools.show_timings'), (v) => set({ showTimings: v }))], { id: 'drive-show-timings' }));
-  if (typeof st.expressive_tags === 'boolean') {
-    const tagRow = row(t('vtools.expressive_tags'), t('vtools.expressive_tags_hint'),
-      [switchInput(st.expressive_tags, t('vtools.expressive_tags'), (v) => save({ expressive_tags: v }))], { id: 'drive-expressive' });
-    addHint(tagRow, t('drive.group_server_hint'));
-    statusRows.push(tagRow);
+/**
+ * Settings → Voice for a voice user who does not administer it (DisPatch 3.0: a Member;
+ * `ctx.admin === false`). Whether voice is on, then this device's settings - nothing that
+ * changes the server (the switch, voices, role-play, the rig, models, characters): those are
+ * `manage_plugins`/`manage_characters` and the server would refuse them anyway.
+ */
+function mountMemberSettings(host, st, state, s, set, ctx) {
+  const lead = el('p', { class: 'muted modal-hint drive-settings-hint', text: t('drive.member_hint') });
+  const on = state === 'on';
+  const r = row(t('drive.switch'), on ? t('drive.member_on') : t('drive.member_off'), [], { id: 'drive-member-status' });
+  addHint(r, t('drive.english_only'), 'drive-english-only');
+  const groups = [group('drive.group_switch', [r], { id: 'drive-group-switch', hint: t('drive.group_server_hint') })];
+  const paneDisposers = [];
+  if (on) {
+    const H = helpers();
+    const inG = sections.inputSection(H, st, s, set, { ...ctx, listeningRows: deviceListeningRows(s, set) });
+    groups.push(inG);
+    if (inG && inG.dispose) paneDisposers.push(inG.dispose);
+    groups.push(...deviceGroups(s, set, ctx));
   }
-  const lines = sessionLines(st);
-  if (lines.length) {
-    const r = row(t('drive.status_sessions'), lines[0], [], { id: 'drive-sessions' });
-    for (const l of lines.slice(1)) addHint(r, l);
-    statusRows.push(r);
-  }
-  groups.push(foldGroup('drive.group_status', statusRows, { id: 'drive-group-status' }));
-
   host.replaceChildren(lead, ...groups);
   host.paneDispose = () => paneDisposers.forEach((fn) => fn());
 }
