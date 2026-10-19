@@ -16,7 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 CORE = "forge-voice-core"
-CORE_URL = "git+https://github.com/LaserLloyd/DisPatch_Voice@main#subdirectory=packages/forge-voice-core"
+CORE_URL = (
+    "https://github.com/LaserLloyd/DisPatch_Voice/archive/{ref}.tar.gz#subdirectory=packages/forge-voice-core"
+)
 
 
 def _core_requirement() -> str:
@@ -27,7 +29,11 @@ def _core_requirement() -> str:
 
 def test_core_is_declared_as_a_url_not_a_path():
     req = _core_requirement()
-    assert req.replace(" ", "") == f"{CORE}[speechforge]@{CORE_URL}"
+    version = PYPROJECT["project"]["version"]
+    # Between releases the reference follows main; the commit that is tagged vX.Y.Z must point at that tag.
+    allowed = {f"{CORE}[speechforge]@" + CORE_URL.format(ref=r) for r in ("refs/heads/main", f"refs/tags/v{version}")}
+    assert req.replace(" ", "") in allowed, (req, version)
+    assert "git+" not in req, "an archive URL needs no git on the machine"
 
 
 def test_no_dependency_is_a_local_path():

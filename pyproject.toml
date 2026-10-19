@@ -8,10 +8,12 @@ dependencies = [
     # The host-independent engines (STT, turn detection, TTS, providers, model downloads, the GPU-rig
     # client) are their own package, packages/forge-voice-core/ in this repository. It is declared as a
     # direct reference to that subdirectory so that a plain `pip install` / `uv pip install` of this project
-    # (a git URL, an archive, an sdist or a wheel) resolves it with no path dependency and no extra step.
+    # (a git URL, an archive, an sdist or a wheel) resolves it with no path dependency and no extra step. The
+    # archive form needs no git on the machine. RELEASE: change `refs/heads/main` to `refs/tags/vX.Y.Z` in the
+    # commit that gets tagged, so that release always installs its own engines (tests/test_installable.py checks it).
     # `[tool.uv.sources]` below swaps in the in-tree copy for a checkout (`uv sync`, `uv pip install <dir>`).
     # The `speechforge` extra brings `websockets` for the rig client. See README "Install".
-    "forge-voice-core[speechforge] @ git+https://github.com/LaserLloyd/DisPatch_Voice@main#subdirectory=packages/forge-voice-core",
+    "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/heads/main.tar.gz#subdirectory=packages/forge-voice-core",
     "numpy>=1.26",
     "soundfile>=0.12",
     "pyyaml>=6.0",

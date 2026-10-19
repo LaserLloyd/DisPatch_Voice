@@ -146,5 +146,6 @@ jobs:
       - name: Build the wheel and the sdist, pip install each into a clean venv, import
         # No path dependency: pip never reads [tool.uv.sources], so this is what a git URL, an archive or
         # a built artifact sees. Fails on "No matching distribution found for forge-voice-core".
-        # The core comes from the git URL on main that pyproject.toml names.
-        run: python3 scripts/check_installable.py
+        # The plain-pip passes take the core from the archive URL of main that pyproject.toml names;
+        # a last pass overrides it with this checkout's packages/forge-voice-core.
+        run: python3 scripts/check_installable.py --python 3.13

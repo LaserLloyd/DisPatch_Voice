@@ -19,7 +19,7 @@ All notable changes to DisPatch Voice.
   `forge-voice-core` only through `[tool.uv.sources]`, which pip never reads and uv reads only for a directory or a git
   checkout: an archive URL failed with "No solution found" and a directory install left an editable `.pth` pointing at the
   checkout (the Docker image then failed with `No module named 'forge_voice_core'`). `dispatch-voice` now declares
-  `forge-voice-core[speechforge]` as a direct reference to `packages/forge-voice-core` on `main`; the uv source stays for
+  `forge-voice-core[speechforge]` as an archive-URL direct reference to `packages/forge-voice-core` on `main` (no git needed; the commit that is tagged names its own tag); the uv source stays for
   checkouts. CI builds the wheel and the sdist and installs each into a clean venv with plain pip
   (`scripts/check_installable.py`). The sdist now contains only the sources, not every untracked folder.
 

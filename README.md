@@ -174,7 +174,7 @@ uv pip install --python .venv/bin/python ../../DisPatch_Voice
 `doctor --backend .` prints the handshake, the missing models and the system programs (run from `backend/`, `--backend .` points it at DisPatch's own environment). If DisPatch runs as a systemd
 service, restart it instead of starting it by hand (`systemctl --user restart dispatch`). A later `uv sync`
 removes a pip-installed add-on, so repeat the `uv pip install` line after one. To follow releases instead of a
-checkout, install `"dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1.6.0"` once that tag
+checkout, install `"dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz"` once that tag
 is published (the `v1` tag still names 1.5.0).
 
 | Pros | Cons |
@@ -246,15 +246,17 @@ modules, marked deprecated.
 How the two get installed (every route installs both; no step to remember):
 
 * **A plain `pip install` or `uv pip install`** of the git URL, an archive, an sdist or a wheel: `dispatch-voice` declares
-  its engines as a direct reference (`forge-voice-core[speechforge] @ git+https://github.com/LaserLloyd/DisPatch_Voice@main#subdirectory=packages/forge-voice-core`),
-  which pip and uv both resolve with no path dependency. `scripts/check_installable.py` (CI job "Installable with plain
+  its engines as a direct reference (`forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/heads/main.tar.gz#subdirectory=packages/forge-voice-core`),
+  which pip and uv both resolve with no path dependency and no git on the machine. `scripts/check_installable.py` (CI job "Installable with plain
   pip") builds the wheel and the sdist, installs each into a clean venv with plain pip and imports both packages.
 * **From a checkout** (every `uv pip install ../../DisPatch_Voice` line above, and `uv sync` here): the
   `[tool.uv.sources]` table in `pyproject.toml` swaps that URL for `packages/forge-voice-core` in the same checkout
-  (editable, so edits to the core show up at once). The table is for development; delete the checkout and the editable
-  install goes with it.
-* **A pinned release**: the direct reference above follows `main`. To build a tag or branch against its own copy of the
-  engines, override the one requirement. uv's `--override` replaces it wherever it is declared:
+  (editable, so edits to the core show up at once). The table is for development: the install is linked to that
+  checkout, so after moving or deleting it, reinstall (add `--no-sources` to get a copy instead of a link).
+* **A pinned release**: between releases the direct reference above follows `main`; the commit that is tagged names its
+  own tag instead. To build any other tag or branch against its own copy of the engines, override the one requirement
+  (uv only; pip has no `--override`). uv's `--override` replaces it wherever it is declared. In PowerShell write the file
+  with `Set-Content -Encoding utf8` (PowerShell 5.1 `>` writes UTF-16, which uv cannot read):
 
   ```sh
   echo "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz#subdirectory=packages/forge-voice-core" > override.txt
@@ -284,7 +286,7 @@ How the two get installed (every route installs both; no step to remember):
 | Method | Upgrade | Uninstall (models and voices are kept) |
 | --- | --- | --- |
 | Container image | `git pull` in the DisPatch clone, then `docker compose up -d --build` | Remove `VOICE=1` from `.env` and rebuild. The data volume keeps `models/`, `voices/` and `voice.yaml` |
-| Native, uv | `git pull` in the Voice clone, then the `uv pip install` line again; restart DisPatch | `uv pip uninstall --python .venv/bin/python dispatch-voice`. Data stays in DisPatch's data folder |
+| Native, uv | `git pull` in the Voice clone, then the `uv pip install` line again; restart DisPatch | `uv pip uninstall --python .venv/bin/python dispatch-voice forge-voice-core`. Data stays in DisPatch's data folder |
 | Overlay | `git -C <release-dir> checkout --detach <tag>`, run the warm-up `import` line online, restart | Drop `--with-editable` from the start line |
 
 ### Details

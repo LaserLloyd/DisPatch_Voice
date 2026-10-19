@@ -5,11 +5,11 @@
     python scripts/check_installable.py --keep       # keep the scratch folder and print it
 
 For each of the wheel and the sdist built from this checkout it creates a clean virtualenv, runs a plain
-`pip install <artifact>` from a folder that is NOT the checkout (so nothing on sys.path or in a .pth
+`pip install <artifact>` (needs no git) from a folder that is NOT the checkout (so nothing on sys.path or in a .pth
 leaks in), and imports `dispatch_voice` and `forge_voice_core` with `python -I`. It also asserts the
 metadata names no local path and that the engines landed in site-packages (not editable, not the
 checkout). Needs network access to PyPI and to github.com: the add-on's `forge-voice-core` requirement
-is a git URL on `main` (see pyproject.toml). Needs `uv` (builds the artifacts; creates the venvs).
+is an archive URL of `main` (see pyproject.toml). Needs `uv` (builds the artifacts; creates the venvs).
 """
 from __future__ import annotations
 
@@ -67,6 +67,18 @@ def main() -> int:
             run([str(py), "-m", "pip", "install", "--disable-pip-version-check", str(artifact)], cwd=tmp)
             run([str(py), "-I", "-c", PROBE], cwd=tmp)
             print(f"OK {label}")
+        # The same wheel against THIS checkout's engines (what a change to packages/forge-voice-core needs
+        # proven): uv's override replaces the published reference with the in-tree package, non-editable.
+        venv = tmp / "venv-local-core"
+        run([uv, "venv", "--seed", "--python", args.python, str(venv)])
+        py = venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+        override = tmp / "override.txt"
+        override.write_text(
+            f"forge-voice-core[speechforge] @ {(ROOT / 'packages' / 'forge-voice-core').as_uri()}\n", encoding="utf-8"
+        )
+        run([uv, "pip", "install", "--python", str(py), "--no-sources", "--override", str(override), str(wheel)], cwd=tmp)
+        run([str(py), "-I", "-c", PROBE], cwd=tmp)
+        print("OK wheel with this checkout's forge-voice-core")
         return 0
     finally:
         if args.keep:
