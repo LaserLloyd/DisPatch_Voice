@@ -135,7 +135,7 @@ def client(dispatch, monkeypatch):
 
     monkeypatch.setattr(routes, "warm_models", fake_warm)
     monkeypatch.setattr(vad_turn, "build_detector", lambda s: OneTurnDetector())
-    monkeypatch.setattr(routes, "voice_for_bot", lambda s, e, b: None)
+    monkeypatch.setattr(routes, "voice_for_bot", lambda s, e, b, **kw: None)
     turns = []
 
     async def fake_turn(thread_id, bot_id, text, opts=None):
@@ -189,23 +189,25 @@ def test_extensions_listing_says_voice_is_ok_with_api_1(client, dispatch):
     assert c.get("/api/auth/status").json()["features"]["extensions"] >= 1
 
 
-def test_voice_api_is_unlocked_only(client):
+def test_voice_api_needs_a_signed_in_profile(client):
+    # 4.0: no Safe Mode and no "locked device" tier. On an install without a default profile a
+    # signed-out caller is a nobody: 401 `signin_required`, never a 403.
     c, _, auth = client
     lock(c, auth)
-    assert c.get("/api/voice/status").status_code == 403
+    r = c.get("/api/voice/status")
+    assert r.status_code == 401, r.text
     unlock(c, auth)
     st = c.get("/api/voice/status")
     assert st.status_code == 200 and st.json()["enabled"] is True
     assert st.json()["extension"]["name"] == "DisPatch Voice"
 
 
-def test_static_assets_have_an_etag_and_a_locked_device_may_read_them(client):
-    # Since DisPatch 2.3.4 / add-on 1.3.3 a locked (Restricted) device may use voice on a safe bot,
-    # so it reads the add-on's frontend too (DisPatch 3.0 route_policy: /ext/... needs use_voice).
+def test_static_assets_have_an_etag_and_need_a_signed_in_profile(client):
+    # 4.0 shows a signed-out caller nothing but the sign-in screen, the add-on's frontend included.
     c, _, auth = client
     lock(c, auth)
-    assert c.get("/ext/voice/index.js").status_code == 200
-    assert c.get("/api/voice/status").status_code == 403         # the API stays operator-only
+    assert c.get("/ext/voice/index.js").status_code == 401
+    assert c.get("/api/voice/status").status_code == 401
     unlock(c, auth)
     r = c.get("/ext/voice/index.js")
     assert r.status_code == 200 and r.headers.get("etag")
@@ -238,20 +240,46 @@ def test_cross_origin_handshake_is_refused_even_unlocked(client):
     assert refused(c, f"/ws/voice/{tid}", headers={"origin": "https://evil.example"}).code == 1008
 
 
-def test_a_locked_device_gets_voice_on_a_safe_bot_only(client):
-    # 1.3.1: safe bots have voice; 1.3.3 + DisPatch 2.3.4: a locked device may open it on a safe
-    # bot's thread (the turn runs locked) and nowhere else.
+@pytest.fixture
+def default_profile(dispatch):
+    """A User profile named "DisPatch" as the lock target (BUILD-PLAN-v2 §1.4): an unsigned device
+    lands on it. The install is put back to the profile list afterwards."""
+    accounts = importlib.import_module("app.accounts")
+    auth = importlib.import_module("app.auth")
+    prof = next((p for p in accounts.list_profiles() if p.name == "Shared"), None)
+    if prof is None:
+        prof = accounts.create_profile("Shared", "user")
+    auth.set_lock_target("default_profile", prof.id)
+    try:
+        yield prof
+    finally:
+        auth.set_lock_target("profile_list", None)
+
+
+def test_the_default_profile_gets_voice_but_not_voice_cloning(client, default_profile):
+    # 4.0 replaces the 3.x "locked device on a safe bot": an unsigned device lands on the default
+    # profile, which may use voice (a household bot, the built-in voices) but never voice cloning
+    # (the lock-target fence: voice_lab is always False for it).
     c, _, auth = client
     unlock(c, auth)
-    safe = thread_for(c, "alpha")
-    other = thread_for(c)
+    tid = thread_for(c)                        # an Owner thread: not the default profile's
+    lock(c, auth)                              # now an unsigned device = the default profile
     origin = {"origin": "http://testserver"}
-    with c.websocket_connect(f"/ws/voice/{safe}", headers=origin) as ws:
+    st = c.get("/api/voice/status")
+    assert st.status_code == 200, st.text
+    r = c.post("/api/voice/profiles", data={"name": "mine"})
+    assert r.status_code == 403, r.text         # cloning: unavailable to the default profile
+    assert c.get("/api/voice/lab").status_code in (401, 403)
+    assert c.put("/api/voice/settings", json={}).status_code in (401, 403)
+    c.headers.update({"Origin": "http://testserver"})      # a browser write carries its Origin
+    try:
+        own = thread_for(c)                     # its own thread, on a household bot
+    finally:
+        c.headers.pop("Origin", None)
+    with c.websocket_connect(f"/ws/voice/{own}", headers=origin) as ws:
         assert json.loads(ws.receive_text())["type"] == "ready"
-    lock(c, auth)
-    with c.websocket_connect(f"/ws/voice/{safe}", headers=origin) as ws:
-        assert json.loads(ws.receive_text())["type"] == "ready"
-    assert refused(c, f"/ws/voice/{other}", headers=origin).code == 1008
+    # ... and it cannot open voice on somebody else's thread
+    assert refused(c, f"/ws/voice/{tid}", headers=origin).code == 1008
 
 
 def test_feature_off_is_accept_then_1013_with_the_reason(client, monkeypatch):
