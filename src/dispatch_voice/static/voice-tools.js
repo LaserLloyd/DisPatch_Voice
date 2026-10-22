@@ -41,6 +41,7 @@ const {
   saveDriveSettings, THINKING_LEVELS, MIC_ICON, DV_STEPS, sessionLines, rigLabLine,
 } = await import(`./drive-settings.js${Q}`);
 const { createVoicesPane } = await import(`./voices.js${Q}`);
+export { createVoicesPane };
 const { getLastMetrics } = await import(`./drive.js${Q}`);
 const { assetUrl } = await import(`./bridge.js${Q}`);
 
@@ -252,7 +253,7 @@ function renderCloning(me, st, ctx) {
   const host = el('div', { class: 'vtool-voices' });
   me.root.replaceChildren(...[off, host].filter(Boolean));
   const pane = createVoicesPane(host, {
-    embedded: true,
+    embedded: true, can: ctx.can,
     toast: ctx.toast, confirm: ctx.confirm, prompt: ctx.prompt,
     onChanged: () => { if (ctx.onChanged) ctx.onChanged(); },
   });

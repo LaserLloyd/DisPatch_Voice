@@ -169,6 +169,20 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
     return !!(cloningTool && p && p.ready);
   }
 
+  // DisPatch 4.0 (add-on 1.6.0): a profile that may clone voices (`voice_lab`) gets "My voices" in
+  // Settings → Voice, whether or not it administers voice. An Admin has the Voice cloning tool for
+  // the same list. A host without `shell.can` (before 3.0) never shows it.
+  function myVoicesReady() {
+    const p = status && status.plugins && status.plugins.cloning;
+    return !lockedMount && typeof shell.can === 'function' && may('voice_lab') && !voiceAdmin()
+      && !!(p && p.ready) && typeof VT.createVoicesPane === 'function';
+  }
+  function mountMyVoices(host) {
+    const pane = VT.createVoicesPane(host, { ...toolCtx(), embedded: true });
+    pane.open();
+    return () => pane.close();
+  }
+
   function renderPane() {
     if (!paneRoot || stopped) return;
     // The page rebuilds from scratch; keep the keyboard where it was.
@@ -181,6 +195,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
       setRoster: (bots) => { if (Array.isArray(bots) && bots.length) roster = bots; },
       setEnabled,
       cloning: cloningReady(),
+      myVoices: myVoicesReady() ? mountMyVoices : null,
       openCloning: () => {
         if (shell.settings && typeof shell.settings.close === 'function') shell.settings.close();
         openTool('voice-cloning');
@@ -319,6 +334,7 @@ export function createVoiceApp(shell, { shellMod, drive: D, settings: DS, tools:
       toast,
       confirm: (msg, o) => (shell.confirm ? shell.confirm(msg, o) : Promise.resolve(false)),
       prompt: (msg, def) => (shell.prompt ? shell.prompt(msg, def) : Promise.resolve(null)),
+      can: (perm) => may(perm),
       onChanged: () => refreshStatus({ force: true }),
       openVoiceSettings: () => { closeTool(); openSettings(); },
     };

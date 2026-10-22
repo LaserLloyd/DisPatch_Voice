@@ -432,7 +432,19 @@
     "none_hint_stock": "Antworten nutzen die mitgelieferte Stimme, bis du eine hinzufügst.",
     "builtin_plugin": "Keine installiert. Eingebaute Stimmen kommen von einem optionalen Plugin wie {name} ({licence}), das separat installiert wird.",
     "delete": "Löschen",
-    "discard": "Verwerfen"
+    "discard": "Verwerfen",
+    "my_title": "Meine Stimmen",
+    "household_badge": "Haushalt",
+    "mine_badge": "Meine",
+    "household_opt": "Haushaltsstimme (alle dürfen sie nutzen)",
+    "make_household": "Zur Haushaltsstimme machen",
+    "make_private": "Privat machen",
+    "make_household_confirm": "„{name}“ zur Haushaltsstimme machen? Alle mit Sprachchat können sie auswählen.",
+    "make_private_confirm": "„{name}“ privat machen? Nur du kannst sie nutzen, und Bots mit dieser Stimme wechseln zur Standardstimme.",
+    "made_household": "„{name}“ ist jetzt eine Haushaltsstimme.",
+    "made_private": "„{name}“ ist jetzt privat.",
+    "download": "Aufnahme herunterladen",
+    "download_failed": "Die Aufnahme konnte nicht heruntergeladen werden."
   },
   "vtools": {
     "cloning_name": "Stimmen klonen",

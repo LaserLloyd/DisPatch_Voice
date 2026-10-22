@@ -4,6 +4,46 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Added (DisPatch 4.0: per-profile cloned voices)
+- **Every cloned voice has an owner.** `profile.json` gains `owner` (a profile id, or `household`;
+  a missing key means household, so existing voices and the stock voice stay everyone's with
+  nothing to migrate). A profile that may clone voices (`voice_lab`) creates a personal clone
+  nobody else can list, fetch, hear, rename, delete, download or speak with: another profile's
+  clone is a 404, not even to an Admin. Admins can make a household voice (`household=true` on
+  create), publish a clone of their own (`PATCH {"household": true}`) or make a household one
+  private again, and are the only ones who change household voices or set the default voice.
+  Recordings (`reference.wav`, `audition.wav`) are downloadable by the owner, or by Admins for
+  household voices; the Voices pane has a "Download recording" button for exactly those.
+- **A bot may speak only with a voice its owner may use** (household voices for any bot; a personal
+  clone only for a personal bot of the same profile). The session re-checks at the start and falls
+  back to the default voice, the narrator follows the same rule, and a clone is never synced to the
+  GPU rig for another profile's session.
+- **Removing a profile removes its clones.** The add-on registers `count` / `purge` with the host:
+  deleting a profile, or moving it from User to Basic, deletes its clone folders, their copies on the
+  rig and their rendered acknowledgement lines; Reset keeps them. The confirmation dialogs get a
+  count, never names.
+- **My voices.** Settings › Voice has a "My voices" list for a profile that may clone but does not
+  administer voice (own clones plus the household's, each labelled); the Voice cloning tool keeps
+  the Admin's server-wide controls and gains the "Household voice" checkbox and Make household /
+  Make private. A profile without `voice_lab` sees no clone UI.
+- `/api/voice/status` lists only the bots the caller may use (`ctx.bots_visible`) and only the
+  voices they may pick. `ProfileStore.create(owner=)`, `owner_of`, `set_owner` in forge-voice-core.
+- New host hooks, each feature-tested (`EXT_API` stays 1): `ctx.caller`, `ctx.bots_visible`,
+  `ctx.register_voice_access`, `ctx.register_profile_data`, `sock.profile_id`. On a host without
+  them the add-on behaves exactly as 1.5.x.
+- New strings in `voices.*` (all eight languages): `my_title`, `household_badge`, `mine_badge`,
+  `household_opt`, `make_household`, `make_private`, `make_household_confirm`,
+  `make_private_confirm`, `made_household`, `made_private`, `download`, `download_failed`.
+
+### Changed (DisPatch 4.0)
+- Clone routes need `voice_lab` on DisPatch 4.0 and later (create, analyse, rename, delete, try a
+  line); the lists and previews need `use_voice`; the Lab, settings and acknowledgement rebuild stay
+  `manage_plugins`. The lock-target default profile never has `voice_lab`.
+- `locked_voice` is inert on DisPatch 4.0 and later (the Restricted tier is gone): the setting is
+  still accepted and shown nowhere, and no voice is chosen by it.
+- The default voice and the narrator voice must be household voices (422 otherwise); the household
+  pickers in Settings never offer a personal clone.
+
 ### Changed (DisPatch 3.0 permissions, 2026-10-19)
 - **Members use voice; they do not administer it.** DisPatch 3.0 lets a Member reach the voice
   user's reads (`/api/voice/status`, `/preview`, `/profiles`) and the call; everything else stays

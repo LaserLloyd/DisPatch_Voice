@@ -77,6 +77,27 @@ def host_env(fake_ctx, monkeypatch):
 
 
 @pytest.fixture
+def tenant_env(tmp_path, monkeypatch):
+    """Like ``host_env`` but the host is a DisPatch 4.0 one (``FakeTenantContext``: caller,
+    bots_visible, register_voice_access, register_profile_data, sock.profile_id)."""
+    from fakes import FakeTenantContext
+
+    from dispatch_voice.host import config as vconfig
+    from dispatch_voice.host import context
+    for k in list(os.environ):
+        if k.startswith("DISPATCH_VOICE") or k in ("DISPATCH_SPEECH_MODELS", "DISPATCH_DATA_DIR", "LOCAL_CHAT_DATA_DIR"):
+            monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(vconfig, "_PREFS_CACHE", None)
+    ctx = FakeTenantContext(tmp_path / "data")
+    ctx.add_thread("t-voice-1", "sage", "Voice test")
+    _clear_caches()
+    context.set_context(ctx)
+    yield ctx
+    _clear_caches()
+    context.clear_context()
+
+
+@pytest.fixture
 def no_models(monkeypatch):
     from dispatch_voice.host.config import VoiceSettings
     monkeypatch.setattr(VoiceSettings, "missing", lambda self: [])

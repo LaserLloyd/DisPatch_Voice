@@ -21,6 +21,12 @@
 // answers "what will I hear". The stock voice ships with the add-on: it
 // carries a "Stock" badge and can't be renamed or deleted here.
 //
+// Per-profile clones (DisPatch 4.0, add-on 1.6.0): the server tells each row what the caller may
+// do with it (`household`, `mine`, `can_manage`, `can_download`); this pane only shows what the
+// server would accept. A profile without `voice_lab` gets no clone UI at all (`ctx.can`), an Admin
+// gets the "Household voice" checkbox and the Make household / Make private action. A host
+// without `ctx.can` (DisPatch before 4.0) is the old single-tenant manager, unchanged.
+//
 // Rows are the Settings .dev-group/.dev-row markup; nothing here has a look
 // of its own beyond the quality chips and the recording script box.
 
@@ -62,6 +68,24 @@ function builtinSuggestion(st) {
   return { name: sug.name || '', licence: sug.licence || '' };
 }
 
+/**
+ * What the caller may do with one voice row. The server's flags win; a row without them
+ * (an older server) is the old single-tenant manager: everything allowed.
+ */
+export function voiceRights(v, { admin = true } = {}) {
+  const tenant = !!v && typeof v.household === 'boolean';
+  return {
+    tenant,
+    household: tenant ? v.household : false,
+    mine: tenant ? v.mine === true : false,
+    manage: v && v.can_manage !== false,
+    download: v && v.can_download !== false,
+    // Admins only; the default voice is a household voice.
+    setDefault: !!admin && (!tenant || v.household === true),
+    publish: tenant && !!admin && (v.household === true || v.mine === true),
+  };
+}
+
 /** Is `v` dispatch-voice's stock voice? (`stockId` from /api/voice/status.) */
 export function isStock(v, stockId) {
   return !!(v && stockId && v.id === stockId);
@@ -77,6 +101,10 @@ export function isStock(v, stockId) {
  *   cloning tool's body. No back row or title (the tool's header has them).
  */
 export function createVoicesPane(pane, ctx) {
+  // `ctx.can(perm)`: the shell's permission check (DisPatch 3.0+). Absent: the old world, all allowed.
+  const can = typeof ctx.can === 'function' ? (perm) => !!ctx.can(perm) : () => true;
+  const isAdmin = can('manage_plugins');
+  const mayClone = can('voice_lab');
   let host = null;
   let pollTimer = null;
   let recorder = null;
@@ -138,12 +166,13 @@ export function createVoicesPane(pane, ctx) {
     host.replaceChildren(...[
       ctx.embedded ? null : el('div', { class: 'voices-top' }, [back, title]),
       el('p', { class: 'dev-group-hint voices-intro', text: t('voices.intro') }),
-      el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', text: t('voices.yours') }), listBody]),
-      el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', text: t('voices.builtin') }), builtinBody]),
-      el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', text: t('voices.add') }), addBody]),
+      el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', id: 'voices-list-title', text: t('voices.yours') }), listBody]),
+      // The built-in voices and the default are server-wide: the Admin's.
+      isAdmin ? el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', text: t('voices.builtin') }), builtinBody]) : null,
+      mayClone ? el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', text: t('voices.add') }), addBody]) : null,
       engine,
     ].filter(Boolean));
-    renderAdd(addBody);
+    if (mayClone) renderAdd(addBody);
     if (!ctx.embedded) back.focus();
     await refresh();
   }
@@ -165,6 +194,10 @@ export function createVoicesPane(pane, ctx) {
     const defaultVoice = (st && st.default_voice) || (data.default ? data.default : '');
     const stockId = (st && st.stock_voice) || null;
     const voices = data.voices || [];
+    if (voices.some((v) => typeof v.household === 'boolean')) {
+      const title = host.querySelector('#voices-list-title');
+      if (title) title.textContent = t('voices.my_title');
+    }
     // The stock voice last: it is the fallback, not one of "yours".
     const ordered = voices.filter((v) => !isStock(v, stockId)).concat(voices.filter((v) => isStock(v, stockId)));
     if (!ordered.some((v) => !isStock(v, stockId))) {
@@ -178,7 +211,7 @@ export function createVoicesPane(pane, ctx) {
     } else {
       listBody.replaceChildren(...ordered.map((v) => voiceRow(v, defaultVoice, stockId)));
     }
-    renderBuiltin(builtinBody, st, defaultVoice);
+    if (isAdmin) renderBuiltin(builtinBody, st, defaultVoice);
     const eng = host.querySelector('.voices-engine');
     if (eng) {
       eng.textContent = data.engine
@@ -191,19 +224,27 @@ export function createVoicesPane(pane, ctx) {
   function voiceRow(v, defaultVoice, stockId) {
     const isDefault = defaultVoice ? defaultVoice === v.id : !!v.default;
     const stock = isStock(v, stockId);
+    const rights = voiceRights(v, { admin: isAdmin });
     const base = `${API}/${encodeURIComponent(v.id)}`;
     const text = el('span', { class: 'dev-row-text' }, [
       el('strong', { dir: 'auto' }, [
         document.createTextNode(stock ? t('drive.voice_stock') : v.name),
         stock ? el('span', { class: 'pin-toggle voices-stock', text: t('voices.stock_badge') }) : null,
+        !stock && rights.tenant ? el('span', {
+          class: 'pin-toggle voices-scope' + (rights.household ? ' voices-household' : ' voices-mine'),
+          text: rights.household ? t('voices.household_badge') : t('voices.mine_badge'),
+        }) : null,
         isDefault ? el('span', { class: 'pin-toggle pinned voices-default', text: t('voices.default_badge') }) : null,
       ]),
       el('span', { class: 'dev-row-hint', text: stock ? t('voices.stock_hint') : voiceMetaLine(v, fmtDate) }),
     ]);
     const test = el('button', { type: 'button', class: 'btn-secondary' }, [railIcon(PLAY_ICON), document.createTextNode(` ${t('voices.test')}`)]);
-    test.addEventListener('click', () => play(`${base}/files/audition.wav`));
+    // The audition recording is the owner's (Admins' for a household voice); anyone else hears the sample render.
+    test.addEventListener('click', () => play(rights.download
+      ? `${base}/files/audition.wav`
+      : `/api/voice/preview?voice=${encodeURIComponent(v.id)}`));
     const actions = el('div', { class: 'voices-actions' }, [test]);
-    if (!isDefault) {
+    if (!isDefault && rights.setDefault) {
       const def = el('button', { type: 'button', class: 'btn-secondary', text: t('voices.set_default') });
       def.addEventListener('click', () => setDefault(v.id, true));
       actions.append(def);
@@ -226,8 +267,43 @@ export function createVoicesPane(pane, ctx) {
     });
     // The stock voice ships with dispatch-voice: renaming it would not stick
     // and deleting it only makes the package build it again.
-    if (!stock) actions.append(ren, del);
+    if (!stock && rights.manage) actions.append(ren, del);
+    if (!stock && rights.publish) {
+      const pub = el('button', { type: 'button', class: 'btn-secondary voices-publish',
+        text: rights.household ? t('voices.make_private') : t('voices.make_household') });
+      pub.addEventListener('click', async () => {
+        if (!await ctx.confirm(t(rights.household ? 'voices.make_private_confirm' : 'voices.make_household_confirm', { name: v.name }),
+          { okText: pub.textContent })) return;
+        try {
+          await voiceJson(base, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ household: !rights.household }) });
+          ctx.toast(t(rights.household ? 'voices.made_private' : 'voices.made_household', { name: v.name }));
+          refresh(); ctx.onChanged && ctx.onChanged();
+        } catch (e) { ctx.toast(e.message, true); }
+      });
+      actions.append(pub);
+    }
+    if (!stock && rights.download && rights.tenant) {
+      const dl = el('button', { type: 'button', class: 'btn-secondary voices-download', text: t('voices.download') });
+      dl.addEventListener('click', () => downloadRecording(`${base}/files/reference.wav`, v.name));
+      actions.append(dl);
+    }
     return el('div', { class: 'dev-row dev-row-block voices-row' + (stock ? ' voices-row-stock' : ''), dataset: { id: v.id } }, [text, actions]);
+  }
+
+  /** Save a clone's reference recording (owner, or an Admin for a household voice). */
+  async function downloadRecording(url, name) {
+    try {
+      const r = await fetch(url, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error(String(r.status));
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${String(name || 'voice').replace(/[^\w.-]+/g, '-').slice(0, 40) || 'voice'}.wav`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch { ctx.toast(t('voices.download_failed'), true); }
   }
 
   async function setDefault(value, isProfile) {
@@ -355,6 +431,9 @@ export function createVoicesPane(pane, ctx) {
       const nameIn = el('input', { type: 'text', class: 'voices-name', maxlength: '60', autocomplete: 'off', placeholder: t('voices.name_ph'), 'aria-label': t('voices.name') });
       const consent = el('fieldset', { class: 'voices-consent' }, [el('legend', { text: t('voices.consent') })]);
       const note = el('input', { type: 'text', class: 'voices-name', maxlength: '300', autocomplete: 'off', placeholder: t('voices.note_ph'), 'aria-label': t('voices.note') });
+      // Admins only: a household voice is everyone's; anyone else's clone is private to them.
+      const hh = isAdmin ? el('input', { type: 'checkbox', class: 'voices-household-opt' }) : null;
+      const hhRow = hh ? el('label', { class: 'voices-consent-opt voices-household-row' }, [hh, el('span', { text: t('voices.household_opt') })]) : null;
       const build = el('button', { type: 'button', class: 'btn-primary', text: t('voices.build'), disabled: '' });
       const discard = el('button', { type: 'button', class: 'btn-secondary', text: t('voices.discard') });
       const kinds = [['self', 'voices.consent_self'], ['permission', 'voices.consent_permission'], ['synthetic', 'voices.consent_synthetic']];
@@ -369,6 +448,7 @@ export function createVoicesPane(pane, ctx) {
         el('label', { class: 'voices-field' }, [el('span', { text: t('voices.name') }), nameIn]),
         consent,
         el('label', { class: 'voices-field' }, [el('span', { text: t('voices.note') }), note]),
+        ...(hhRow ? [hhRow] : []),
         el('div', { class: 'voices-actions' }, [build, discard]),
       );
       nameIn.addEventListener('input', update);
@@ -383,6 +463,7 @@ export function createVoicesPane(pane, ctx) {
         fd.append('name', nameIn.value.trim());
         fd.append('consent', consentValue());
         fd.append('consent_note', note.value.trim());
+        if (hh && hh.checked) fd.append('household', 'true');
         try {
           const p = await voiceJson(API, { method: 'POST', body: fd });
           say(t('voices.built', { name: p.name }));

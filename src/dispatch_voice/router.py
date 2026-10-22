@@ -95,7 +95,7 @@ def _upload(fn):
 
 def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (), *,
                  allow_open: bool = False, max_upload: int = audio.MAX_UPLOAD_BYTES,
-                 ui: bool = True, fillers: bool | None = None) -> APIRouter:
+                 ui: bool = True, fillers: bool | None = None, access=None) -> APIRouter:
     """The profile API. ``ui=True`` adds the standalone Voices page
     (``/ui``, ``/ui/voices.js``) for ``dispatch-voice serve``; inside DisPatch
     the add-on mounts it with ``ui=False`` (the Voices pane is the app's own,
@@ -105,7 +105,12 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
     ``fillers/<n>.wav`` after a create. Only the standalone page plays them;
     inside DisPatch the acknowledgement lines come from the host's render queue
     (SPEC C12), so the add-on mounts this with ``fillers=False`` and a new
-    clone costs no extra Chatterbox renders (FR-works 14)."""
+    clone costs no extra Chatterbox renders (FR-works 14).
+
+    ``access`` (DisPatch 4.0 and later; ``host.voice_access.Access``): per-profile
+    ownership. Without it every route behaves as before (one tenant). With it, each
+    route asks it who the caller is and what they may see or change: other profiles'
+    clones are 404, a household clone is the Admins', and so on."""
     if fillers is None:
         fillers = ui
     if not dependencies and not allow_open:
@@ -144,8 +149,11 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
         return CONSENT_KINDS
 
     @r.get("")
-    def list_voices() -> dict:
-        return {"voices": store.list(), "default": store.default_id(),
+    def list_voices(request: Request) -> dict:
+        rows = store.list()
+        if access is not None:
+            rows = access.list_rows(rows, access.reader(request))
+        return {"voices": rows, "default": store.default_id(),
                 "engine": store.engine.dtype if store.engine else None,
                 "watermarking": bool(store.engine and store.engine.watermarking)}
 
@@ -153,6 +161,8 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
     @_upload
     async def analyse(request: Request, file: UploadFile = File(...)) -> dict:
         guard(request)
+        if access is not None:
+            access.writer(request)
         data = await read_upload(file)
         try:
             return await asyncio.to_thread(store.analyse, data)
@@ -162,20 +172,32 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
     @r.post("")
     @_upload
     async def create(request: Request, background: BackgroundTasks, file: UploadFile = File(...),
-                     name: str = Form(...), consent: str = Form(...), consent_note: str = Form("")) -> dict:
+                     name: str = Form(...), consent: str = Form(...), consent_note: str = Form(""),
+                     household: bool = Form(False)) -> dict:
         guard(request)
+        caller = owner = None
+        if access is not None:
+            caller = access.writer(request)
+            owner = access.owner_for_new(caller, household)
         data = await read_upload(file)
         try:
-            prof = await asyncio.to_thread(store.create, name, data, file.filename or "", consent, consent_note)
+            if owner is None:
+                prof = await asyncio.to_thread(store.create, name, data, file.filename or "", consent, consent_note)
+            else:
+                prof = await asyncio.to_thread(store.create, name, data, file.filename or "", consent, consent_note,
+                                               owner=owner)
         except (audio.ClipError, ProfileError) as e:
             raise HTTPException(422, str(e)) from e
         if fillers:
             background.add_task(store.render_fillers, prof["id"])
-        return prof
+        return access.annotate(prof, caller) if access is not None else prof
 
     @r.get("/{pid}")
-    def get_voice(pid: str) -> dict:
+    def get_voice(pid: str, request: Request) -> dict:
         try:
+            if access is not None:
+                caller = access.reader(request)
+                return access.annotate(access.row_or_404(pid, caller, "read"), caller)
             return store.get(pid)
         except (KeyError, ProfileError) as e:
             raise HTTPException(404, "Unknown voice.") from e
@@ -187,6 +209,17 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
         if not isinstance(body, dict):
             raise HTTPException(422, "expected a JSON object")
         try:
+            if access is not None:
+                caller = access.writer(request)
+                row = access.row_or_404(pid, caller, "manage")
+                plan = access.plan_patch(row, caller, body)
+                if "owner" in plan:
+                    store.set_owner(pid, plan["owner"])
+                if "name" in plan or "default" in plan:
+                    out = store.update(pid, name=plan.get("name"), default=plan.get("default"))
+                else:
+                    out = store.get(pid)
+                return access.annotate(out, caller)
             return store.update(pid, name=body.get("name"), default=body.get("default"))
         except KeyError as e:
             raise HTTPException(404, "Unknown voice.") from e
@@ -196,6 +229,8 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
     @r.delete("/{pid}")
     def delete_voice(pid: str, request: Request) -> dict:
         guard(request)
+        if access is not None:
+            access.row_or_404(pid, access.writer(request), "manage")
         try:
             store.delete(pid)
         except (KeyError, ProfileError) as e:
@@ -203,7 +238,12 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
         return {"deleted": pid}
 
     @r.get("/{pid}/files/{name:path}")
-    def voice_file(pid: str, name: str) -> FileResponse:
+    def voice_file(pid: str, name: str, request: Request) -> FileResponse:
+        if access is not None:
+            try:
+                access.row_or_404(pid, access.reader(request), "download")
+            except HTTPException:
+                raise HTTPException(404, "Unknown file.") from None
         try:
             return FileResponse(store.file(pid, name), media_type="audio/wav",
                                 headers={"Cache-Control": "no-store"})
@@ -214,6 +254,8 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
     async def say(pid: str, request: Request) -> Response:
         """Audition any line in this voice (the GUI's 'try a line' box)."""
         guard(request)
+        if access is not None:
+            access.row_or_404(pid, access.writer(request), "manage")
         body = await request.json()
         text = (body or {}).get("text", "") if isinstance(body, dict) else ""
         if not text.strip():

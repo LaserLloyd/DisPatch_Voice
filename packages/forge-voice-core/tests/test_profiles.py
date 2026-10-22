@@ -71,3 +71,54 @@ def test_file_allowlist(store):
         store.file(p["id"], "voice.npz")
     with pytest.raises(ProfileError):
         store.file(p["id"], "../profile.json")
+
+
+# ---------------------------------------------------------------- owners (1.6.0)
+
+def test_household_voice_writes_no_owner_key(store):
+    p = make(store)
+    meta = json.loads((store.root / p["id"] / "profile.json").read_text(encoding="utf-8"))
+    assert "owner" not in meta                      # old readers see an unchanged file
+    assert p["owner"] == "household" and store.owner_of(p["id"]) == "household"
+    explicit = store.create("Other", wav_bytes(speechlike(14.0)), "h.wav", "synthetic", owner="household")
+    assert "owner" not in json.loads((store.root / explicit["id"] / "profile.json").read_text(encoding="utf-8"))
+
+
+def test_personal_voice_records_its_owner(store):
+    p = store.create("Mine", wav_bytes(speechlike(14.0)), "m.wav", "self", owner="prof-a")
+    assert p["owner"] == "prof-a" and store.owner_of(p["id"]) == "prof-a"
+    assert store.get(p["id"])["owner"] == "prof-a"
+    assert [m["owner"] for m in store.list()] == ["prof-a"]
+
+
+def test_profile_json_without_owner_is_household(store):
+    p = make(store)
+    path = store.root / p["id"] / "profile.json"
+    meta = json.loads(path.read_text(encoding="utf-8"))
+    meta.pop("owner", None)
+    path.write_text(json.dumps(meta), encoding="utf-8")
+    assert store.owner_of(p["id"]) == "household"
+    path.write_text(json.dumps({**meta, "owner": ""}), encoding="utf-8")
+    assert store.owner_of(p["id"]) == "household"
+
+
+def test_set_owner_round_trip_is_atomic_and_clears_default(store):
+    p = make(store)
+    store.update(p["id"], default=True)
+    out = store.set_owner(p["id"], "prof-a")
+    assert out["owner"] == "prof-a" and out["default"] is False
+    assert not list((store.root / p["id"]).glob("*.tmp"))
+    out = store.set_owner(p["id"], None)
+    assert out["owner"] == "household"
+    assert "owner" not in json.loads((store.root / p["id"] / "profile.json").read_text(encoding="utf-8"))
+    with pytest.raises(ProfileError):
+        store.set_owner(p["id"], "  ")
+    with pytest.raises(KeyError):
+        store.set_owner("nope-123456", "x")
+
+
+def test_personal_voice_cannot_be_default(store):
+    p = store.create("Mine", wav_bytes(speechlike(14.0)), "m.wav", "self", owner="prof-a")
+    with pytest.raises(ProfileError):
+        store.update(p["id"], default=True)
+    assert store.default_id() is None

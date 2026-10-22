@@ -326,6 +326,7 @@ Voice chat understands and speaks English only for now. It works on an unlocked 
 | Per-bot `locked_voice` | 1.3.4 | 2.3.4 |
 | Interrupt sensitivity | 1.5.0 | 2.2.0 |
 | One Settings → Voice page (providers, model download, rig address and token), provider plugins | 1.6.0 | 2.2.0 |
+| Per-profile cloned voices (`owner`, My voices, purge with the profile) | 1.6.0 | 4.0 |
 
 On an older DisPatch the newer buttons are simply not available or the socket is refused, as the [changelog](CHANGELOG.md) notes per release.
 
@@ -473,6 +474,25 @@ Chatterbox has no built-in voice, so dispatch-voice ships one: `stock-host`, "St
 | `profile.json` | name, quality report, match score, consent record, engine, timings |
 | `audition.wav` | a fixed test line in the clone, worded unlike the recording script so a clone that parrots its reference is audible |
 | `fillers/0-5.wav` | reaction sounds in the clone ("Mm-hmm.", "Right.", "Oh, nice."…), rendered in the background after a build on the standalone page, with fixed seeds (not inside DisPatch, whose voice chat renders its own acknowledgement lines) |
+
+### Whose voice is it (DisPatch 4.0 and later)
+
+Each profile has an `owner`: a profile id (a personal clone) or `household` (no key means household,
+which is every voice made before 1.6.0). The add-on enforces this; DisPatch only gates the coarse
+permission (`use_voice`, `voice_lab`, `manage_plugins`).
+
+| Action | Who |
+|---|---|
+| List, pick, hear a sample | household voices and your own clones; never another profile's, not even an Admin |
+| Create | a profile with `voice_lab`; the clone is yours. `household=true` only for Admins (422 otherwise) |
+| Rename, delete, try a line | the owner; Admins for household voices; anyone else gets a 404 |
+| Household <-> personal | Admins only (an Admin's own clone to household, a household one to the Admin's own) |
+| Default voice, narrator voice | household voices, set by an Admin |
+| Download the recordings (`reference.wav`, `audition.wav`) | the owner; Admins for household voices; nobody else |
+| Speak as a bot's voice | household voices for any bot; a personal clone only for a personal bot of the same profile; otherwise the default voice speaks |
+| Profile deleted, or User -> Basic | its clones are deleted (folder, the rig's copy, rendered acknowledgement lines); Reset keeps them |
+
+On a DisPatch without these hooks (before 4.0) nothing changes: one tenant, as in 1.5.x.
 
 ## Best practices built in
 

@@ -433,7 +433,19 @@
     "none_hint_stock": "As respostas usam a voz de base até adicionares uma.",
     "builtin_plugin": "Nenhuma instalada. As vozes integradas vêm de um plugin opcional, como o {name} ({licence}), que se instala à parte.",
     "delete": "Eliminar",
-    "discard": "Descartar"
+    "discard": "Descartar",
+    "my_title": "Minhas vozes",
+    "household_badge": "Da casa",
+    "mine_badge": "Minha",
+    "household_opt": "Voz da casa (todos podem usar)",
+    "make_household": "Tornar da casa",
+    "make_private": "Tornar privada",
+    "make_household_confirm": "Tornar \"{name}\" uma voz da casa? Todos com chat de voz poderão escolhê-la.",
+    "make_private_confirm": "Tornar \"{name}\" privada? Só você poderá usá-la, e os bots que a usam passarão para a voz padrão.",
+    "made_household": "\"{name}\" agora é uma voz da casa.",
+    "made_private": "\"{name}\" agora é privada.",
+    "download": "Baixar gravação",
+    "download_failed": "Não foi possível baixar a gravação."
   },
   "vtools": {
     "cloning_name": "Clonar vozes",

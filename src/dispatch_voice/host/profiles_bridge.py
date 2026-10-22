@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import context
+from . import context, voice_access
 
 log = logging.getLogger("dispatch.voice")
 
@@ -149,14 +149,22 @@ def _render_stock_extras(pid: str) -> None:
 # Which profile speaks
 # --------------------------------------------------------------------------- #
 
-def resolve_profile(bot_id: str | None, voice: str | None = None) -> str | None:
+def resolve_profile(bot_id: str | None, voice: str | None = None, owner=voice_access.NO_CHECK) -> str | None:
     """bot.voice if that profile exists (or names a built-in voice while a
     provider is installed), else the store default, else, with no built-in
-    voice plugin, the stock voice once it exists, else None."""
+    voice plugin, the stock voice once it exists, else None.
+
+    ``owner`` (DisPatch 4.0 and later): the profile that owns the bot (None = a
+    household bot). When given, a voice the bot may not speak with
+    (:func:`voice_access.voice_access`) is skipped and the default voice speaks.
+    Left out, nothing is checked (the registry's resolver, hosts without profiles)."""
     from . import registry
     from .tts import builtin_id
     st = store()
     want = voice or context.bot_voice(bot_id)
+    if want and owner is not voice_access.NO_CHECK and not voice_access.voice_access(want, owner):
+        log.warning("voice: bot %s names a voice its owner may not use; the default voice speaks", bot_id)
+        want = ""
     if builtin_id(want):
         if registry.has_builtin_voices():
             return want
@@ -182,6 +190,21 @@ def profiles() -> list[dict]:
     return [{"id": m["id"], "name": m.get("name") or m["id"]} for m in store().list()]
 
 
+def profiles_for(caller) -> list[dict]:
+    """[{id, name, household, mine}] of the voices ``caller`` may pick (household voices and
+    their own clones; never another profile's), newest first. ``voice_access.LEGACY`` lists all."""
+    rows = voice_access.visible(store().list(), caller)
+    out = []
+    for m in rows:
+        row = {"id": m["id"], "name": m.get("name") or m["id"]}
+        if caller is not voice_access.LEGACY:
+            owner = voice_access.owner_of_meta(m)
+            row["household"] = owner == voice_access.HOUSEHOLD
+            row["mine"] = owner != voice_access.HOUSEHOLD
+        out.append(row)
+    return out
+
+
 def profile_exists(pid: str) -> bool:
     if pid and pid == stock_id():
         return True                    # built on first use
@@ -201,6 +224,8 @@ def set_default_profile(pid: str | None) -> None:
     built-in voice speaks."""
     st = store()
     if pid:
+        if voice_access.owner_of_voice(pid) != voice_access.HOUSEHOLD:
+            raise ValueError("A private voice can't be the default voice.")
         if pid == stock_id() and stock_profile(build=True) != pid:
             raise RuntimeError("the stock voice could not be built")
         st.update(pid, default=True)
@@ -278,4 +303,5 @@ def install():
     # The profile fillers are NOT registered as acknowledgements any more: the
     # session plays the render queue's lines (SPEC §6.2, host/acks.py).
     log.info("voice: cloned voices mounted at /api/voice/profiles (unlocked tier only)")
-    return build_router(_RigAwareStore(), allow_open=True, ui=False, fillers=False)
+    st = _RigAwareStore()
+    return build_router(st, allow_open=True, ui=False, fillers=False, access=voice_access.Access(st))

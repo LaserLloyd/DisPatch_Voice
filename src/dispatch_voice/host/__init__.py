@@ -35,6 +35,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 def setup(ctx) -> None:
     """Wire the add-on into DisPatch (contracts §B.4, in this order):
+    (``register_voice_access`` / ``register_profile_data`` when the host has them) →
     ``serve_static`` → ``include_router("/api/voice")`` →
     ``thread_websocket("voice", ws.serve, max_total=max_sessions)`` →
     ``set_bot_field_validator("voice")`` → ``set_bot_field_validator("voice_rp")`` →
@@ -43,13 +44,20 @@ def setup(ctx) -> None:
     seam ``registry.mount_extensions`` (``DISPATCH_VOICE_EXTENSIONS``, where
     the optional Kokoro plugin plugs in). A raise here is DisPatch's state
     ``failed`` with the routes rolled back (rule 1); nothing is retried."""
-    from . import context, profiles_bridge, registry, routes, ws
+    from . import context, profiles_bridge, registry, routes, voice_access, ws
     from .config import load_settings
     from .tools import tool_specs
 
     context.set_context(ctx)
     routes.ASSETS_VERSION = ctx.serve_static(STATIC_DIR, entry="index.js", css=["voice.css"], locales=True)
     settings = load_settings()
+
+    # DisPatch 4.0 and later: per-profile cloned voices. Each hook is feature-tested, so the
+    # add-on still runs on a host that has none of them (1.5.x behaviour, nothing registered).
+    if hasattr(ctx, "register_voice_access"):
+        ctx.register_voice_access(voice_access.voice_access)
+    if hasattr(ctx, "register_profile_data"):
+        ctx.register_profile_data(count=voice_access.profile_count, purge=voice_access.profile_purge)
 
     router = routes.build_router()
     profiles_router = profiles_bridge.install()

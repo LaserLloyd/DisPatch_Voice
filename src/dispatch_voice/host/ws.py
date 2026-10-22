@@ -45,7 +45,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from . import context, rig, routes
+from . import context, rig, routes, voice_access
 from .config import RP_MODES, VoiceSettings, load_settings
 from .routes import MODELS_MISSING, OFF_SERVER, OFF_SETTINGS, UNAVAILABLE
 
@@ -271,22 +271,29 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
     # line (≈ 3 s of the engine lock) in the gap before the session exists,
     # and the first turn would wait for it (measured: +3 s to first audio).
     reservation = _Reservation()
+    vkw: dict = {}              # per-profile clones: {bot_owner} on a host that declares voice_access
     _SESSIONS[id(reservation)] = reservation
     try:
         try:
             # The socket's locked flag is DisPatch's own (the gate stamps it from the
             # tier); only a socket that says True gets the locked-device voice.
             locked = getattr(sock, "locked", False) is True
+            if voice_access.tenant_mode():
+                locked = False          # DisPatch 4.0: the Restricted tier is gone, locked_voice is inert
+            if voice_access.declares_voice_access():
+                # Per-profile clones: the bot's owner decides which voices it may speak with.
+                bot_owner = voice_access.bot_owner_of(sock.bot, sock)
+                vkw["bot_owner"] = bot_owner
             profile_id = await asyncio.to_thread(
-                voice_for_bot or ((lambda b: routes.voice_for_bot(settings, tts_engine, b, locked=True))
-                                  if locked else (lambda b: routes.voice_for_bot(settings, tts_engine, b))),
+                voice_for_bot or ((lambda b: routes.voice_for_bot(settings, tts_engine, b, locked=True, **vkw))
+                                  if locked else (lambda b: routes.voice_for_bot(settings, tts_engine, b, **vkw))),
                 bot_id)
         except Exception:
             log.exception("voice: voice profile lookup failed; using the default voice")
             profile_id = None
         log.info("voice: %s speaks with %s (%s device)", thread_id, profile_id or "the default voice",
                  "locked" if locked else "unlocked")
-        conv = await asyncio.to_thread(session_options, settings, tts_engine, sock.bot, profile_id)
+        conv = await asyncio.to_thread(session_options, settings, tts_engine, sock.bot, profile_id, **vkw)
         rt_pieces = await asyncio.to_thread(realtime_options, settings, stt_engine, tts_engine,
                                             profile_id, conv.get("narrator_id"), _device_of(ws))
         wire = await asyncio.to_thread(wire_options, ws, sock, settings, tts_engine)
@@ -369,7 +376,8 @@ async def serve(ws, sock, *, settings: VoiceSettings | None = None, engines: tup
             cleanup.add_done_callback(lambda _t: None)   # carries on in the loop
 
 
-def session_options(settings: VoiceSettings, tts_engine, bot, profile_id: str | None) -> dict:
+def session_options(settings: VoiceSettings, tts_engine, bot, profile_id: str | None, *,
+                    bot_owner=voice_access.NO_CHECK) -> dict:
     """The conversation pieces of one session (SPEC §6.2/§6.3; blocking, so
     ``serve`` runs it off the loop): the acknowledgement kit (pools bound to
     the bots, the shared render queue with this voice's missing lines queued),
@@ -394,6 +402,9 @@ def session_options(settings: VoiceSettings, tts_engine, bot, profile_id: str | 
     narrator = None
     if rp == "dialogue_narrator" and settings.narrator_voice:
         narrator = settings.narrator_voice if _voice_exists(settings, settings.narrator_voice) else None
+        if (narrator is not None and bot_owner is not voice_access.NO_CHECK
+                and not voice_access.voice_access(narrator, bot_owner)):
+            narrator = None                 # never sync or speak a voice this bot's owner may not use
         if narrator is None:
             log.warning("voice: narrator voice %r is not installed; the character voice narrates",
                         settings.narrator_voice)

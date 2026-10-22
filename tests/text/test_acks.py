@@ -711,6 +711,20 @@ def test_rebuild_rerenders_the_voice(tmp_path):
     rq.stop()
 
 
+def test_forget_drops_a_deleted_voice_and_its_clips(tmp_path):
+    eng = FakeEngine()
+    rq, root = queue(tmp_path, eng)
+    rq.ensure("gone", ["Okay."])
+    rq.ensure("kept", ["Okay."])
+    assert rq.wait_idle(5) and (root / "gone").is_dir()
+    rq.forget("gone")
+    assert "gone" not in rq.status() and not (root / "gone").exists()
+    assert rq.get("gone", "Okay.") is None
+    assert rq.status()["kept"] == {"ready": 1, "total": 1, "failed": 0} and (root / "kept").is_dir()
+    rq.forget("never-seen")                       # not an error
+    rq.stop()
+
+
 def test_prune_deletes_unnamed_files_keeps_named_and_caps_the_tag(tmp_path):
     eng = FakeEngine()
     rq, root = queue(tmp_path, eng, keep=lambda: ["The rest is in the chat."])

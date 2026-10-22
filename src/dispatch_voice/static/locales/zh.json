@@ -431,7 +431,19 @@
     "none_hint_stock": "在你添加声音之前，回复使用标准声音。",
     "builtin_plugin": "未安装。内置声音来自可选插件，例如 {name}（{licence}），需另行安装。",
     "delete": "删除",
-    "discard": "放弃"
+    "discard": "放弃",
+    "my_title": "我的声音",
+    "household_badge": "家庭共用",
+    "mine_badge": "我的",
+    "household_opt": "家庭共用声音（所有人都可使用）",
+    "make_household": "设为家庭共用",
+    "make_private": "设为私有",
+    "make_household_confirm": "将“{name}”设为家庭共用声音？所有使用语音聊天的人都能选择它。",
+    "make_private_confirm": "将“{name}”设为私有？只有你能使用它，使用该声音的机器人将改用默认声音。",
+    "made_household": "“{name}”现在是家庭共用声音。",
+    "made_private": "“{name}”现在是私有的。",
+    "download": "下载录音",
+    "download_failed": "无法下载录音。"
   },
   "vtools": {
     "cloning_name": "声音克隆",

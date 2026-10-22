@@ -14,6 +14,7 @@ switch and the models behave, and the power-profile hold.
 | DisPatch ↔ add-on, Python | DisPatch `app/extensions.py: EXT_API`; add-on `dispatch_voice.EXTENSION["api"]` | `1`; the add-on accepts `[1, 1]` |
 | DisPatch ↔ add-on, JS | `shell.EXT_API`; `static/index.js: EXT.api` | `1`; `[1, 1]` |
 | Add-on ↔ its plugins (Kokoro) | `dispatch_voice.host.registry.ExtensionAPI.api_version` | `4` since 1.6.0 (`register_provider`, entry-point discovery); `3` through 1.5.0 |
+| New hooks (4.0) | `ctx.caller`, `ctx.bots_visible`, `ctx.register_voice_access`, `ctx.register_profile_data`, `sock.profile_id` | additive: `EXT_API` stays `1` and the add-on stays `[1, 1]`; each is feature-tested (`hasattr` / `getattr`), so an older host gets 1.5.x behaviour |
 | Release numbers | `dispatch-voice 1.6.0`, `dispatch-voice-kokoro 0.1.1` | informational, never compared |
 
 DisPatch discovers the add-on through the `dispatch.extensions` entry point
@@ -414,6 +415,31 @@ nobody uses from holding the session open:
   when quiet" does, without reconnecting. It sits above the longest device setting
   (30 min plus its 20 s grace), so the polite "Still there?" normally comes first;
   a device set to "Never" is bounded here (FR-hardening L3).
+
+## Per-profile clones: the optional host hooks (DisPatch 4.0 and later)
+
+All of these are optional and feature-tested; a host without `ctx.caller` is treated as one tenant
+(every route answers as in 1.5.x). They are registered or read during `setup(ctx)` / per request:
+
+| Hook | The add-on's use |
+|---|---|
+| `ctx.caller(request) -> Caller \| None` (`profile_id`, `is_admin`, `role`, `can(perm)`) | who is asking. `None` = nobody signed in: household voices are readable, every write is 403. A caller that raises counts as `None`. |
+| `ctx.bots_visible(request) -> [BotView]` | `GET /status` `bots` lists only these (and no `locked_voice`); a `BotView` may carry `scope` (`household` \| `personal`) and `owner_profile` |
+| `ctx.register_voice_access(fn(voice_id, bot_owner) -> bool)` | declares per-profile clones: household voices for any bot, a personal clone only when `bot_owner` is its owner |
+| `ctx.register_profile_data(count=, purge=)` | `count(profile_id) -> {"voices": n}` (a number, never names); `purge(profile_id) -> int` deletes the profile's clones: folder, the rig's copy (`rig.delete_voice_async`), the rendered acknowledgement lines. Called on profile deletion and User -> Basic, not on Reset |
+| `sock.profile_id` | the socket's profile; the bot owner for a personal bot when the session picks its voice |
+
+Who may do what (the host gates only the permission):
+
+| Route | Host requires | The add-on then |
+|---|---|---|
+| `GET /status`, `/preview`, `/profiles`, `/profiles/{id}`, `/profiles/{id}/files/*` | `use_voice` | lists household voices + the caller's own; a voice that is not theirs is 404 |
+| `POST /profiles`, `/profiles/analyse`, `PATCH`/`DELETE /profiles/{id}`, `POST /profiles/{id}/say` | `voice_lab` | create makes the caller's clone (`household=true`: Admin only, 422); rename / delete / say: the owner, Admins for household voices, else 404; `PATCH {household: bool}` and `{default: true}`: Admin only; files: the owner, Admins for household voices |
+| everything else (`/settings`, `/lab`, `/lab/test`, `/acks/rebuild`, ...) | `manage_plugins` | unchanged |
+
+The rules are in `host/voice_access.py` (`Access` for the routes, `voice_access`, `profile_count`,
+`profile_purge` for the host). A voice's owner is read from its `profile.json` (`owner`, missing =
+`household`).
 
 ## Routes (`/api/voice`, unlocked tier only)
 

@@ -16,6 +16,7 @@ Nothing here touches a model, the network or a real DisPatch install.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import itertools
 import json
@@ -102,6 +103,9 @@ class BotView:
     voice: str = ""
     voice_rp: str = ""
     backend: Backend | None = "gateway"
+    #: DisPatch 4.0: "household" | "personal"; the owning profile id of a personal bot.
+    scope: str = "household"
+    owner_profile: str = ""
 
 
 @dataclass(frozen=True)
@@ -146,6 +150,8 @@ class ThreadSocket:
     on_replaced: Callable[[Callable[[], Any]], None] = field(default_factory=lambda: (lambda fn: None))
     #: DisPatch 2.3.4: the socket came from a locked (Safe-Mode) device.
     locked: bool = False
+    #: DisPatch 4.0: the principal's profile id (the thread's owner by construction); None before.
+    profile_id: str | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -433,7 +439,8 @@ class FakeContext:
         return self.open_sockets.get(name, 0), self.websockets.get(name, {}).get("max_total", 3)
 
     def thread_socket(self, thread_id: str, *, ws=None, token: str | None = "tok-unlocked",
-                      live: Callable[[], bool] | None = None, locked: bool = False) -> ThreadSocket:
+                      live: Callable[[], bool] | None = None, locked: bool = False,
+                      profile_id: str | None = None) -> ThreadSocket:
         """The ThreadSocket the gate would hand the handler (a test builds one directly)."""
         thread = self._db.get_thread(thread_id) or self.add_thread(thread_id)
         bot = self.bots.get(thread.bot_id) or BotView(thread.bot_id, thread.bot_id)
@@ -446,11 +453,11 @@ class FakeContext:
                 await ws.close(1013, reason[:120])
 
         replaced: list[Callable[[], Any]] = []
-        sock = ThreadSocket(thread=thread, bot=BotView(bot.id, bot.name, False, bot.voice, bot.voice_rp, bot.backend),
+        sock = ThreadSocket(thread=thread, bot=dataclasses.replace(bot, safe=False),
                             token=token, session_live=live or (lambda: True),
                             touch=lambda: self.touched.append(token),
                             close_unavailable=close_unavailable,
-                            on_replaced=replaced.append, locked=locked)
+                            on_replaced=replaced.append, locked=locked, profile_id=profile_id)
         sock.unavailable_reasons = closed      # type: ignore[attr-defined]
         sock.replaced_callbacks = replaced     # type: ignore[attr-defined]
 
@@ -843,3 +850,78 @@ def load_clip(name: str, *, band: Literal["16k", "8k"] = "16k") -> np.ndarray:
 
 def clip_meta() -> dict:
     return json.loads((FIXTURES / "clips" / "meta.json").read_text(encoding="utf-8"))
+
+
+# --------------------------------------------------------------------------- #
+# DisPatch 4.0 host hooks (BUILD-PLAN-v2 1.12; ~/.cache/cfp/voice-host-contract.md section 4)
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class FakeCaller:
+    """The host's ``Caller``: profile_id / is_admin / role / can(perm)."""
+    profile_id: str | None
+    is_admin: bool = False
+    role: str = "user"
+    perms: frozenset = field(default_factory=lambda: frozenset({"use_voice", "voice_lab"}))
+
+    def can(self, perm):
+        return self.is_admin or perm in self.perms
+
+
+#: The five callers most tests need.
+CALLER_A = FakeCaller("prof-a")
+CALLER_B = FakeCaller("prof-b")
+CALLER_ADMIN = FakeCaller("admin-1", is_admin=True, role="admin")
+CALLER_BASIC = FakeCaller("basic-1", role="basic", perms=frozenset({"use_voice"}))
+
+
+class FakeTenantContext(FakeContext):
+    """A DisPatch 4.0 host: the FakeContext plus the profile hooks. A plain FakeContext is the
+    older host (no ``caller``, no ``bots_visible``, no registrations) and tests the 1.5.x fallback.
+
+    Knobs: ``current_caller`` (what ``ctx.caller()`` answers; None = nobody signed in) and
+    ``visible_bot_ids`` (None = every bot). The registered callbacks land on ``voice_access``,
+    ``profile_count`` and ``profile_purge``. Like the real host they can only be registered
+    before ``setup`` returns (``seal()`` is what the test calls afterwards)."""
+
+    def __init__(self, *a, **kw) -> None:
+        super().__init__(*a, **kw)
+        self.current_caller: FakeCaller | None = CALLER_A
+        self.visible_bot_ids: set[str] | None = None
+        self.voice_access = None
+        self.profile_count = None
+        self.profile_purge = None
+        self._sealed = False
+
+    def seal(self) -> None:
+        self._sealed = True
+
+    def caller(self, request):
+        return self.current_caller
+
+    def bots_visible(self, request):
+        return [b for b in self.bots.all() if self.visible_bot_ids is None or b.id in self.visible_bot_ids]
+
+    def register_voice_access(self, fn) -> None:
+        if self._sealed:
+            raise RuntimeError("registrations are closed after setup")
+        self.voice_access = fn
+
+    def register_profile_data(self, *, count=None, purge=None) -> None:
+        if self._sealed:
+            raise RuntimeError("registrations are closed after setup")
+        self.profile_count, self.profile_purge = count, purge
+
+    async def connect(self, name: str, thread_id: str, ws, *, token: str | None = "tok-unlocked") -> None:
+        thread = self._db.get_thread(thread_id)
+        bot = self.bots.get(thread.bot_id) if thread else None
+        if thread is None or bot is None:
+            await ws.close(1008)
+            return
+        reg = self.websockets[name]
+        self.open_sockets[name] = self.open_sockets.get(name, 0) + 1
+        try:
+            pid = getattr(self.current_caller, "profile_id", None)
+            await reg["handler"](ws, self.thread_socket(thread_id, ws=ws, token=token, profile_id=pid))
+        finally:
+            self.open_sockets[name] -= 1

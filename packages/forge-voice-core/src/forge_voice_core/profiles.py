@@ -48,9 +48,27 @@ class ProfileError(ValueError):
     """Bad request against the store. Safe to show to the user."""
 
 
+def _clean_owner(owner: str) -> str:
+    if not isinstance(owner, str) or not owner.strip() or len(owner) > 120:
+        raise ProfileError("Unknown owner.")
+    return owner.strip()
+
+
 def slugify(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:32] or "voice"
     return f"{s}-{secrets.token_hex(3)}"
+
+
+#: The owner value of a voice everyone may use. A profile.json without an
+#: ``owner`` key is a household voice, so voices made before per-profile
+#: clones existed need no migration.
+HOUSEHOLD = "household"
+
+
+def owner_of_meta(meta: dict) -> str:
+    """The owner recorded in a profile's metadata: a profile id, or ``"household"``."""
+    o = meta.get("owner") if isinstance(meta, dict) else None
+    return o if isinstance(o, str) and o.strip() and o != HOUSEHOLD else HOUSEHOLD
 
 
 @dataclass
@@ -61,6 +79,7 @@ class Profile:
     def public(self) -> dict:
         m = dict(self.meta)
         m["id"] = self.id
+        m["owner"] = owner_of_meta(m)
         return m
 
 
@@ -108,6 +127,11 @@ class ProfileStore:
         d = self._require(pid)
         return Profile(pid, json.loads((d / "profile.json").read_text(encoding="utf-8"))).public()
 
+    def owner_of(self, pid: str) -> str:
+        """The profile id that owns this voice, or ``"household"`` (also when the key is absent)."""
+        d = self._require(pid)
+        return owner_of_meta(json.loads((d / "profile.json").read_text(encoding="utf-8")))
+
     def file(self, pid: str, name: str) -> Path:
         d = self._require(pid)
         allowed = {"reference.wav", "audition.wav"} | {f"fillers/{i}.wav" for i in range(len(FILLERS))}
@@ -130,7 +154,9 @@ class ProfileStore:
         return audio.analyse(raw).as_dict()
 
     def create(self, name: str, data: bytes, filename: str, consent: str, consent_note: str = "",
-               allow_warnings: bool = True) -> dict:
+               allow_warnings: bool = True, owner: str | None = None) -> dict:
+        """``owner``: a profile id for a personal clone; None (or ``"household"``) makes a
+        household voice and writes no ``owner`` key, so old readers see an unchanged file."""
         if self.engine is None:
             raise RuntimeError("voice engine not loaded")
         name = (name or "").strip()[:60]
@@ -181,6 +207,8 @@ class ProfileStore:
                 "fillers": "pending",
                 "default": False,
             }
+            if owner is not None and owner != HOUSEHOLD:
+                meta["owner"] = _clean_owner(owner)
             self._write_meta(tmp, meta)
             with self._lock:
                 os.replace(tmp, d)
@@ -216,6 +244,8 @@ class ProfileStore:
                     raise ProfileError("Give the voice a name.")
                 meta["name"] = name.strip()[:60]
             if default:
+                if owner_of_meta(meta) != HOUSEHOLD:
+                    raise ProfileError("A private voice can't be the default.")
                 for other in self.root.iterdir():
                     if other.is_dir() and other.name != pid and (other / "profile.json").exists():
                         om = json.loads((other / "profile.json").read_text(encoding="utf-8"))
@@ -224,6 +254,20 @@ class ProfileStore:
                             self._write_meta(other, om)
                 meta["default"] = True
             elif default is False:
+                meta["default"] = False
+            self._write_meta(d, meta)
+        return self.get(pid)
+
+    def set_owner(self, pid: str, owner: str | None) -> dict:
+        """Hand a voice to a profile, or (None / ``"household"``) to everyone. A voice that
+        becomes personal stops being the default (the default voice is household-only)."""
+        with self._lock:
+            d = self._require(pid)
+            meta = json.loads((d / "profile.json").read_text(encoding="utf-8"))
+            if owner is None or owner == HOUSEHOLD:
+                meta.pop("owner", None)
+            else:
+                meta["owner"] = _clean_owner(owner)
                 meta["default"] = False
             self._write_meta(d, meta)
         return self.get(pid)

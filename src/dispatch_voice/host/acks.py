@@ -24,6 +24,7 @@ The old per-profile ``fillers/<n>.wav`` are no longer played by the host
 from __future__ import annotations
 
 import logging
+import shutil
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -216,6 +217,27 @@ def rebuild(voice: str) -> bool:
         return False
     rq.rebuild(key)
     return True
+
+
+def forget(voice: str) -> None:
+    """A voice was deleted: forget its lines in the queue and delete its rendered clips from disk
+    (call it BEFORE the profile goes, the cache directory is named from the profile)."""
+    key = str(voice or "")
+    if not key:
+        return
+    rq = current_queue()
+    if rq is not None:
+        rq.forget(key)
+    _NAMES.pop(key, None)
+    _ETA.pop(key, None)
+    root = context.paths().cache_dir
+    try:
+        # Cloned-voice tags are ``cb-<model>-<profile>-<created>``; sweep any left on disk.
+        for d in root.glob(f"cb-*-{key}-*"):
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+    except OSError:
+        pass
 
 
 def release() -> None:

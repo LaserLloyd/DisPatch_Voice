@@ -38,7 +38,7 @@ import numpy as np
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import Response
 
-from . import context, netpolicy
+from . import context, netpolicy, voice_access
 from . import settings_schema as _sch
 from .config import (
     BOT_KEYS,
@@ -146,12 +146,25 @@ def _render_cached(settings, tts_engine, profile_id, text: str, *, wait_idle: bo
 
 
 def voice_for_bot(settings: VoiceSettings, tts_engine, bot_id: str | None,
-                  locked: bool = False) -> str | None:
+                  locked: bool = False, bot_owner=voice_access.NO_CHECK) -> str | None:
     """The profile id the TTS engine speaks with for this bot (None = the
     engine's default voice). The acknowledgement lines of that voice are the
     render queue's (``host/acks.py``): the old per-profile fillers and the
-    per-process ack list are gone (SPEC §6.2)."""
+    per-process ack list are gone (SPEC §6.2).
+
+    ``bot_owner`` (DisPatch 4.0 and later, per-profile clones): the profile that
+    owns the bot (None = a household bot). A voice the bot may not speak with is
+    never used; the default voice speaks instead. Left out, nothing is checked."""
     from . import registry
+    if bot_owner is not voice_access.NO_CHECK:
+        pid = registry.resolve_profile(bot_id)
+        if pid and not voice_access.voice_access(pid, bot_owner):
+            log.warning("voice: bot %s may not speak with its saved voice; the default voice speaks", bot_id)
+            pb = _dv()
+            if pb is not None:
+                return pb.resolve_profile(bot_id, voice="", owner=bot_owner)
+            return None
+        return pid
     if locked:
         # A locked (Safe-Mode) device hears the bot's "voice on locked devices" when one
         # is set and still exists; otherwise the standard voice. Decided by the caller
@@ -495,16 +508,16 @@ def build_router() -> APIRouter:
     r = APIRouter()
 
     @r.get("/status")
-    async def voice_status():
+    async def voice_status(request: Request):
         ensure_switch_watch()
         settings = await asyncio.to_thread(load_settings)
         await sync_switch(settings)
-        return await status_payload(settings)
+        return await status_payload(settings, request=request)
 
     @r.get("/settings")
     async def get_voice_settings():
         settings = load_settings()
-        ch = await asyncio.to_thread(_voice_choices, settings)
+        ch = await asyncio.to_thread(_voice_choices, settings, _admin_view())
         return _settings_out(settings, ch)
 
     @r.get("/settings/schema")
@@ -545,6 +558,8 @@ def build_router() -> APIRouter:
                 kind = await asyncio.to_thread(classify_voice, settings, v)
                 if kind is None or _vc.clean_voice_id(v) is None:
                     raise HTTPException(422, "Unknown voice")
+                if kind == "profile" and voice_access.owner_of_voice(v) != voice_access.HOUSEHOLD:
+                    raise HTTPException(422, "The narrator voice must be a household voice")
                 update["narrator_voice"] = v
         if "bots" in body:
             update["bots"] = _validate_bots(body["bots"])
@@ -561,6 +576,8 @@ def build_router() -> APIRouter:
             kind = await asyncio.to_thread(classify_voice, settings, v)
             if kind is None or v == "":
                 raise HTTPException(422, "Unknown voice")
+            if kind == "profile" and voice_access.owner_of_voice(v) != voice_access.HOUSEHOLD:
+                raise HTTPException(422, "A private voice can't be the default voice")
             if kind == "builtin":
                 from .tts import builtin_id
                 update["builtin_voice"] = builtin_id(v)
@@ -585,7 +602,7 @@ def build_router() -> APIRouter:
         _tts.apply_live(fresh)
         await apply_switch(was_on, fresh)
         _APPLIED["on"] = fresh.switched_on
-        ch = await asyncio.to_thread(_voice_choices, fresh)
+        ch = await asyncio.to_thread(_voice_choices, fresh, _admin_view())
         out = _settings_out(fresh, ch)
         # Saved but not in effect: the environment still decides these.
         held = {i: fresh.sources[i]["env"] for i in _flat_ids(update)
@@ -671,7 +688,7 @@ def build_router() -> APIRouter:
         return await asyncio.to_thread(models.migrate, dry_run=dry)
 
     @r.get("/preview")
-    async def voice_preview(voice: str, text: str | None = None):
+    async def voice_preview(request: Request, voice: str, text: str | None = None):
         settings = load_settings()
         if text is not None and len(text) > PREVIEW_MAX_CHARS:
             raise HTTPException(422, f"Keep the sample under {PREVIEW_MAX_CHARS} characters")
@@ -679,6 +696,10 @@ def build_router() -> APIRouter:
         kind = await asyncio.to_thread(classify_voice, settings, voice)
         if kind is None or not voice:
             raise HTTPException(422, "Unknown voice")
+        if kind == "profile":
+            c = voice_access.caller_of(request)
+            if not voice_access.can_use(voice, c):
+                raise HTTPException(404, "Unknown voice")       # another profile's clone: not there
         if not settings.enabled or await asyncio.to_thread(settings.missing):
             raise HTTPException(503, "Voice isn't set up on this server")
         try:
@@ -773,17 +794,22 @@ def _validate_bots(raw) -> dict:
     return clean_bots(raw)
 
 
-def effective_bots(settings: VoiceSettings) -> dict:
+def effective_bots(settings: VoiceSettings, request=None) -> dict:
     """``{bot id: {backchannel, follow_up}}`` for every bot the context lists
     (the per-bot defaults the Bots-tab popover shows). Since 1.3.1 a ``safe``
     bot is one of them: which bots voice serves is not narrowed by the
     Safe-Mode flag (since 1.3.3 a locked device uses it on those)."""
     out = {}
-    for b in context.bots_all():
+    visible_bots = _visible_bots(request)
+    for b in (visible_bots if visible_bots is not None else context.bots_all()):
         bid = getattr(b, "id", None)
         if not bid:
             continue
         out[bid] = settings.bot(bid, backend=context.bot_backend(bid))
+    if visible_bots is not None:
+        # DisPatch 4.0: only the bots this caller may use; a bot the file names that the host
+        # does not list is not theirs to see, and locked_voice is inert (no Restricted tier).
+        return out
     for bid in settings.bots:            # a bot the file names but the context does not (yet)
         if bid not in out and isinstance(bid, str):
             out[bid] = settings.bot(bid)
@@ -792,6 +818,26 @@ def effective_bots(settings: VoiceSettings) -> dict:
         if lv:
             row["locked_voice"] = lv
     return out
+
+
+def _admin_view():
+    """The voices the Admin-only settings routes list: household voices only on a host that
+    knows profiles (the Lab and default pickers never offer a personal clone), all otherwise."""
+    return voice_access.HOUSEHOLD_ONLY if voice_access.tenant_mode() else voice_access.LEGACY
+
+
+def _visible_bots(request) -> list | None:
+    """The bots the caller may use (``ctx.bots_visible(request)``), or None on a host that
+    does not have it (every bot is listed, as before) or when there is no request to ask about."""
+    ctx = context.get_context()
+    fn = getattr(ctx, "bots_visible", None) if ctx is not None else None
+    if request is None or not callable(fn):
+        return None
+    try:
+        return list(fn(request) or [])
+    except Exception:
+        log.exception("voice: ctx.bots_visible failed; listing no bots")
+        return []
 
 
 def locked_status() -> dict:
@@ -805,7 +851,7 @@ def locked_status() -> dict:
     return {"enabled": bool(enabled), "ready": bool(ready)}
 
 
-async def status_payload(settings: VoiceSettings) -> dict:
+async def status_payload(settings: VoiceSettings, request=None) -> dict:
     """``GET /api/voice/status``: today's fields plus the v3 additions that
     exist at this slice (contracts §D)."""
     from dispatch_voice import EXTENSION, __version__
@@ -814,7 +860,8 @@ async def status_payload(settings: VoiceSettings) -> dict:
     st = await asyncio.to_thread(settings.status)
     st["extensions"] = list(_LOADED)
     st["voices_ui"] = None                 # the standalone page is `dispatch-voice serve` only
-    st.update(await asyncio.to_thread(_voice_choices, settings))
+    caller = voice_access.caller_of(request) if request is not None else voice_access.LEGACY
+    st.update(await asyncio.to_thread(_voice_choices, settings, caller))
     st["warm"] = _PREWARM.get("state") == "done"
     st["stock_voice"] = _stock_id()
     st["plugins"] = await asyncio.to_thread(_plugins, settings)
@@ -831,7 +878,7 @@ async def status_payload(settings: VoiceSettings) -> dict:
     st["assets_version_at_setup"] = ASSETS_VERSION
     from . import acks
     st["acks"] = await asyncio.to_thread(acks.status)
-    st["bots"] = effective_bots(settings)
+    st["bots"] = effective_bots(settings, request=request)
     from . import health as _health
     from . import models as _models
     from . import providers as _p
@@ -1275,7 +1322,7 @@ def effective_voice(settings: VoiceSettings, profile_id: str | None) -> str | No
     return None
 
 
-def _voice_choices(settings: VoiceSettings) -> dict:
+def _voice_choices(settings: VoiceSettings, caller=voice_access.LEGACY) -> dict:
     """What the Settings rows render from: default voice, built-ins, profiles.
 
     ``default_voice`` is the voice a bot with no voice of its own speaks in:
@@ -1290,7 +1337,7 @@ def _voice_choices(settings: VoiceSettings) -> dict:
         try:
             if not builtins:
                 pb.stock_profile(build=False)       # list it once it can exist
-            profiles = pb.profiles()
+            profiles = pb.profiles() if caller is voice_access.LEGACY else pb.profiles_for(caller)
             default = pb.default_profile()
         except Exception:
             log.exception("voice: listing voice profiles failed")

@@ -357,6 +357,9 @@ export function voiceOptions(status, { withDefault = false, current = '', placeh
     out.push({ value: '', label: def ? t('drive.voice_use_default_named', { name: def }) : t('drive.voice_use_default') });
   }
   for (const p of st.profiles || []) {
+    // A profile's own clone belongs to that profile's bots (chosen in My bots), never to the
+    // household pickers here: the server would refuse it for a household bot.
+    if (p.household === false) continue;
     const stock = !!st.stock_voice && p.id === st.stock_voice;
     out.push({ value: p.id, label: stock ? t('drive.voice_stock') : p.name, group: stock ? 'stock' : 'profile' });
   }
@@ -1272,6 +1275,13 @@ function mountMemberSettings(host, st, state, s, set, ctx) {
   addHint(r, t('drive.english_only'), 'drive-english-only');
   const groups = [group('drive.group_switch', [r], { id: 'drive-group-switch', hint: t('drive.group_server_hint') })];
   const paneDisposers = [];
+  // "My voices": the profile's own clones (and the household's), when it may clone (DisPatch 4.0).
+  if (typeof ctx.myVoices === 'function') {
+    const mine = el('div', { class: 'vtool-voices drive-my-voices', id: 'drive-my-voices' });
+    groups.push(group('voices.my_title', [mine], { id: 'drive-group-my-voices' }));
+    const off = ctx.myVoices(mine);
+    if (typeof off === 'function') paneDisposers.push(off);
+  }
   if (on) {
     const H = helpers();
     const inG = sections.inputSection(H, st, s, set, { ...ctx, listeningRows: deviceListeningRows(s, set) });

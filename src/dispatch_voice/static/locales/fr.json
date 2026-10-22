@@ -433,7 +433,19 @@
     "none_hint_stock": "Les réponses utilisent la voix de base jusqu’à ce que vous en ajoutiez une.",
     "builtin_plugin": "Aucune installée. Les voix intégrées viennent d’un plugin facultatif, comme {name} ({licence}), installé séparément.",
     "delete": "Supprimer",
-    "discard": "Abandonner"
+    "discard": "Abandonner",
+    "my_title": "Mes voix",
+    "household_badge": "Foyer",
+    "mine_badge": "À moi",
+    "household_opt": "Voix du foyer (tout le monde peut l’utiliser)",
+    "make_household": "Partager avec le foyer",
+    "make_private": "Rendre privée",
+    "make_household_confirm": "Faire de « {name} » une voix du foyer ? Toutes les personnes qui utilisent le chat vocal pourront la choisir.",
+    "make_private_confirm": "Rendre « {name} » privée ? Vous seul pourrez l’utiliser et les bots qui l’emploient passeront à la voix par défaut.",
+    "made_household": "« {name} » est maintenant une voix du foyer.",
+    "made_private": "« {name} » est maintenant privée.",
+    "download": "Télécharger l’enregistrement",
+    "download_failed": "L’enregistrement n’a pas pu être téléchargé."
   },
   "vtools": {
     "cloning_name": "Clonage de voix",

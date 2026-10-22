@@ -30,6 +30,7 @@ import logging
 import os
 import random
 import re
+import shutil
 import threading
 import time
 import unicodedata
@@ -1119,6 +1120,22 @@ class RenderQueue:
                     (Path(d) / cache_key(t)).unlink()
         self.prune(voice)
         self.ensure(voice, texts)
+
+    def forget(self, voice: str) -> None:
+        """The voice was deleted: drop everything held for it (wanted lines, queued and
+        failed pairs, in-memory clips) and delete its disk-cache directory."""
+        voice = voice or ""
+        d = self._dir(voice)
+        with self._cv:
+            self._wanted.pop(voice, None)
+            self._mem.pop(voice, None)
+            self._rates.pop(voice, None)
+            self._failed = {p for p in self._failed if p[0] != voice}
+            self._queue = deque(p for p in self._queue if p[0] != voice)
+            self._queued = {p for p in self._queued if p[0] != voice}
+        self._bad_dirs.discard(voice)
+        if d is not None:
+            shutil.rmtree(d, ignore_errors=True)
 
     # ---- lifecycle --------------------------------------------------------- #
 

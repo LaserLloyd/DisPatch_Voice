@@ -431,7 +431,19 @@
     "none_hint_stock": "声を追加するまで、返答は標準の声を使います。",
     "builtin_plugin": "インストールされていません。内蔵の声は {name}（{licence}）などの任意のプラグインに含まれ、別途インストールします。",
     "delete": "削除",
-    "discard": "破棄"
+    "discard": "破棄",
+    "my_title": "マイボイス",
+    "household_badge": "共有",
+    "mine_badge": "自分用",
+    "household_opt": "共有ボイス（全員が使えます）",
+    "make_household": "共有にする",
+    "make_private": "非公開にする",
+    "make_household_confirm": "「{name}」を共有ボイスにしますか？音声チャットを使うすべての人が選べるようになります。",
+    "make_private_confirm": "「{name}」を非公開にしますか？自分だけが使えるようになり、このボイスを使っているボットは標準のボイスに切り替わります。",
+    "made_household": "「{name}」を共有ボイスにしました。",
+    "made_private": "「{name}」を非公開にしました。",
+    "download": "録音をダウンロード",
+    "download_failed": "録音をダウンロードできませんでした。"
   },
   "vtools": {
     "cloning_name": "声のクローン",

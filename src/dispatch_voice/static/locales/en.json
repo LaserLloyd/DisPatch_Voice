@@ -432,7 +432,19 @@
     "none_hint_stock": "Replies use the stock voice until you add one.",
     "builtin_plugin": "None installed. Built-in voices come from an optional plugin, such as {name} ({licence}), which is installed separately.",
     "delete": "Delete",
-    "discard": "Discard"
+    "discard": "Discard",
+    "my_title": "My voices",
+    "household_badge": "Household",
+    "mine_badge": "Mine",
+    "household_opt": "Household voice (everyone can use it)",
+    "make_household": "Make household",
+    "make_private": "Make private",
+    "make_household_confirm": "Make \"{name}\" a household voice? Everyone with voice chat will be able to pick it.",
+    "make_private_confirm": "Make \"{name}\" private? Only you will be able to use it, and bots that use it will switch to the default voice.",
+    "made_household": "\"{name}\" is now a household voice.",
+    "made_private": "\"{name}\" is now private.",
+    "download": "Download recording",
+    "download_failed": "The recording could not be downloaded."
   },
   "vtools": {
     "cloning_name": "Voice cloning",
