@@ -4,6 +4,12 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-10-23
+
+Per-profile cloned voices for DisPatch 4.0, one Settings → Voice page with one definition per
+setting, providers behind one interface, and the first Windows-supported release. Also the DisPatch
+3.0 permission changes and the ops-check fixes of 2026-10-19.
+
 ### Added (DisPatch 4.0: per-profile cloned voices)
 - **Every cloned voice has an owner.** `profile.json` gains `owner` (a profile id, or `household`;
   a missing key means household, so existing voices and the stock voice stay everyone's with
@@ -128,11 +134,6 @@ All notable changes to DisPatch Voice.
 - `dispatch-voice doctor` reported "no SPEECHFORGE_TOKEN" for a token saved in the host's file
   credential store (`<data>/ext/voice/secrets.json`); it now finds it there, and when it finds no
   token the line names every place it looked.
-
-## [1.6.0] — 2026-10-18
-
-One Settings → Voice page, one definition per setting, providers behind one interface, and the
-first Windows-supported release. No change to the voice session itself.
 
 ### Added
 - **Settings → Voice in four sections**, in order: 1 Speech to text, 2 Text to speech, 3 Input
