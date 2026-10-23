@@ -392,6 +392,34 @@ def test_acks_rebuild_of_another_profiles_clone_is_404(on, monkeypatch):
     assert r.status_code == 200 and set(r.json()["acks"]) == {"hh"} and rebuilt == ["hh"]
 
 
+SETUP_DETAIL = ("config", "settings_env", "providers", "models", "system")
+
+
+def test_status_shows_addresses_and_setup_detail_to_admins_only(on, monkeypatch):
+    """``/api/voice/status`` is ``use_voice`` (every role, the unsigned default profile too): the rig
+    and server addresses, the provider catalog, install commands and the settings' sources are the
+    Admin's. Everyone keeps what the call screen and the device settings need."""
+    import json as _json
+    from dispatch_voice.host import config as vconfig
+    vconfig.save_prefs({"rig": {"enabled": True, "url": "ws://192.0.2.7:1236/v1/realtime"},
+                        "stt_url": "http://192.0.2.9:8000/v1"})
+    as_(on, CALLER_ADMIN)
+    st = on.client.get("/api/voice/status").json()
+    assert st["rig"]["host"] == "192.0.2.7:1236" and "config" in st and st["plugins"]["builtin"].get("suggested")
+    for who in (CALLER_A, CALLER_BASIC, None):
+        as_(on, who)
+        st = on.client.get("/api/voice/status").json()
+        text = _json.dumps(st)
+        assert "192.0.2.7" not in text and "192.0.2.9" not in text
+        for k in SETUP_DETAIL:
+            assert k not in st, k
+        assert set(st["rig"]) <= {"enabled", "active", "configured", "state"}
+        assert "suggested" not in st["plugins"]["builtin"]
+        assert all(set(h) <= {"id", "state", "code"} for h in st["health"])
+        for k in ("enabled", "ready", "profiles", "bots", "proto", "opus", "default_voice", "health_state"):
+            assert k in st, k
+
+
 def test_status_says_whether_the_host_knows_profiles(on):
     """The Settings pane words its hints for the host it runs on (4.0: Settings → Characters and
     My bots, no locked-voice picker); ``host_profiles`` is how it knows."""

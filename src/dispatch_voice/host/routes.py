@@ -931,7 +931,30 @@ async def status_payload(settings: VoiceSettings, request=None) -> dict:
     st["config"] = {"rig_url": settings.rig.url, "stt_url": settings.stt_url, "stt_model": settings.stt_model,
                     "hq_url": settings.hq_url, "hq_model": settings.hq_model,
                     "extensions": list(settings.extensions), "rig_allow": list(settings.rig_allow)}
+    if voice_access.tenant_mode() and not voice_access.is_admin(caller):
+        _redact_for_voice_user(st)
     return st
+
+
+#: Status keys only the Admin's settings pane reads (addresses, the provider catalog, install
+#: commands, which settings the environment decides).
+_ADMIN_ONLY_STATUS = ("config", "settings_env", "providers", "models", "system")
+
+
+def _redact_for_voice_user(st: dict) -> None:
+    """DisPatch 4.0: ``/status`` is ``use_voice`` (every role, the unsigned default profile too).
+    A non-Admin keeps what the call screen and the device settings draw from (the switch, ready,
+    voices, bots, the wire, the health STATES) and never sees an address or setup detail."""
+    for k in _ADMIN_ONLY_STATUS:
+        st.pop(k, None)
+    rig_st = st.get("rig") or {}
+    st["rig"] = {k: rig_st[k] for k in ("enabled", "active", "configured", "state") if k in rig_st}
+    st["health"] = [{k: h.get(k) for k in ("id", "state", "code")} for h in (st.get("health") or [])
+                    if isinstance(h, dict)]
+    plugins = st.get("plugins") or {}
+    for part in plugins.values():
+        if isinstance(part, dict):
+            part.pop("suggested", None)
 
 
 def _fetch_status() -> dict:
