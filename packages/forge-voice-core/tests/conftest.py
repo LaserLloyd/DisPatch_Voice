@@ -33,6 +33,7 @@ REAL_HOME = os.path.expanduser("~")
 def _private_home(request, monkeypatch, tmp_path_factory):
     from forge_voice_core import rig as _rig
     fake = tmp_path_factory.mktemp("home")
+    monkeypatch.delenv("DISPATCH_VOICE_LEGACY_TOKEN_FILE", raising=False)   # never a developer's own file
     if request.node.get_closest_marker("models") is None:
         monkeypatch.setenv("HOME", str(fake))
         monkeypatch.setenv("USERPROFILE", str(fake))

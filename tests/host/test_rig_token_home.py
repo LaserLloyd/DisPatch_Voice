@@ -75,13 +75,34 @@ def test_write_without_a_store_makes_a_private_file_in_the_state_folder(env):
     assert rig.clear_token() is True and rig.read_token() == rig.Token()
 
 
-def test_the_old_home_file_is_still_read_and_cleared(env):
+def test_the_old_home_file_is_still_read_but_never_deleted(env):
+    """The legacy home-folder file is read as a fallback and NEVER written or deleted inside
+    DisPatch: it may belong to another DisPatch on this machine (a scratch instance's Remove once
+    deleted the live install's token). Remove takes the store entry and the state-folder file only."""
     put(rig.legacy_token_path(), SECRET)
     assert rig.read_token().value == SECRET
     put(env.paths.state_dir / "speechforge.env", OTHER)               # the new place wins
     assert rig.read_token().value == OTHER
     assert rig.clear_token() is True
-    assert not rig.legacy_token_path().exists() and rig.read_token() == rig.Token()
+    assert not (env.paths.state_dir / "speechforge.env").exists()
+    assert rig.legacy_token_path().exists()                           # left alone ...
+    assert rig.read_token().value == SECRET and rig.legacy_token_left()   # ... and still read: say so
+    assert rig.clear_token() is False and rig.legacy_token_path().exists()
+
+
+def test_removing_the_token_says_when_the_old_home_file_is_still_read(env):
+    from fastapi.testclient import TestClient
+
+    from dispatch_voice.host import setup
+    put(rig.legacy_token_path(), SECRET)
+    setup(env)
+    with TestClient(env.app) as c:
+        r = c.delete("/api/voice/rig/token")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["legacy_token_left"] is True and "remove it by hand" in body["legacy_token_note"]
+    assert SECRET not in r.text and str(rig.legacy_token_path()) not in r.text
+    assert rig.legacy_token_path().exists()
 
 
 def test_the_credential_store_is_the_first_home(env):
@@ -133,3 +154,12 @@ def test_a_home_folder_that_cannot_be_written_does_not_matter(env, monkeypatch, 
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "no" / "such" / "home"))
     assert rig.write_token(SECRET) is not None and rig.read_token().value == SECRET
     assert not (tmp_path / "no").exists()
+
+
+def test_the_legacy_token_file_can_be_named_in_the_environment(env, monkeypatch, tmp_path):
+    """A scratch instance that shares the home folder points the legacy file elsewhere."""
+    other = tmp_path / "scratch" / "speechforge.env"
+    monkeypatch.setenv("DISPATCH_VOICE_LEGACY_TOKEN_FILE", str(other))
+    assert rig.legacy_token_path() == other
+    put(other, SECRET)
+    assert rig.read_token().value == SECRET

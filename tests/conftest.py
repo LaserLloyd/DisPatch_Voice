@@ -20,7 +20,7 @@ SR = audio.SAMPLE_RATE
 # The rig token's legacy file (~/.config/local-chat/speechforge.env), DisPatch's default data
 # folder (~/.local/share/local-chat) and the pre-1.6 Chatterbox folder all hang off the home
 # folder. A test that clears the token (DELETE /api/voice/rig/token -> rig.clear_token(), which
-# removes every token file it knows) deleted the DEVELOPER'S real rig token, which a running
+# then removed every token file it knew; since 1.6.0 it never deletes the legacy file) deleted the DEVELOPER'S real rig token, which a running
 # DisPatch on the same machine reads (ops check 2026-10-19). CI has no such files, so only a dev
 # box ever saw it. Every test now runs with HOME / USERPROFILE / XDG_* pointing at its own empty
 # folder. A ``models`` test keeps the real home (that is where the downloaded models are) but the
@@ -32,6 +32,7 @@ REAL_HOME = os.path.expanduser("~")
 def _private_home(request, monkeypatch, tmp_path_factory):
     from forge_voice_core import rig as _rig
     fake = tmp_path_factory.mktemp("home")
+    monkeypatch.delenv("DISPATCH_VOICE_LEGACY_TOKEN_FILE", raising=False)   # never a developer's own file
     if request.node.get_closest_marker("models") is None:
         monkeypatch.setenv("HOME", str(fake))
         monkeypatch.setenv("USERPROFILE", str(fake))

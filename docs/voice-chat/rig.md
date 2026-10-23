@@ -23,7 +23,13 @@ variables are for servers that are configured as code.
    a credential store gets a private file in the add-on's state folder instead
    (`<data>/ext/voice/speechforge.env`: mode 0600, or an owner-only ACL on Windows). It is
    write-only: no page, route or log line ever shows it. The 1.6.0 location
-   (`~/.config/local-chat/speechforge.env`) is still read. On a server you configure as code:
+   (`~/.config/local-chat/speechforge.env`) is still read, but *Remove* never deletes it (another
+   DisPatch on the same machine may use it): the response says when it is still there
+   (`legacy_token_left`), and you delete it by hand. A scratch or test instance that shares the
+   home folder with a live DisPatch should run with its own `HOME` (that also isolates the old
+   Chatterbox folder and the cache), its own `DISPATCH_DATA_DIR`, and `DISPATCH_VOICE_MODELS` /
+   `DISPATCH_SPEECH_MODELS` for the models; `DISPATCH_VOICE_LEGACY_TOKEN_FILE=<path>` points just
+   the old token file elsewhere. On a server you configure as code:
 
    ```sh
    mkdir -p <data>/ext/voice

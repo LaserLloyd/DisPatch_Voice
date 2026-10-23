@@ -215,7 +215,8 @@ TOKEN_SECRET = "speechforge_token"
 def legacy_token_path() -> Path:
     """Where 1.5.0 to 1.6.0 kept the token: under the user's home, which is NOT in the host's
     data folder (it is lost on a container image update and read-only under ``read_only: true``).
-    Still read, as a fallback; never written. The host names the file (``HostLink.legacy_token_path``)."""
+    Still read, as a fallback; never written, and never deleted by :func:`clear_token` (unless it is
+    the token file itself). The host names the file (``HostLink.legacy_token_path``)."""
     return hostlink.get().legacy_token_path()
 
 
@@ -402,8 +403,12 @@ def write_token(value: str) -> Path | None:
 
 
 def clear_token() -> bool:
-    """Forget the rig token everywhere the add-on can: the credential store and both token files
-    (the environment variable is the operator's). True when there was one to remove."""
+    """Forget the rig token where the add-on keeps it: the credential store and the token file
+    (``token_path()``). True when there was one to remove. The environment variable is the
+    operator's, and the legacy home-folder file (``legacy_token_path()``) is read as a fallback but
+    NEVER deleted here unless it IS the token file (outside DisPatch with no data folder): another
+    install on the same machine may rely on it (a scratch instance once removed a live token).
+    :func:`legacy_token_left` says whether it is still there to be removed by hand."""
     had = False
     store = _secret_store()
     if store is not None:
@@ -412,18 +417,30 @@ def clear_token() -> bool:
             store.delete(TOKEN_SECRET)
         except Exception:       # noqa: BLE001
             log.warning("voice: the host credential store could not remove the rig token")
-    for p in dict.fromkeys([token_path(), legacy_token_path()]):
-        try:
-            p.unlink()
-            had = True
-        except FileNotFoundError:
-            pass
-        except OSError:
-            log.warning("voice: could not remove %s", p.name)
+    p = token_path()
+    try:
+        p.unlink()
+        had = True
+    except FileNotFoundError:
+        pass
+    except OSError:
+        log.warning("voice: could not remove %s", p.name)
     if had:
         _MISCONFIGURED.clear()
         log.info("voice: the rig token was removed")
+    if legacy_token_left():
+        log.warning("voice: an old rig token file in the home folder (~/.config/local-chat/speechforge.env) "
+                    "is still read; it was left alone - remove it by hand if no other install uses it")
     return had
+
+
+def legacy_token_left() -> bool:
+    """Is there a legacy home-folder token file (not the token file itself) that is still read?"""
+    try:
+        lp = legacy_token_path()
+        return lp != token_path() and lp.is_file()
+    except Exception:       # noqa: BLE001
+        return False
 
 
 def _fingerprint(url: str, token: str) -> str:

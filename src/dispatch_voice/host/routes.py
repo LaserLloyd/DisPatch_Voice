@@ -638,7 +638,14 @@ def build_router() -> APIRouter:
         if _rig.read_token().source == "env":
             raise HTTPException(409, f"{_rig.TOKEN_ENV} is set in the server's environment; remove it there.")
         await asyncio.to_thread(_rig.clear_token)
-        return await asyncio.to_thread(_rig.status, load_settings())
+        out = await asyncio.to_thread(_rig.status, load_settings())
+        # The old home-folder file is read but never deleted from here (another install may use it).
+        out["legacy_token_left"] = await asyncio.to_thread(_rig.legacy_token_left)
+        if out["legacy_token_left"]:
+            out["legacy_token_note"] = ("An old token file in the server's home folder "
+                                        "(.config/local-chat/speechforge.env) is still read; "
+                                        "remove it by hand if no other install uses it.")
+        return out
 
     @r.get("/providers")
     async def get_providers():

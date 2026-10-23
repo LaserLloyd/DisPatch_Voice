@@ -11,6 +11,7 @@ fast, which DisPatch's extension discovery relies on.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from forge_voice_core import _log, hostlink
@@ -52,6 +53,11 @@ class DispatchHostLink(hostlink.HostLink):
         return context.get_context() is not None or bool(context.data_dir_override())
 
     def legacy_token_path(self) -> Path:
+        # DISPATCH_VOICE_LEGACY_TOKEN_FILE: a scratch instance that shares this home folder with a
+        # live DisPatch points the legacy file somewhere of its own (or set HOME for the scratch run).
+        raw = os.environ.get("DISPATCH_VOICE_LEGACY_TOKEN_FILE", "").strip()
+        if raw:
+            return Path(raw).expanduser()
         return Path.home() / ".config" / "local-chat" / "speechforge.env"
 
     # ---- settings and identity -------------------------------------------- #
