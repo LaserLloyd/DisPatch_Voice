@@ -352,6 +352,13 @@ def test_locked_voice_is_inert_in_status_on_a_4_0_host(on):
     assert "locked_voice" not in on.client.get("/api/voice/status").json()["bots"]["sage"]
 
 
+def test_status_says_whether_the_host_knows_profiles(on):
+    """The Settings pane words its hints for the host it runs on (4.0: Settings → Characters and
+    My bots, no locked-voice picker); ``host_profiles`` is how it knows."""
+    as_(on, CALLER_A)
+    assert on.client.get("/api/voice/status").json()["host_profiles"] is True
+
+
 def test_settings_default_and_narrator_refuse_a_personal_clone(on):
     for key in ("default_voice", "narrator_voice"):
         r = on.client.patch("/api/voice/settings", json={key: "a-mine"})
@@ -546,6 +553,7 @@ def test_legacy_host_status_lists_every_bot(legacy, no_models, monkeypatch):
     monkeypatch.setenv("DISPATCH_VOICE", "1")
     st = legacy.client.get("/api/voice/status").json()
     assert set(st["bots"]) == {"sage", "swift", "nova", "alpha"}
+    assert st["host_profiles"] is False
 
 
 def test_a_host_whose_caller_returns_none_cannot_write(world):

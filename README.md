@@ -59,7 +59,7 @@ docker compose exec app ffmpeg -version
 docker compose logs app | Select-String "SETUP TOKEN"
 ```
 
-Open <http://localhost:8765>, create the owner with that token, then Settings, Voice, which lists what is
+Open <http://localhost:8765>, create the first Admin account with that token (on a DisPatch before 4.0: the owner), then Settings, Voice, which lists what is
 missing (the models, until you press Download). `ffmpeg -version` proves the system program is in the image. The default `VOICE_REF` installs the add-on
 from this repository's `main` branch; set `VOICE_REF=refs/tags/<tag>` in `.env` to pin a
 release. `VOICE_REF` takes a full ref (`refs/heads/<branch>`, `refs/tags/<tag>`) or a bare tag name. With
@@ -145,7 +145,7 @@ sudo docker compose exec app ffmpeg -version
 sudo docker compose logs app | grep "SETUP TOKEN"
 ```
 
-Open <http://localhost:8765>, create the owner with that token, then Settings, Voice. Skip the second line
+Open <http://localhost:8765>, create the first Admin account with that token (on a DisPatch before 4.0: the owner), then Settings, Voice. Skip the second line
 if Docker is already installed. (`dispatch-voice doctor` inside the container may report the models missing
 even after the download, because it looks in the home folder instead of `/data`; trust the Settings page.)
 
@@ -312,7 +312,7 @@ Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin pac
 
 The models live in ONE folder (DisPatch's `models_dir`) with a `speech/` and a `chatterbox/` subfolder. An install from before 1.6.0 keeps working where its files are; `dispatch-voice migrate-models` (dry run) and `--apply`, or the Move button, bring the old two folders into the new layout.
 
-Voice chat understands and speaks English only for now. It works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with (the `safe` ones); every turn from a locked device, spoken or typed, runs with DisPatch's locked rules, and the voice settings stay unlocked-only. Since 1.3.4 a bot can use a different voice for locked devices: `bots.<id>.locked_voice` in `voice.yaml`, or the "Voice on locked devices" picker in the Bots-tab Voice popover. Empty (the default) means the bot's standard voice. The server picks it from the socket's locked flag, and a locked device cannot read the setting.
+Voice chat understands and speaks English only for now. On DisPatch 4.0 and later every signed-in profile with the voice permission uses it on the chats it may open (an unsigned device lands on the household's default profile, if one is set); there are no locked devices, so `locked_voice` is inert and its picker is hidden. A household character's voice is set under Settings → Voice → Voices per character or in Settings → Characters (Admins), a profile's own bots' voices in My bots. On DisPatch 2.x and 3.x it works on an unlocked device and, with DisPatch 2.3.4 or later, on a locked (Safe Mode) one too, for the bots that device can chat with (the `safe` ones); every turn from a locked device, spoken or typed, runs with DisPatch's locked rules, and the voice settings stay unlocked-only. Since 1.3.4 a bot can use a different voice for locked devices: `bots.<id>.locked_voice` in `voice.yaml`, or the "Voice on locked devices" picker in the Bots-tab Voice popover. Empty (the default) means the bot's standard voice. The server picks it from the socket's locked flag, and a locked device cannot read the setting.
 
 ### Which DisPatch version
 
@@ -327,6 +327,7 @@ Voice chat understands and speaks English only for now. It works on an unlocked 
 | Interrupt sensitivity | 1.5.0 | 2.2.0 |
 | One Settings → Voice page (providers, model download, rig address and token), provider plugins | 1.6.0 | 2.2.0 |
 | Per-profile cloned voices (`owner`, My voices, purge with the profile) | 1.6.0 | 4.0 |
+| Settings → Voice worded for 4.0 (Characters, My bots; no locked-voice picker) | 1.6.0 | 4.0 |
 
 On an older DisPatch the newer buttons are simply not available or the socket is refused, as the [changelog](CHANGELOG.md) notes per release.
 

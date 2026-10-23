@@ -4,7 +4,7 @@
 
 Voice chat lets you talk with a bot hands-free: you speak, the bot answers in
 its own voice, and you can talk over it to interrupt. It works in any chat
-on a device that is unlocked (since 1.3.1 with DisPatch 2.3.1 a Safe-Mode bot's thread too: the tier is the device's). The engines
+for a signed-in profile that has the voice permission (DisPatch 4.0 and later; there are no locked devices any more). On DisPatch 2.x and 3.x: on a device that is unlocked (since 1.3.1 with DisPatch 2.3.1 a Safe-Mode bot's thread too: the tier is the device's). The engines
 understand and speak **English only for now**; the screen says so the first
 time it opens in another UI language, and Settings › Voice says so under the
 switch.
@@ -194,7 +194,7 @@ screen reader, and every select shows the app's focus ring.
 | | Type instead of talking (replies spoken, the chat opens muted with the text box out) | device |
 | | Microphone | device |
 | Replies | Reply length | device |
-| | Ask a follow-up question: Bot's default / On / Off ("Bot's default" uses each bot's own setting from the Bots tab) | device |
+| | Ask a follow-up question: Bot's default / On / Off ("Bot's default" uses each bot's own setting from Voices per character) | device |
 | | Reactions: Off / Sometimes / Often — short words in the bot's own voice ("let me see" while it works; at Often also "mm-hm" while you talk, for bots that opted in) | device |
 | | Tones (the short sounds) | device |
 | Connection | When the connection is slow: Phone voice / Wait / Text only / Always use the phone's voice | device |
@@ -212,7 +212,11 @@ cannot reach the server it says so and offers **Try again**.
 phone's own system speech engine. Google's engine speaks offline when its
 language pack is installed; the page cannot verify which engine is used.
 
-## Bots tab
+## Bots tab (DisPatch 2.x and 3.x)
+
+DisPatch 4.0 has no Bots tab: a household character's voice is set under Settings › Voice ›
+Voices per character or in Settings › Characters (Admins), a profile's own bots' voices in
+My bots, and every per-bot voice setting below lives in Voices per character. On older hosts:
 
 Each bot card has a **Voice** pill (Safe-Mode bots included since 1.3.1). It opens a
 small panel:
@@ -372,7 +376,7 @@ what moves through it, with every browser object and clock injected
   played_ms, source}` goes at once (read before the flush); a tap-stop puts
   the same object on `stop_playback`/`cancel`/`undo`. `heard` also goes
   alone once a second while a reply plays.
-- **Bots tab pill:** DisPatch renders the roster when Settings opens, not on
+- **Bots tab pill (DisPatch 2.x and 3.x):** DisPatch renders the roster when Settings opens, not on
   a tab switch. The add-on therefore returns a slot for every non-Safe bot
   and fills or hides it whenever the status changes. Turning voice on in
   Settings › Voice shows the pills on the Bots tab straight away.

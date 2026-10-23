@@ -500,7 +500,7 @@ test('mountDriveSettings for a Member (admin: false): voice off says so, nothing
     const host = document.createElement('div');
     mountDriveSettings(host, { status: { ...ON_STATUS(), enabled: false, switch: false }, admin: false });
     assert.ok(host.querySelector('#drive-member-status'));
-    assert.match(host.textContent, /Owner or an Admin can turn it on/);
+    assert.match(host.textContent, /An Admin can turn it on/);
     assert.equal(host.querySelector('#drive-switch-input'), null);
     assert.equal(host.querySelector('#drive-patience'), null, 'no device rows while voice is off');
   } finally { bindShell(prev); }
@@ -749,5 +749,56 @@ test('quick sheet: without a phone voice the slow-link row shows what will reall
     }
     localStorage.setItem('dispatch-drive', JSON.stringify({ v: 3, slowLink: 'wait' }));
     assert.equal(chosen(buildQuickSheet({ status: ON_STATUS(), bot: null, voices: [], android: false, lang: 'en' })), 'wait');
+  } finally { bindShell(prev); }
+}));
+
+// ------------------------------------------------- DisPatch 4.0 wording ---
+
+const ROSTER_40 = () => [{ id: 'nova', name: 'Nova', voice: '', voice_rp: '', visible: true },
+  { id: 'echo', name: 'Echo', voice: 'p1', voice_rp: '', visible: true }];
+
+test('Settings → Voice wording: no 3.x places (Bots tab, Owner, locked devices) on any host', dom, () => withDom(async () => {
+  const { shell } = fakeShell();
+  const prev = bindShell(shell);
+  try {
+    for (const host_profiles of [false, true]) {
+      const host = document.createElement('div');
+      document.body.append(host);
+      mountDriveSettings(host, { status: { ...ON_STATUS(), host_profiles }, bots: () => ROSTER_40(), voices: [], android: false });
+      const hint = host.querySelector('#drive-default-voice .dev-row-hint').textContent;
+      assert.match(hint, /Used by Nova/);
+      assert.doesNotMatch(host.textContent, /Bots tab/, `host_profiles=${host_profiles}`);
+      assert.match(hint, /Voices per character/);
+      if (host_profiles) {
+        assert.match(hint, /Settings → Characters/);
+        assert.match(hint, /My bots/);
+        assert.equal(host.querySelector('#drive-char-nova-locked'), null, '4.0 has no locked devices: no locked-voice picker');
+        assert.doesNotMatch(host.textContent, /locked devices/i);
+      } else {
+        assert.ok(host.querySelector('#drive-char-nova-locked'), 'an older host keeps the locked-voice picker');
+      }
+      host.remove();
+    }
+    const none = document.createElement('div');
+    mountDriveSettings(none, { status: { ...ON_STATUS(), host_profiles: true },
+      bots: () => [{ id: 'echo', name: 'Echo', voice: 'p1', voice_rp: '', visible: true }], voices: [], android: false });
+    const h2 = none.querySelector('#drive-default-voice .dev-row-hint').textContent;
+    assert.match(h2, /Not in use right now/);
+    assert.doesNotMatch(h2, /Bots tab/);
+    assert.match(h2, /Settings → Characters/);
+  } finally { bindShell(prev); }
+}));
+
+test('Settings → Voice for a non-Admin: "an Admin", no Owner role; on 4.0 it says where your own bots\' voices are', dom, () => withDom(async () => {
+  const { shell } = fakeShell({ perms: ['use_voice'] });
+  const prev = bindShell(shell);
+  try {
+    for (const host_profiles of [false, true]) {
+      const host = document.createElement('div');
+      mountDriveSettings(host, { status: { ...ON_STATUS(), enabled: false, switch: false, host_profiles }, admin: false });
+      assert.doesNotMatch(host.textContent, /Owner/);
+      assert.match(host.textContent, /An Admin can turn it on/);
+      assert.equal(/My bots/.test(host.textContent), host_profiles);
+    }
   } finally { bindShell(prev); }
 }));

@@ -549,11 +549,13 @@ export function characterRow(H, st, bot, ctx) {
       catch (e) { lockedSel.value = locked; notify(H.saveErrorText(e)); }
       lockedSel.disabled = false;
     });
+  // DisPatch 4.0 (`host_profiles`) has no locked devices: the locked voice is inert there, so no picker.
+  const lockedRow = st.host_profiles === true ? null : H.row(t('drive.bot_locked_voice'), t('drive.bot_locked_voice_hint'),
+    [lockedSel, H.previewButton(() => lockedSel.value || voiceSel.value || st.default_voice || '', notify)], { id: `${id}-locked` });
   const body = el('div', { class: 'dev-group-body drive-char-body' }, [
     H.row(t('drive.voice'), '', [voiceSel, H.previewButton(() => voiceSel.value || st.default_voice || '', notify)], { id: `${id}-voice` }),
     H.row(t('drive.rp_speech'), '', [rpSel], { id: `${id}-rp` }),
-    H.row(t('drive.bot_locked_voice'), t('drive.bot_locked_voice_hint'),
-      [lockedSel, H.previewButton(() => lockedSel.value || voiceSel.value || st.default_voice || '', notify)], { id: `${id}-locked` }),
+    ...(lockedRow ? [lockedRow] : []),
     H.row(t('drive.bot_backchannel'), t('drive.bot_backchannel_hint'), [bc], { id: `${id}-bc` }),
     H.row(t('drive.bot_follow_up'), t('drive.bot_follow_up_hint'), [fu], { id: `${id}-fu` }),
   ]);

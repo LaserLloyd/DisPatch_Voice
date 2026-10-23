@@ -75,12 +75,16 @@ discovers through an entry point; nothing in DisPatch names it.
    status lines (`tools: [{match: <pattern>, say: <line>}]`); see
    [persona-acks-rp.md](persona-acks-rp.md).
 
-Voice chat understands and speaks English only for now. It is available to an
+Voice chat understands and speaks English only for now. On DisPatch 4.0 and later
+it is available to every signed-in profile with the voice permission, on the chats that
+profile may open; there are no locked devices, so `locked_voice` is inert and the pane
+hides its picker (`/api/voice/status.host_profiles` tells the client which host it is on).
+On DisPatch 2.x and 3.x it is available to an
 unlocked device and, since 1.3.3 with DisPatch 2.3.4, to a locked (Safe Mode)
 device on the bots it can chat with; DisPatch runs those turns with its locked
 rules. The voice settings stay unlocked-only. Since 1.3.4 a bot can speak with a
 different voice on locked devices (`bots.<id>.locked_voice` in `voice.yaml`, the
-"Voice on locked devices" picker in the Bots-tab Voice popover; empty = the standard
+"Voice on locked devices" picker in Voices per character; empty = the standard
 voice). The server picks it from the socket's locked flag; a locked device cannot read it.
 
 ## Reading the code

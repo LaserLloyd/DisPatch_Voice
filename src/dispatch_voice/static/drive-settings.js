@@ -1110,7 +1110,10 @@ export function mountDriveSettings(host, ctx) {
     const bots = (ctx.bots ? ctx.bots() : []).filter((b) => b && b.visible !== false);
     if (bots.length && bots.every((b) => typeof b.voice === 'string')) {
       const uses = bots.filter((b) => !b.voice).map((b) => b.name);
-      hintEl.textContent = uses.length ? t('drive.voice_users', { names: listFormat(uses) }) : t('drive.voice_users_none');
+      // DisPatch 4.0 (`host_profiles`): household characters are edited here or in Settings →
+      // Characters, an Admin's own bots in My bots. Older hosts: this page's Voices per character.
+      const v4 = st.host_profiles === true ? '_profiles' : '';
+      hintEl.textContent = uses.length ? t(`drive.voice_users${v4}`, { names: listFormat(uses) }) : t(`drive.voice_users_none${v4}`);
     }
     const note = !own.length ? (builtins.length ? 'drive.voice_builtin_only' : (stock ? 'drive.voice_stock_only' : null)) : null;
     if (note) addHint(r, t(note));
@@ -1263,7 +1266,7 @@ function deviceGroups(s, set, ctx) {
 }
 
 /**
- * Settings → Voice for a voice user who does not administer it (DisPatch 3.0: a Member;
+ * Settings → Voice for a voice user who does not administer it (DisPatch 3.0: a Member; 4.0: a User or Basic;
  * `ctx.admin === false`). Whether voice is on, then this device's settings - nothing that
  * changes the server (the switch, voices, role-play, the rig, models, characters): those are
  * `manage_plugins`/`manage_characters` and the server would refuse them anyway.
@@ -1273,6 +1276,8 @@ function mountMemberSettings(host, st, state, s, set, ctx) {
   const on = state === 'on';
   const r = row(t('drive.switch'), on ? t('drive.member_on') : t('drive.member_off'), [], { id: 'drive-member-status' });
   addHint(r, t('drive.english_only'), 'drive-english-only');
+  // DisPatch 4.0: a profile picks its own bots' voices in My bots.
+  if (st && st.host_profiles === true) addHint(r, t('drive.my_bots_voice'), 'drive-my-bots-voice');
   const groups = [group('drive.group_switch', [r], { id: 'drive-group-switch', hint: t('drive.group_server_hint') })];
   const paneDisposers = [];
   // "My voices": the profile's own clones (and the household's), when it may clone (DisPatch 4.0).

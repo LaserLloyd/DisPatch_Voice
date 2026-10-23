@@ -875,6 +875,8 @@ async def status_payload(settings: VoiceSettings, request=None) -> dict:
     st["sessions"] = _sessions_count(settings)
     st["power_hold"] = power.state(settings)
     st["extension"] = {"name": EXTENSION["name"], "version": __version__}
+    # DisPatch 4.0 and later (profiles, no locked devices): the pane words its hints for it.
+    st["host_profiles"] = voice_access.tenant_mode()
     st["assets_version_at_setup"] = ASSETS_VERSION
     from . import acks
     st["acks"] = await asyncio.to_thread(acks.status)
