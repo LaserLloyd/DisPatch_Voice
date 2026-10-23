@@ -204,8 +204,10 @@ def test_doctor_probe_never_sends_the_token_to_an_address_the_policy_refuses(hos
     ({"enabled": True, "url_set": True, "url_ok": True, "token": None, "token_problem": "permissions",
       "token_file": "/x/speechforge.env"}, "chmod 600", 1),
     ({"enabled": True, "url_set": True, "url_ok": True, "token": None, "token_file": "/x/s.env"}, "no rig token found", 1),
-    ({"enabled": False, "url_set": True, "url_ok": True, "token": "env", "health": None, "detail": "ConnectError"},
+    ({"enabled": True, "url_set": True, "url_ok": True, "token": "env", "health": None, "detail": "ConnectError"},
      "not reachable", 0),
+    ({"enabled": False, "url_set": True, "url_ok": True}, ": off", 0),
+    ({"enabled": False, "url_set": True, "url_ok": False}, ": off", 0),
     ({"enabled": True, "url_set": True, "url_ok": True, "token": "file", "health": 200, "ready": 401}, "refused the token", 1),
     ({"enabled": True, "url_set": True, "url_ok": True, "token": "file", "health": 200, "ready": 200,
       "version": "0.2.0", "gpu": "RTX 3090"}, "SpeechForge 0.2.0 ready on RTX 3090", 0),
@@ -216,6 +218,26 @@ def test_doctor_rig_line(rep, want, bad):
     rep = {"host": "192.0.2.7:1236", "token_problem": None, **rep}
     line, n = cli.rig_line(rep)
     assert line.startswith("GPU rig") and want in line and n == bad
+
+
+def test_doctor_neither_reads_the_token_nor_dials_when_the_rig_is_off(host_env, monkeypatch, _isolated_token):
+    """rig.enabled false: the doctor says the rig is off. It does not open the token (env, file or
+    the host's secrets file) and does not probe /health or /ready, even with an address and a token."""
+    import httpx
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("dialled")))
+    write_token(_isolated_token, f"{rig.TOKEN_ENV}={SECRET}\n")
+    monkeypatch.setenv(rig.TOKEN_ENV, SECRET)
+
+    def no_read(*a, **k):
+        raise AssertionError("token read")
+    monkeypatch.setattr(rig, "read_token", no_read)
+    monkeypatch.setattr(rig, "read_host_secrets_file_token", no_read)
+    vconfig.save_prefs({"rig": {"enabled": False, "url": URL}})
+    r = cli.probe_rig(vconfig.load_settings())
+    assert r["enabled"] is False and r.get("token") is None and "health" not in r and "ready" not in r
+    line, n = cli.rig_line(r)
+    assert line.startswith("GPU rig") and ": off" in line and n == 0
+    assert SECRET not in repr(r) and SECRET not in line
 
 
 def test_doctor_probe_never_dials_without_an_address_and_a_token(host_env, monkeypatch):

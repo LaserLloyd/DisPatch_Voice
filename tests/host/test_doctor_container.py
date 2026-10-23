@@ -14,6 +14,13 @@ from dispatch_voice.host import context, rig
 TOKEN = "container-token-not-real"  # scrub-ok: test fixture
 
 
+def _rig_on():
+    """Settings with the rig switched on: a rig that is off is not probed, nor its token read."""
+    from dispatch_voice.host.config import VoiceSettings
+    from dispatch_voice.host.rig import RigSettings
+    return VoiceSettings(rig=RigSettings(enabled=True))
+
+
 @pytest.fixture
 def bare(monkeypatch, tmp_path):
     """No DisPatch context and no data-folder variable: a plain shell, home under tmp_path."""
@@ -98,7 +105,7 @@ def test_doctor_finds_the_token_in_the_host_secrets_file(bare, monkeypatch):
     t = rig.read_host_secrets_file_token()
     assert t.value == TOKEN and t.source == "secret" and TOKEN not in repr(t)
     from dispatch_voice.host.config import VoiceSettings
-    r = cli.probe_rig(VoiceSettings())
+    r = cli.probe_rig(_rig_on())
     assert r["token"] == "secret" and r["secrets_file"] == str(data / "ext" / "voice" / "secrets.json")
     line, bad = cli.rig_line({**r, "enabled": True, "url_set": True, "url_ok": True, "host": "h:1",
                               "health": None, "detail": "ConnectError"})
@@ -124,7 +131,7 @@ def test_the_environment_variable_still_wins_over_the_secrets_file(bare, monkeyp
     monkeypatch.setenv("DISPATCH_DATA_DIR", str(data))
     monkeypatch.setenv(rig.TOKEN_ENV, "env-token-not-real")  # scrub-ok: test fixture
     from dispatch_voice.host.config import VoiceSettings
-    assert cli.probe_rig(VoiceSettings())["token"] == "env"
+    assert cli.probe_rig(_rig_on())["token"] == "env"
 
 
 def test_the_no_token_line_names_every_place_it_looked():

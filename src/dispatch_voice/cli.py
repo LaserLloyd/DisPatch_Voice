@@ -227,10 +227,15 @@ def probe_update() -> dict:
 
 
 def probe_rig(settings) -> dict:
-    """The GPU rig line: set up? switched on? and, when an address and a token are
-    set, ``GET /health`` + ``GET /ready`` on it (3 s each). The token is never printed."""
+    """The GPU rig line: set up? switched on? and, when it is on and an address and a token
+    are set, ``GET /health`` + ``GET /ready`` on it (3 s each). The token is never printed.
+    A rig switched off (``rig.enabled: false``) is neither probed nor is its token read."""
     from .host import rig
     rs = settings.rig
+    if not rs.enabled:
+        return {"enabled": False, "url_set": bool(rs.url), "url_ok": bool(rs.url) and rig.valid_url(rs.url),
+                "host": rig.host_of(rs.url), "token": None, "token_problem": None,
+                "token_file": str(rig.token_path()), "secrets_file": str(rig.host_secrets_file())}
     tok = rig.read_token()
     if tok.source is None and tok.problem is None:
         # Outside DisPatch there is no ctx.secrets; read the host's file store itself, which is where
@@ -279,6 +284,8 @@ def rig_line(r: dict) -> tuple[str, int]:
     where = f" ({r['host']})" if r.get("host") else ""
     if not r["url_set"] and not r["enabled"]:
         return "GPU rig: not set up (optional; see docs/voice-chat/rig.md)", 0
+    if not r["enabled"]:
+        return f"GPU rig{where}: off (rig.enabled is false; not probed): this computer speaks", 0
     if r["url_set"] and not r["url_ok"]:
         return "GPU rig: rig.url in voice.yaml is not a ws:// or wss:// address", 1
     if r.get("policy"):
@@ -293,7 +300,7 @@ def rig_line(r: dict) -> tuple[str, int]:
         return line, 1 if r["enabled"] else 0
     if not r["url_set"]:
         return "GPU rig: a token is set but rig.url is not (voice.yaml)", 1 if r["enabled"] else 0
-    state = "on" if r["enabled"] else "off (rig.enabled is false)"
+    state = "on"
     if r.get("health") is None:
         return f"GPU rig{where}: {state}; not reachable ({r.get('detail', 'no answer')}): this computer speaks", 0
     if r.get("ready") == 401:
