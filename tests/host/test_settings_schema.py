@@ -49,7 +49,7 @@ def test_every_environment_variable_the_code_reads_is_in_the_schema():
     # not settings: process plumbing, other products' variables, test switches, deprecated seams
     plumbing = {"DISPATCH_BACKEND", "DISPATCH_EXTENSIONS", "DISPATCH_VOICE_PKG", "LOCAL_CHAT_DATA_DIR",
                 "DISPATCH_VOICE_TEST_HARD_EXIT", "DISPATCH_VOICE_REQUIRE_FFMPEG", "DISPATCH_MIRROR",
-                "DISPATCH_VOICE_PREWARM_DONE", "DISPATCH_SPEECH_MODELS_ROOT",
+                "DISPATCH_VOICE_PREWARM_DONE", "DISPATCH_SPEECH_MODELS_ROOT", "DISPATCH_VOICE_LEGACY_TOKEN_FILE",
                 "DISPATCH_VOICE_KOKORO_DIR", "DISPATCH_VOICE_KOKORO_MODEL"}   # read from a unit file for the doctor
     pat = re.compile(r"\b(DISPATCH_[A-Z0-9_]+|SPEECHFORGE_[A-Z0-9_]+|MINIMAX_[A-Z0-9_]+)\b")
     seen: dict[str, str] = {}
