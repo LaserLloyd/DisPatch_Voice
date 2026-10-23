@@ -347,3 +347,21 @@ def test_standalone_page_answers_only_its_own_loopback_host(tmp_path):
     r = c.get("/voices", headers={"host": "evil.example:8769"})
     assert r.status_code == 421
     assert c.get("/voices/someone/files/reference.wav", headers={"host": "evil.example"}).status_code == 421
+
+
+def test_doctor_does_not_call_a_plugin_loaded_through_the_environment_off(env, monkeypatch, capsys):
+    """An installed plugin that DISPATCH_VOICE_EXTENSIONS loads by its ``module:setup`` target
+    is on: the doctor names it as loaded and does not list it as "installed but off"."""
+    import sys
+    import types
+    from dispatch_voice.host import providers
+    mod = types.ModuleType("dispatch_voice_fakeplug")
+    mod.setup = lambda api: None
+    monkeypatch.setitem(sys.modules, "dispatch_voice_fakeplug", mod)
+    monkeypatch.setattr(providers, "discover_entry_points", lambda enabled=None, **k: [
+        {"name": "fakeplug", "target": "dispatch_voice_fakeplug:setup", "enabled": False}])
+    monkeypatch.setenv("DISPATCH_VOICE_EXTENSIONS", "dispatch_voice_fakeplug:setup")
+    cli.print_doctor(cli.doctor_report(backend=None, url="http://127.0.0.1:1", check_update=False))
+    out = capsys.readouterr().out
+    assert "dispatch_voice_fakeplug:setup" in out and "FAILED" not in out
+    assert "installed but off" not in out

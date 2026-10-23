@@ -342,6 +342,7 @@
     "plugin_enable": "Enable {name}",
     "plugin_none": "No provider plugins are installed.",
     "plugin_gpl": "Kokoro voices are GPL-3.0 licensed and installed separately.",
+    "plugin_env": "Loaded through the server’s environment (DISPATCH_VOICE_EXTENSIONS), so it is switched there.",
     "plugins_restart": "Restart DisPatch to apply.",
     "health_fix": "Fix: {fix}",
     "models_title": "Speech models",

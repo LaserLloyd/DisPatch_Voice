@@ -346,6 +346,7 @@
     "plugin_enable": "تفعيل {name}",
     "plugin_none": "لا توجد إضافات مزوّدين مثبّتة.",
     "plugin_gpl": "أصوات Kokoro مرخّصة بموجب GPL-3.0 وتُثبَّت بشكل منفصل.",
+    "plugin_env": "مُحمَّلة عبر بيئة الخادم (DISPATCH_VOICE_EXTENSIONS)، لذا تُشغَّل وتُوقَف من هناك.",
     "plugins_restart": "أعد تشغيل DisPatch لتطبيق التغيير.",
     "health_fix": "الحل: {fix}",
     "models_title": "نماذج الصوت",

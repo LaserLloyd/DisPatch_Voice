@@ -343,6 +343,7 @@
     "plugin_enable": "Ativar {name}",
     "plugin_none": "Nenhum plugin de provedor está instalado.",
     "plugin_gpl": "As vozes Kokoro têm licença GPL-3.0 e são instaladas separadamente.",
+    "plugin_env": "Carregado pelo ambiente do servidor (DISPATCH_VOICE_EXTENSIONS), por isso é ligado lá.",
     "plugins_restart": "Reinicie o DisPatch para aplicar.",
     "health_fix": "Solução: {fix}",
     "models_title": "Modelos de voz",

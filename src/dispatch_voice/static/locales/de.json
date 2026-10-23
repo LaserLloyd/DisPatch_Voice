@@ -342,6 +342,7 @@
     "plugin_enable": "{name} aktivieren",
     "plugin_none": "Keine Anbieter-Plugins installiert.",
     "plugin_gpl": "Kokoro-Stimmen stehen unter GPL-3.0 und werden separat installiert.",
+    "plugin_env": "Über die Umgebung des Servers geladen (DISPATCH_VOICE_EXTENSIONS) und dort geschaltet.",
     "plugins_restart": "Zum Anwenden DisPatch neu starten.",
     "health_fix": "Lösung: {fix}",
     "models_title": "Sprachmodelle",

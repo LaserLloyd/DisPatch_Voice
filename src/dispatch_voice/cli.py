@@ -404,7 +404,9 @@ def print_doctor(rep: dict) -> int:
         print("python packages MISSING: " + ", ".join(rep["python_packages_missing"]))
         problems += 1
     p = rep["plugins"]
-    off = [a["name"] for a in rep.get("provider_plugins", []) if not a["enabled"]]
+    # A plugin the environment loaded by its module:setup target is on, whatever its entry point says.
+    off = [a["name"] for a in rep.get("provider_plugins", [])
+           if not a["enabled"] and a.get("target") not in p["loaded"] and a["name"] not in p["loaded"]]
     if off:
         print(f"provider plugins installed but off: {', '.join(off)} (switch them on in Settings > Voice)")
     if p["declared"]:

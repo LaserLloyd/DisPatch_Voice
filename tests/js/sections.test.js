@@ -268,6 +268,25 @@ test('no plugins installed: the list says so', dom, async () => {
   });
 });
 
+test('a plugin loaded through the environment is listed as on, not "none installed"', dom, async () => {
+  await withDom(async () => {
+    const { shell } = fakeShell();
+    const prev = bindShell(shell);
+    try {
+      const host = mount(STATUS({ providers: { ...PROVIDERS, plugins: [
+        { name: 'kokoro', target: 'dispatch_voice_kokoro:setup', enabled: true, loaded: true, source: 'env' }] } }));
+      const box = host.querySelector('#drive-plugins');
+      assert.doesNotMatch(box.textContent, /No provider plugins are installed/);
+      const row = host.querySelector('#drive-plugin-row-kokoro');
+      assert.ok(row, 'the environment-loaded plugin has a row');
+      assert.match(row.textContent, /environment/i);
+      const cb = host.querySelector('#drive-plugin-kokoro');
+      assert.equal(cb.checked, true);
+      assert.equal(cb.disabled, true, 'the environment decides it: no switch to flip here');
+    } finally { bindShell(prev); }
+  });
+});
+
 // ------------------------------------------------------- 3 input and devices --
 
 test('input and devices: one input-mode choice writes the two device switches', dom, async () => {

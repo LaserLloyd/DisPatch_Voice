@@ -997,10 +997,43 @@ def _models_layout(models) -> dict:
         {"family": m["family"], "state": m["state"]} for m in models.plan()]}
 
 
-def _providers_payload(settings: VoiceSettings, _p) -> dict:
+def _plugin_name(target: str) -> str:
+    """``dispatch_voice_kokoro:setup`` -> ``kokoro``: the name a module target goes by."""
+    mod = target.partition(":")[0].split(".")[0]
+    return (mod[len("dispatch_voice_"):] if mod.startswith("dispatch_voice_") else mod).replace("_", "-") or target
+
+
+def _plugin_rows(settings: VoiceSettings, _p) -> list[dict]:
+    """The Provider plugins row: the installed entry-point plugins (switchable) plus every plugin
+    the server LOADED from the environment (a ``module:setup`` target in DISPATCH_VOICE_EXTENSIONS,
+    e.g. a plugin added with ``--with-editable`` that declares no entry point). Each row says
+    whether it loaded; an environment-loaded one carries ``source: "env"`` (the switch is not ours)."""
     enabled = {t for t in settings.extensions if ":" not in t}
+    rows = [dict(r) for r in _p.discover_entry_points(enabled)]
+    loaded = [t for t in _LOADED if t != "dispatch-voice"]
+    from_env = settings.sources.get("extensions", {}).get("source") == "env"
+    by_name = {r["name"]: r for r in rows}
+    for r in rows:
+        r["loaded"] = r["name"] in loaded or r.get("target") in loaded
+        if r["loaded"] and from_env:
+            r["enabled"] = True
+            r["source"] = "env"
+    for t in loaded:
+        if t in by_name or any(r.get("target") == t for r in rows):
+            continue
+        name = _plugin_name(t)
+        if name in by_name:
+            by_name[name].update({"enabled": True, "loaded": True, "source": "env"})
+            continue
+        row = {"name": name, "target": t, "enabled": True, "loaded": True, "source": "env"}
+        rows.append(row)
+        by_name[name] = row
+    return rows
+
+
+def _providers_payload(settings: VoiceSettings, _p) -> dict:
     return {"providers": _p.REGISTRY.catalog(settings),
-            "plugins": _p.discover_entry_points(enabled),
+            "plugins": _plugin_rows(settings, _p),
             "selected": {"stt": "rig" if settings.rig.enabled else settings.stt_provider,
                          "tts": "rig" if settings.rig.enabled else _tts_selected(settings),
                          "vad": "cpu"}}

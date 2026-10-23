@@ -424,3 +424,29 @@ def test_tts_provider_keeps_the_hq_address_while_switched_to_cpu(voice_app):
     c.patch("/api/voice/settings", json={"tts_provider": "openai"})
     assert c.get("/api/voice/providers").json()["selected"]["tts"] == "openai"
     assert c.patch("/api/voice/settings", json={"tts_provider": "nonesuch"}).status_code == 422
+
+
+def test_a_plugin_loaded_through_the_environment_is_listed_as_on(voice_app, monkeypatch):
+    """A provider plugin loaded from DISPATCH_VOICE_EXTENSIONS (a ``module:setup`` target, e.g.
+    the Kokoro plugin through a ``--with-editable`` overlay that declares no entry point) is a
+    plugin the server runs: the Provider plugins row lists it as on, from the environment, not
+    "No provider plugins are installed"."""
+    from dispatch_voice.host import providers as _p
+    c, _ = voice_app
+    monkeypatch.setattr(_p, "discover_entry_points", lambda enabled=None, **k: [])
+    monkeypatch.setenv("DISPATCH_VOICE_EXTENSIONS", "dispatch_voice_kokoro:setup")
+    monkeypatch.setattr(routes, "_LOADED", ["dispatch-voice", "dispatch_voice_kokoro:setup"])
+    for body in (c.get("/api/voice/providers").json(), c.get("/api/voice/status").json()["providers"]):
+        rows = {p["name"]: p for p in body["plugins"]}
+        assert set(rows) == {"kokoro"}
+        assert rows["kokoro"]["enabled"] is True and rows["kokoro"]["loaded"] is True
+        assert rows["kokoro"]["source"] == "env"
+    # An installed entry-point plugin keeps its own row (switchable), now with whether it loaded.
+    monkeypatch.setattr(_p, "discover_entry_points", lambda enabled=None, **k: [
+        {"name": "kokoro", "target": "dispatch_voice_kokoro:setup", "enabled": False}])
+    rows = {p["name"]: p for p in c.get("/api/voice/providers").json()["plugins"]}
+    assert set(rows) == {"kokoro"} and rows["kokoro"]["loaded"] is True and rows["kokoro"]["source"] == "env"
+    monkeypatch.delenv("DISPATCH_VOICE_EXTENSIONS")
+    monkeypatch.setattr(routes, "_LOADED", ["dispatch-voice"])
+    rows = {p["name"]: p for p in c.get("/api/voice/providers").json()["plugins"]}
+    assert rows["kokoro"]["loaded"] is False and rows["kokoro"].get("source") != "env"

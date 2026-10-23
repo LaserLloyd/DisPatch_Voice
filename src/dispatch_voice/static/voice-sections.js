@@ -290,6 +290,16 @@ export function pluginsRow(H, st, save, ctx) {
   }
   const note = el('p', { class: 'dev-row-hint drive-plugins-restart', text: t('drive.plugins_restart'), hidden: '' });
   for (const p of list) {
+    if (p.source === 'env') {
+      // Loaded from the server's environment (DISPATCH_VOICE_EXTENSIONS): on, and not ours to switch.
+      const cb = H.switchInput(true, t('drive.plugin_enable', { name: p.name }), () => {});
+      cb.checked = true;
+      cb.disabled = true;
+      cb.id = `drive-plugin-${p.name}`;
+      const hint = [t('drive.plugin_env'), p.name === 'kokoro' ? t('drive.plugin_gpl') : ''].filter(Boolean).join(' ');
+      box.append(H.row(p.name, hint, [cb], { id: `drive-plugin-row-${p.name}` }));
+      continue;
+    }
     const on = enabled.has(p.name) || !!p.enabled;
     const cb = H.switchInput(on, t('drive.plugin_enable', { name: p.name }), async (v) => {
       cb.disabled = true;
