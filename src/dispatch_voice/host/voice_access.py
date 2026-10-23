@@ -343,7 +343,7 @@ def profile_count(profile_id: str) -> dict:
 def profile_purge(profile_id: str) -> int:
     """Delete every clone the profile owns: its directory, the rig's copy of the conditionals,
     the acknowledgement lines. Returns how many went. Reset does not call this."""
-    from . import acks, profiles_bridge
+    from . import profiles_bridge
     ids = owned_ids(profile_id)
     if not ids:
         return 0
@@ -351,11 +351,7 @@ def profile_purge(profile_id: str) -> int:
     done = 0
     for pid in ids:
         try:
-            acks.forget(pid)
-        except Exception:
-            log.exception("voice: dropping the acknowledgement lines of a removed voice failed")
-        try:
-            st.delete(pid)            # directory + rig conditionals (rig.delete_voice_async)
+            st.delete(pid)            # ack lines, directory, rig conditionals (rig.delete_voice_async)
             done += 1
         except Exception:
             log.exception("voice: deleting a removed profile's voice failed")

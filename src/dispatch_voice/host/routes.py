@@ -742,15 +742,18 @@ def build_router() -> APIRouter:
             _LAB_LOCK.release()
 
     @r.post("/acks/rebuild")
-    async def voice_acks_rebuild(voice: str = ""):
+    async def voice_acks_rebuild(request: Request, voice: str = ""):
         """Re-render one voice's acknowledgement lines (the Voice lab's Rebuild)."""
-        from . import acks
         key = voice.strip()
         if key and _vc_mod().clean_voice_id(key) is None:
             raise HTTPException(422, "Unknown voice")
+        caller = voice_access.caller_of(request)
+        if key and key != "default" and not voice_access.can_use(key, caller):
+            raise HTTPException(404, "No acknowledgement lines are kept for that voice")   # another profile's clone
+        from . import acks
         if not await asyncio.to_thread(acks.rebuild, key):
             raise HTTPException(404, "No acknowledgement lines are kept for that voice")
-        return {"ok": True, "acks": await asyncio.to_thread(acks.status)}
+        return {"ok": True, "acks": await asyncio.to_thread(_acks_for, caller)}
 
     return r
 
@@ -820,6 +823,27 @@ def effective_bots(settings: VoiceSettings, request=None) -> dict:
     return out
 
 
+def _acks_for(caller) -> dict:
+    """``acks.status()`` (keyed by voice id, with the voice's name) cut to the voices this caller
+    may use: a personal clone's row is its owner's alone, as in the picker (DisPatch 4.0)."""
+    from . import acks
+    rows = acks.status()
+    if caller is voice_access.LEGACY:
+        return rows
+    stock = _stock_id()
+
+    def keep(k: str) -> bool:
+        if k == "default" or k.startswith("builtin:") or (stock and k == stock):
+            return True
+        # A cloned voice: only while it exists (a voice that is gone has no owner left to ask).
+        try:
+            exists = (context.paths().voices_dir / k / "profile.json").is_file()
+        except Exception:
+            exists = False
+        return exists and voice_access.can_use(k, caller)
+    return {k: v for k, v in rows.items() if keep(k)}
+
+
 def _admin_view():
     """The voices the Admin-only settings routes list: household voices only on a host that
     knows profiles (the Lab and default pickers never offer a personal clone), all otherwise."""
@@ -878,8 +902,7 @@ async def status_payload(settings: VoiceSettings, request=None) -> dict:
     # DisPatch 4.0 and later (profiles, no locked devices): the pane words its hints for it.
     st["host_profiles"] = voice_access.tenant_mode()
     st["assets_version_at_setup"] = ASSETS_VERSION
-    from . import acks
-    st["acks"] = await asyncio.to_thread(acks.status)
+    st["acks"] = await asyncio.to_thread(_acks_for, caller)
     st["bots"] = effective_bots(settings, request=request)
     from . import health as _health
     from . import models as _models

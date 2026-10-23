@@ -352,6 +352,46 @@ def test_locked_voice_is_inert_in_status_on_a_4_0_host(on):
     assert "locked_voice" not in on.client.get("/api/voice/status").json()["bots"]["sage"]
 
 
+def test_status_acks_never_name_another_profiles_clone(on, monkeypatch):
+    """``/api/voice/status.acks`` is keyed by voice id with the voice's name: a personal clone's
+    row (it appears once its owner has talked with it) is the owner's alone, like the picker."""
+    from dispatch_voice.host import acks
+    rows = {k: {"ready": 1, "total": 2, "failed": 0, "name": k.upper()}
+            for k in ("default", "hh", "a-mine", "b-mine", "adm-mine", "builtin:af_heart", "gone-1")}
+    monkeypatch.setattr(acks, "status", lambda: {k: dict(v) for k, v in rows.items()})
+    as_(on, CALLER_A)
+    assert set(on.client.get("/api/voice/status").json()["acks"]) == {"default", "hh", "a-mine", "builtin:af_heart"}
+    as_(on, CALLER_ADMIN)
+    assert set(on.client.get("/api/voice/status").json()["acks"]) == {"default", "hh", "adm-mine", "builtin:af_heart"}
+    as_(on, None)
+    assert set(on.client.get("/api/voice/status").json()["acks"]) == {"default", "hh", "builtin:af_heart"}
+
+
+def test_deleting_a_clone_drops_its_acknowledgement_lines(on, monkeypatch):
+    """A deleted clone's ack row (named) must not outlive it: with no profile.json left it would
+    read as a household voice and show its name to every profile."""
+    from dispatch_voice.host import acks
+    forgot = []
+    monkeypatch.setattr(acks, "forget", lambda v: forgot.append(v))
+    as_(on, CALLER_A)
+    assert on.client.delete("/api/voice/profiles/a-mine").status_code == 200
+    assert forgot == ["a-mine"]
+
+
+def test_acks_rebuild_of_another_profiles_clone_is_404(on, monkeypatch):
+    """The Voice lab's Rebuild (an Admin) renders with the voice and answers the acks map: never
+    for another profile's clone, and the map it answers is filtered like the status one."""
+    from dispatch_voice.host import acks
+    rebuilt = []
+    monkeypatch.setattr(acks, "rebuild", lambda v: rebuilt.append(v) or True)
+    monkeypatch.setattr(acks, "status", lambda: {"hh": {"ready": 1, "total": 1, "failed": 0, "name": "HH"},
+                                                  "a-mine": {"ready": 1, "total": 1, "failed": 0, "name": "A"}})
+    as_(on, CALLER_ADMIN)
+    assert on.client.post("/api/voice/acks/rebuild", params={"voice": "a-mine"}).status_code == 404
+    r = on.client.post("/api/voice/acks/rebuild", params={"voice": "hh"})
+    assert r.status_code == 200 and set(r.json()["acks"]) == {"hh"} and rebuilt == ["hh"]
+
+
 def test_status_says_whether_the_host_knows_profiles(on):
     """The Settings pane words its hints for the host it runs on (4.0: Settings → Characters and
     My bots, no locked-voice picker); ``host_profiles`` is how it knows."""

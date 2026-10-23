@@ -66,8 +66,13 @@ class _RigAwareStore(LazyStore):
     from the GPU rig (SPEC §8.4 deletion sync) when a rig address and token are set."""
 
     def delete(self, pid: str) -> None:
-        from . import rig
+        from . import acks, rig
         sha = rig.sha_for_delete(store(), pid)
+        store().get(pid)                  # unknown: KeyError before anything is forgotten
+        try:
+            acks.forget(pid)              # its lines and their names go with it (before the folder)
+        except Exception:
+            log.exception("voice: dropping the acknowledgement lines of a deleted voice failed")
         store().delete(pid)
         if sha:
             rig.delete_voice_async(sha)
@@ -302,6 +307,6 @@ def install():
         return None
     # The profile fillers are NOT registered as acknowledgements any more: the
     # session plays the render queue's lines (SPEC §6.2, host/acks.py).
-    log.info("voice: cloned voices mounted at /api/voice/profiles (unlocked tier only)")
+    log.info("voice: cloned voices mounted at /api/voice/profiles")
     st = _RigAwareStore()
     return build_router(st, allow_open=True, ui=False, fillers=False, access=voice_access.Access(st))
