@@ -50,6 +50,27 @@ setting, providers behind one interface, and the first Windows-supported release
 - The default voice and the narrator voice must be household voices (422 otherwise); the household
   pickers in Settings never offer a personal clone.
 
+- **`/api/voice/status` shows addresses and setup detail to Admins only.** On DisPatch 4.0 the status
+  is `use_voice` (every role, the unsigned default profile too); a non-Admin no longer gets the rig
+  host or address check, the server addresses (`config`), the provider catalog, the model layout,
+  install commands (`system`, `plugins.*.suggested`), the environment sources or the health texts
+  (`reason`/`fix`). The call screen and the device settings keep the switch, `ready`, the voices,
+  the bots, the wire and the health states. A host without `ctx.caller` is unchanged.
+- **The acknowledgement lines never name another profile's clone.** `status.acks` and the Voice
+  lab's Rebuild are keyed by voice id with the voice's name; they now list only voices the caller
+  may use, Rebuild of another profile's clone is a 404, and deleting a clone drops its lines (a
+  deleted clone's row used to stay and, with no `profile.json` left, read as a household voice).
+- **Settings › Voice speaks DisPatch 4.0.** The default-voice hint said "Change a bot's voice on the
+  Bots tab": it now points at Voices per character (every host) and, on 4.0, Settings → Characters
+  for household characters and My bots for a profile's own bots; a non-Admin's pane says "an Admin"
+  (there is no Owner role) and, on 4.0, where their own bots' voices are set; the Reactions hint no
+  longer names the Bots tab. The "Voice on locked devices" picker is hidden on a host with profiles.
+  `/api/voice/status.host_profiles` tells the client which host it runs on. Changed strings
+  `drive.voice_users`, `drive.voice_users_none`, `drive.reactions_hint`, `drive.member_hint`,
+  `drive.member_off`; new `drive.voice_users_profiles`, `drive.voice_users_none_profiles`,
+  `drive.my_bots_voice`, `drive.plugin_env` (all eight languages). README and docs say which host
+  does what.
+
 ### Changed (DisPatch 3.0 permissions, 2026-10-19)
 - **Members use voice; they do not administer it.** DisPatch 3.0 lets a Member reach the voice
   user's reads (`/api/voice/status`, `/preview`, `/profiles`) and the call; everything else stays
@@ -83,6 +104,21 @@ setting, providers behind one interface, and the first Windows-supported release
   installed deleted the live rig token (`~/.config/local-chat/speechforge.env`) and the running
   DisPatch fell back to the CPU. Both suites now give every test its own empty `HOME` (a `models`
   test keeps the real one for the downloaded models, with the token file redirected).
+- **Removing the rig token never deletes the old home-folder file.** `rig.clear_token()` removes the
+  credential-store entry and the token file in the add-on's state folder only; the pre-1.6
+  `~/.config/local-chat/speechforge.env` is still read but never deleted from here (unless it is the
+  token file itself, outside DisPatch), because another install on the same machine may use it: a
+  scratch instance's Remove deleted a live install's token. The DELETE response carries
+  `legacy_token_left` and a note to remove it by hand. `DISPATCH_VOICE_LEGACY_TOKEN_FILE` points the
+  old file elsewhere; docs/voice-chat/rig.md says how to isolate a scratch instance (`HOME`,
+  `DISPATCH_DATA_DIR`, the models variables).
+- **`dispatch-voice doctor` leaves a switched-off rig alone.** With `rig.enabled: false` it neither
+  reads the rig token nor probes `/health` and `/ready`; the line says the rig is off.
+- **Provider plugins loaded through the environment are listed.** A plugin that
+  `DISPATCH_VOICE_EXTENSIONS` loads by its `module:setup` target (the Kokoro plugin through a
+  `--with-editable` overlay, which declares no entry point) showed as "No provider plugins are
+  installed"; Settings › Voice now lists it as on, set by the environment, and the doctor no longer
+  calls such a plugin "installed but off".
 
 ### Changed
 - **The host-independent engines are their own package, `forge-voice-core`** (`packages/forge-voice-core/`, import
