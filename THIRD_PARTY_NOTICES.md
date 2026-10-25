@@ -1,6 +1,6 @@
 # Third-party notices
 
-dispatch-voice itself is MIT-licensed (see `LICENSE`). It depends on, downloads,
+dispatch-voice itself is licensed MIT No Attribution (MIT-0, see `LICENSE`). It depends on, downloads,
 or ships the following third-party material. Nothing below is bundled in this
 repository except the stock-voice reference clip noted under "Stock voice clip".
 

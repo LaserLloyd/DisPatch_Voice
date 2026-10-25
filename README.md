@@ -529,3 +529,9 @@ Third-party licences: `THIRD_PARTY_NOTICES.md`.
 - English only (Turbo is English-only).
 - One synthesis at a time per engine instance (CPU-bound).
 - The `watermark` extra pulls CPU torch (~200 MB) plus librosa. Perth imports `pkg_resources`, hence `setuptools<81`.
+
+## License
+
+MIT No Attribution ([MIT-0](LICENSE)). You don't need to credit this project — but if you do, a link back is appreciated.
+Releases up to 1.6.0 were MIT. The speech models and libraries it downloads or depends on keep their own licences; see
+`THIRD_PARTY_NOTICES.md`.

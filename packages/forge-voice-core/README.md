@@ -57,6 +57,7 @@ checklist are in [`docs/HOST_API.md`](docs/HOST_API.md).
 
 ## Licence
 
-MIT. The engines download third-party models on request: Silero VAD (MIT), Smart Turn (BSD-2-Clause),
+MIT No Attribution ([MIT-0](LICENSE)). You don't need to credit this project — but if you do, a link back is
+appreciated. The engines download third-party models on request: Silero VAD (MIT), Smart Turn (BSD-2-Clause),
 Parakeet TDT (CC-BY-4.0, attribution required), Chatterbox-Turbo (MIT). See `THIRD_PARTY_NOTICES.md`
 at the repository root.

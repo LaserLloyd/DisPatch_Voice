@@ -2,7 +2,7 @@
 name = "dispatch-voice"
 version = "1.6.0"
 description = "Voice chat for DisPatch Chat: the DisPatch Voice add-on (local speech, cloned voices, Chatterbox-Turbo ONNX on the CPU)"
-license = "MIT"
+license = "MIT-0"
 requires-python = ">=3.12"
 dependencies = [
     # The host-independent engines (STT, turn detection, TTS, providers, model downloads, the GPU-rig

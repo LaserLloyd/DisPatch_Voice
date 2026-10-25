@@ -289,7 +289,7 @@ OK_MARKER = re.compile(r"(?:#|//|--)\s*scrub-ok\b"
 
 #: The one place a personal name is published ON PURPOSE.
 #:
-#: MIT requires the copyright notice to survive verbatim, and naming a
+#: The LICENSE (MIT-0) carries a copyright notice, and naming a
 #: copyright holder is a deliberate public authorship statement — the opposite
 #: of a leak. The maintainer's legal name is nevertheless a local private
 #: identifier everywhere else in the tree, and must stay one: a home path, a
@@ -854,16 +854,16 @@ def selftest() -> int:
         globals()["load_local_rules"] = lambda path=None: real_loader(rules_probe)
         try:
             (root / "LICENSE").write_text(
-                "MIT License\n\nCopyright (c) 2026 Wintermute\n", encoding="utf-8")
+                "MIT No Attribution\n\nCopyright 2026 Wintermute\n", encoding="utf-8")
             _git(root, "add", "LICENSE")
             if any("LICENSE" in p for p in scan(root, staged=True)):
-                failures.append("the LICENCE copyright notice was rejected — MIT "
-                                "requires it verbatim, so this makes attribution "
-                                "impossible")
+                failures.append("the LICENCE copyright notice was rejected — the "
+                                "LICENSE file names its holder on purpose, so this "
+                                "makes the notice impossible")
 
             # ...but the same name anywhere else in the same file is a finding.
             (root / "LICENSE").write_text(
-                "MIT License\n\nCopyright (c) 2026 Someone\n\nContact Wintermute.\n",
+                "MIT No Attribution\n\nCopyright 2026 Someone\n\nContact Wintermute.\n",
                 encoding="utf-8")
             _git(root, "add", "LICENSE")
             if not any("LICENSE" in p for p in scan(root, staged=True)):
@@ -882,7 +882,7 @@ def selftest() -> int:
             # A credential ON the notice line is still a finding: only the
             # LOCAL identifier rules are relaxed there, never the generic ones.
             (root / "LICENSE").write_text(
-                f"MIT License\n\nCopyright (c) 2026 Wintermute, {secret}\n",
+                f"MIT No Attribution\n\nCopyright 2026 Wintermute, {secret}\n",
                 encoding="utf-8")
             _git(root, "add", "LICENSE")
             if not any("LICENSE" in p for p in scan(root, staged=True)):

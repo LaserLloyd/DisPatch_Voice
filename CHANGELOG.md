@@ -4,6 +4,14 @@ All notable changes to DisPatch Voice.
 
 ## [Unreleased]
 
+### Licence
+
+- **Relicensed to MIT No Attribution (MIT-0)**, together with `packages/forge-voice-core`. You can use, copy,
+  change and ship it with no conditions; no copyright notice has to be kept. You don't need to credit this
+  project — but if you do, a link back is appreciated. `LICENSE`, both `pyproject.toml` files (`MIT-0`) and
+  the READMEs say so. Releases up to 1.6.0 were MIT. The third-party models and libraries keep their own
+  licences (`THIRD_PARTY_NOTICES.md`).
+
 ## [1.6.0] — 2026-10-23
 
 Per-profile cloned voices for DisPatch 4.0, one Settings → Voice page with one definition per
