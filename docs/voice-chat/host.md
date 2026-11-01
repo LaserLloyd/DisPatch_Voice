@@ -587,7 +587,9 @@ engine is unchanged and still uses `StreamingSTT` and `TTSEngine`:
 | `openai` | `OpenAISTTProvider`: `POST /v1/audio/transcriptions` (also reaches the session as `stt_provider: openai`) | `HQTTS`: `POST /v1/audio/speech` with the CPU voice as the fallback |
 
 `packages/forge-voice-core/tests/rig/test_providers_contract.py` runs every adapter against the same fake audio and text
-streams (and the SpeechForge fake) through one set of assertions.
+streams (and the SpeechForge fake) through one set of assertions. The `cpu` legs wrap fakes (`FakeStreaming` and
+`FakeEngine`), so they prove the adapter, not a model; the tests that load real models are the `models`-marked ones
+(for example `tests/test_models_rt.py`), which skip themselves in CI because no models are downloaded there.
 
 **Plugins.** A plugin is a package that exposes `setup(api)` in the `dispatch_voice.providers`
 entry-point group:
