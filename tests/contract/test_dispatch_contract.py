@@ -226,6 +226,9 @@ def test_bot_voice_is_validated_by_the_add_on(client):
 
 
 def test_locked_device_is_refused_pre_accept(client):
+    # 3.x: a locked device on an unsafe bot's thread. 4.x has no locked tier: the same cookie-less
+    # socket is a signed-out caller (or the default profile on somebody else's thread) and is
+    # closed pre-accept with the same 1008, so the assertion holds on both.
     c, _, auth = client
     unlock(c, auth)                      # the thread itself needs the unlocked tier
     tid = thread_for(c)
