@@ -289,6 +289,31 @@ How the two get installed (every route installs both; no step to remember):
 | Native, uv | `git pull` in the Voice clone, then the `uv pip install` line again; restart DisPatch | `uv pip uninstall --python .venv/bin/python dispatch-voice forge-voice-core`. Data stays in DisPatch's data folder |
 | Overlay | `git -C <release-dir> checkout --detach <tag>`, run the warm-up `import` line online, restart | Drop `--with-editable` from the start line |
 
+#### Removing the add-on and its data
+
+Uninstalling the package leaves everything below in place. `<data>` is DisPatch's data folder
+(`DISPATCH_DATA_DIR`, else the legacy `LOCAL_CHAT_DATA_DIR`, else `$XDG_DATA_HOME/local-chat`, which is
+`~/.local/share/local-chat` when `XDG_DATA_HOME` is unset; in a container it is the data volume). The legacy
+`local-chat` names (that subfolder, `LOCAL_CHAT_DATA_DIR`, the old token file) are kept on purpose: the host
+application owns that folder, and renaming it would strand an existing install's models, voices and `voice.yaml`.
+
+| What | Where | Remove it |
+| --- | --- | --- |
+| Speech models (Parakeet, VAD, Smart Turn, Chatterbox) | `<data>/models/`, or the folder `DISPATCH_SPEECH_MODELS` names | Delete the folder |
+| Older model folders, if you ever ran a pre-3.0 install | `<data>/speech-models/`, `$XDG_DATA_HOME/dispatch-voice/models` (default `~/.local/share/dispatch-voice/models`) | Delete them |
+| Cloned voices | `<data>/voices/` | Delete the folder (this is the only copy of your recordings and profiles) |
+| Settings and per-character behaviour | `<data>/voice.yaml` | Delete the file |
+| Acknowledgement overrides | `<data>/voice-acks.yaml` | Delete the file |
+| Rendered acknowledgement audio | `<data>/voice-cache/` | Delete the folder; it is rebuilt on demand |
+| Add-on state folder | `<data>/ext/voice/` | Delete the folder; it holds the rig-token file `speechforge.env` and, when DisPatch keeps its credentials in a file, `secrets.json` |
+| Rig token, credential store | the entry `speechforge_token` in DisPatch's credential store (OS keyring, or the file above) | **Settings, Voice, Rig token, Remove** (or `DELETE /api/voice/rig/token`) |
+| Rig token, pre-1.6 file | `~/.config/local-chat/speechforge.env` | Delete it by hand: the add-on reads it but never deletes it, because another DisPatch on the same machine may use it |
+
+For the container install, run those deletions inside the data volume (for example
+`docker compose exec <service> rm -rf /data/voices`, using the path your volume is mounted at), or remove the
+volume to drop everything at once. For the uv and overlay installs the paths above are on the host. Stop DisPatch
+first.
+
 ### Details
 
 DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatch version](#which-dispatch-version)). Python 3.12 or later. Linux and Windows are tested in CI (the suite runs on both); macOS is expected to work but is not tested. Details in [docs/voice-chat/index.md](docs/voice-chat/index.md).
