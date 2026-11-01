@@ -26,10 +26,10 @@ const ROWS = () => [
   row('house-1', 'House voice', { household: true, mine: false, can_manage: false, can_download: false }),
 ];
 
-async function inPane(perms, voices, fn, routes = {}) {
+async function inPane(perms, voices, fn, routes = {}, { noProfiles = false } = {}) {
   const fetch = fakeFetch({
     'GET /api/voice/profiles': { voices, default: null },
-    'GET /api/voice/status': { builtin_voices: [], stock_voice: null },
+    'GET /api/voice/status': { builtin_voices: [], stock_voice: null, host_profiles: !!perms && !noProfiles },
     ...routes,
   });
   return withDom(async () => {
@@ -139,6 +139,24 @@ test('the household checkbox exists for an Admin only', dom, async () => {
       assert.equal(!!host.querySelector('.voices-household-opt'), expected);
     }, { 'POST /api/voice/profiles/analyse': { ok: true, checks: [] } });
   }
+});
+
+test('a DisPatch 3.x Admin (no voice_lab permission) still gets the add form, without the household option', dom, async () => {
+  const admin3 = ADMIN.filter((p) => p !== 'voice_lab');
+  await inPane(admin3, [], async (host) => {
+    assert.ok(host.querySelector('#voices-add'), 'the Add-voice section stays');
+    const input = host.querySelector('#voices-add input[type=file]');
+    Object.defineProperty(input, 'files', { value: [new Blob([new Uint8Array(10)], { type: 'audio/wav' })] });
+    input.dispatchEvent(new Event('change'));
+    await settle(15);
+    assert.equal(host.querySelector('.voices-household-opt'), null, 'no profiles on this host: no household option');
+  }, { 'POST /api/voice/profiles/analyse': { ok: true, checks: [] } }, { noProfiles: true });
+});
+
+test('on a profiles host an Admin without voice_lab gets no add form', dom, async () => {
+  await inPane(ADMIN.filter((p) => p !== 'voice_lab'), [], async (host) => {
+    assert.equal(host.querySelector('#voices-add'), null);
+  });
 });
 
 test('rename and delete go to the server for an own clone', dom, async () => {

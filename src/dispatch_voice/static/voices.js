@@ -104,7 +104,11 @@ export function createVoicesPane(pane, ctx) {
   // `ctx.can(perm)`: the shell's permission check (DisPatch 3.0+). Absent: the old world, all allowed.
   const can = typeof ctx.can === 'function' ? (perm) => !!ctx.can(perm) : () => true;
   const isAdmin = can('manage_plugins');
-  const mayClone = can('voice_lab');
+  // DisPatch 3.x has no `voice_lab` permission (an Admin holds `manage_plugins` and clones); 4.x does.
+  // Until the status says which host this is, an Admin is offered the form; refresh() takes it
+  // away again on a profiles host where the caller lacks `voice_lab`.
+  let mayClone = can('voice_lab') || isAdmin;
+  let hostProfiles = false;
   let host = null;
   let pollTimer = null;
   let recorder = null;
@@ -169,7 +173,7 @@ export function createVoicesPane(pane, ctx) {
       el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', id: 'voices-list-title', text: t('voices.yours') }), listBody]),
       // The built-in voices and the default are server-wide: the Admin's.
       isAdmin ? el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', text: t('voices.builtin') }), builtinBody]) : null,
-      mayClone ? el('section', { class: 'dev-group' }, [el('h3', { class: 'dev-group-title', text: t('voices.add') }), addBody]) : null,
+      mayClone ? el('section', { class: 'dev-group', id: 'voices-add-section' }, [el('h3', { class: 'dev-group-title', text: t('voices.add') }), addBody]) : null,
       engine,
     ].filter(Boolean));
     if (mayClone) renderAdd(addBody);
@@ -191,6 +195,12 @@ export function createVoicesPane(pane, ctx) {
       return;
     }
     if (!host) return;
+    hostProfiles = !!(st && st.host_profiles === true);
+    if (hostProfiles && mayClone && !can('voice_lab')) {
+      mayClone = false;
+      const sec = host.querySelector('#voices-add-section');
+      if (sec) sec.remove();
+    }
     const defaultVoice = (st && st.default_voice) || (data.default ? data.default : '');
     const stockId = (st && st.stock_voice) || null;
     const voices = data.voices || [];
@@ -432,7 +442,7 @@ export function createVoicesPane(pane, ctx) {
       const consent = el('fieldset', { class: 'voices-consent' }, [el('legend', { text: t('voices.consent') })]);
       const note = el('input', { type: 'text', class: 'voices-name', maxlength: '300', autocomplete: 'off', placeholder: t('voices.note_ph'), 'aria-label': t('voices.note') });
       // Admins only: a household voice is everyone's; anyone else's clone is private to them.
-      const hh = isAdmin ? el('input', { type: 'checkbox', class: 'voices-household-opt' }) : null;
+      const hh = isAdmin && hostProfiles ? el('input', { type: 'checkbox', class: 'voices-household-opt' }) : null;
       const hhRow = hh ? el('label', { class: 'voices-consent-opt voices-household-row' }, [hh, el('span', { text: t('voices.household_opt') })]) : null;
       const build = el('button', { type: 'button', class: 'btn-primary', text: t('voices.build'), disabled: '' });
       const discard = el('button', { type: 'button', class: 'btn-secondary', text: t('voices.discard') });
