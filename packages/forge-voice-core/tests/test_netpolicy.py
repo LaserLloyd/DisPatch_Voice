@@ -135,3 +135,14 @@ def test_numeric_shorthand_for_an_allowed_address_keeps_its_kind():
                                         ("0xa9fea9fe.", "metadata"), ("127.1.", "loopback")])
 def test_a_trailing_dot_does_not_hide_a_numeric_host(host, kind):
     assert N.classify_host(host) == kind
+
+
+def test_require_tls_refuses_plain_ws_off_the_machine(monkeypatch):
+    monkeypatch.setenv("DISPATCH_VOICE_REQUIRE_TLS", "1")
+    v = verdict("ws://192.168.1.2:1236/x")  # scrub-ok: address-range fixture
+    assert not v.ok and v.code == "url_plaintext_refused" and "wss://" in v.fix
+    assert not N.check_url_policy("http://192.168.1.2/x", (), schemes=("http", "https")).ok  # scrub-ok: address-range fixture
+    assert verdict("wss://192.168.1.2:1236/x").ok  # scrub-ok: address-range fixture
+    assert verdict("ws://127.0.0.1:1236/x").ok and verdict("ws://100.64.1.1:1236/x").ok  # scrub-ok: address-range fixture
+    monkeypatch.delenv("DISPATCH_VOICE_REQUIRE_TLS")
+    assert verdict("ws://192.168.1.2:1236/x").ok  # scrub-ok: address-range fixture

@@ -48,9 +48,9 @@ test('cloningState / builtinState read the status plugins block', () => {
   assert.equal(builtinState({ plugins: { builtin: { installed: true, missing: [] } } }), 'ready');
 });
 
-test('install steps are the add-on\'s own (moving v1 tag, fetch-models, doctor); the built-in plugin names itself', () => {
+test('install steps are the add-on\'s own (exact release tag, fetch-models, doctor); the built-in plugin names itself', () => {
   const cmds = INSTALL.cloning.map((s) => s.cmd);
-  assert.match(cmds[0], /dispatch-voice @ git\+https:\/\/github\.com\/LaserLloyd\/DisPatch_Voice@v1"$/);
+  assert.match(cmds[0], /dispatch-voice @ git\+https:\/\/github\.com\/LaserLloyd\/DisPatch_Voice@v1.6.2"$/);
   assert.ok(cmds.includes('.venv/bin/dispatch-voice fetch-models'));
   assert.ok(cmds.includes('.venv/bin/dispatch-voice doctor'));
   for (const c of cmds) assert.doesNotMatch(c, /--group voice|uvicorn|DISPATCH_VOICE_PKG/);
@@ -100,7 +100,7 @@ test('Voice cloning tool: not installed â†’ the add-on\'s commands; installed â†
     await mountVoiceTool(host, 'voice-cloning', {});
     assert.ok(host.querySelector('#vtool-install-group'));
     const code = [...host.querySelectorAll('.voice-cmd code')].map((c) => c.textContent).join('\n');
-    assert.match(code, /DisPatch_Voice@v1"/);
+    assert.match(code, /DisPatch_Voice@v1.6.2"/);
     assert.match(code, /dispatch-voice fetch-models/);
     unmountVoiceTool();
 

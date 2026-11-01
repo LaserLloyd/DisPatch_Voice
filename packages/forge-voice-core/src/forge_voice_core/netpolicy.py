@@ -13,7 +13,8 @@ metadata addresses included):
   ``DISPATCH_VOICE_RIG_ALLOW`` / ``rig.allow``, entries being a host, ``*.suffix`` or a CIDR;
 * plain ``ws://`` / ``http://`` to anything but loopback or the tailnet (the CGNAT range or a
   MagicDNS name: WireGuard encrypts that hop) is allowed with a warning (the audio and the token
-  cross the network unencrypted).
+  cross the network unencrypted), or refused when the administrator sets
+  ``DISPATCH_VOICE_REQUIRE_TLS=1`` (:func:`require_tls`).
 
 A hostname is also resolved just before connecting (:func:`check_resolved`): a name that
 points at a link-local or metadata address is refused (DNS rebinding).
@@ -24,6 +25,7 @@ Pure functions, stdlib only. Every refusal carries a stable ``code`` plus a ``re
 from __future__ import annotations
 
 import ipaddress
+import os
 import re
 import socket
 from dataclasses import dataclass
@@ -137,6 +139,12 @@ def parse_allow(raw) -> tuple[str, ...]:
     return tuple(x.strip() for x in (raw or ()) if isinstance(x, str) and x.strip())
 
 
+def require_tls() -> bool:
+    """Strict mode (``DISPATCH_VOICE_REQUIRE_TLS=1``, an administrator's environment variable, never a
+    UI setting): plain ``ws://`` / ``http://`` off the machine is refused instead of warned about."""
+    return os.environ.get("DISPATCH_VOICE_REQUIRE_TLS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def check_url_policy(url: str, allow: tuple[str, ...] = (), *, schemes: tuple[str, ...] = ("ws", "wss")) -> Verdict:
     """Is ``url`` an address the rig may be at?"""
     if not check_url(url, schemes=schemes):
@@ -171,6 +179,11 @@ def check_url_policy(url: str, allow: tuple[str, ...] = (), *, schemes: tuple[st
         secure = "wss://" if u.scheme == "ws" else "https://"
         warning = (f"This address is not encrypted ({u.scheme}://): your voice and the token cross the network in "
                    f"the clear. Use {secure} or keep it on a VPN or tailnet.")
+    if warning and require_tls():
+        return Verdict(False, kind, "url_plaintext_refused",
+                       f"This server requires an encrypted connection and {u.scheme}:// is not one.",
+                       f"Use {secure} or a loopback or tailnet address, or ask the administrator to unset "
+                       "DISPATCH_VOICE_REQUIRE_TLS.")
     return Verdict(True, kind, "url_warn_plaintext" if warning else "ok", "", "", warning)
 
 

@@ -374,3 +374,56 @@ def test_doctor_does_not_call_a_plugin_loaded_through_the_environment_off(env, m
     out = capsys.readouterr().out
     assert "dispatch_voice_fakeplug:setup" in out and "FAILED" not in out
     assert "installed but off" not in out
+
+
+# ---- 1.6.2: rig-token, plugin, support-bundle (issue #8) -------------------------------------
+
+def test_cli_rig_token_set_status_clear(env, monkeypatch, capsys):
+    monkeypatch.delenv("SPEECHFORGE_TOKEN", raising=False)
+    import io
+    monkeypatch.setattr("sys.stdin", io.StringIO("abcd1234efgh\n"))
+    assert cli.main(["rig-token", "set", "--stdin"]) == 0
+    capsys.readouterr()
+    assert cli.main(["rig-token", "status"]) == 0
+    out = capsys.readouterr().out
+    assert "set" in out and "abcd1234efgh" not in out
+    assert cli.main(["rig-token", "clear"]) == 0
+    assert cli.main(["rig-token", "status"]) == 0
+    assert "not set" in capsys.readouterr().out.splitlines()[-1]
+
+
+def test_cli_rig_token_refuses_a_bad_token_and_an_env_token(env, monkeypatch, capsys):
+    import io
+    monkeypatch.delenv("SPEECHFORGE_TOKEN", raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO("short\n"))
+    assert cli.main(["rig-token", "set", "--stdin"]) == 2
+    monkeypatch.setenv("SPEECHFORGE_TOKEN", "from-the-environment")
+    assert cli.main(["rig-token", "set", "--stdin"]) == 2
+    assert cli.main(["rig-token", "clear"]) == 2
+
+
+def test_cli_plugin_switch(env, monkeypatch, capsys):
+    from dispatch_voice.host import providers
+    monkeypatch.delenv("DISPATCH_VOICE_EXTENSIONS", raising=False)
+    monkeypatch.setattr(providers, "discover_entry_points", lambda enabled=None, **k: [
+        {"name": "demo", "target": "demo:setup", "enabled": enabled is not None and "demo" in enabled}])
+    assert cli.main(["plugin", "list"]) == 0
+    assert "demo\toff" in capsys.readouterr().out
+    assert cli.main(["plugin", "enable", "demo"]) == 0
+    assert cli.main(["plugin", "list"]) == 0
+    assert "demo\ton" in capsys.readouterr().out
+    assert cli.main(["plugin", "disable", "demo"]) == 0
+    assert cli.main(["plugin", "enable", "nope"]) == 2
+    with pytest.raises(SystemExit):
+        cli.main(["plugin", "enable"])
+
+
+def test_cli_support_bundle_is_redacted(env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SPEECHFORGE_TOKEN", "super-secret-token-value")
+    out = tmp_path / "bundle.json"
+    assert cli.main(["support-bundle", "-o", str(out), "--url", "http://127.0.0.1:1"]) == 0
+    text = out.read_text()
+    rep = json.loads(text)
+    assert rep["version"] == __version__ and rep["rig_token"]["set"] is True
+    assert "super-secret-token-value" not in text and str(Path.home()) not in text
+    assert (out.stat().st_mode & 0o077) == 0

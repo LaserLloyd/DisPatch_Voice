@@ -768,7 +768,7 @@ const WHERE = {
 
 /** The add-on's own commands (shell, never translated). Run in DisPatch's backend folder. */
 export const DV_STEPS = Object.freeze({
-  install: { where: 'backend', cmd: `uv pip install --python .venv/bin/python "dispatch-voice @ git+${VOICE_REPO_URL}@v1"` },
+  install: { where: 'backend', cmd: `uv pip install --python .venv/bin/python "dispatch-voice @ git+${VOICE_REPO_URL}@v1.6.2"` },
   models: { where: 'backend', cmd: '.venv/bin/dispatch-voice fetch-models' },
   doctor: { where: 'backend', cmd: '.venv/bin/dispatch-voice doctor' },
 });

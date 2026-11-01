@@ -44,10 +44,10 @@ discovers through an entry point; nothing in DisPatch names it.
    or a bare-metal install into DisPatch's venv:
 
    ```sh
-   uv pip install --python .venv/bin/python "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1"
+   uv pip install --python .venv/bin/python "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1.6.2"
    ```
 
-   (`v1` moves with each 1.x release. A later `uv sync` removes a pip-installed
+   (use the newest release tag from the Releases page. A later `uv sync` removes a pip-installed
    add-on; `dispatch-voice doctor` tells you when that happened.)
 2. **Restart DisPatch once**, so it discovers the add-on. Everything after this is
    Settings → Voice.

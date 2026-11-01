@@ -661,8 +661,8 @@ DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup \
   uvicorn app.main:app --host 0.0.0.0 --port 8765 --ws-ping-timeout 60 --ws-max-size 262144
 ```
 
-Bare metal: `uv pip install --python .venv/bin/python "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1"`
-(the moving `v1` tag follows the latest 1.x release). A later `uv sync` removes
+Bare metal: `uv pip install --python .venv/bin/python "dispatch-voice @ git+https://github.com/LaserLloyd/DisPatch_Voice@v1.6.2"`
+(an exact release tag, so an install never changes under you). A later `uv sync` removes
 a pip-installed add-on; `dispatch-voice doctor --backend <dir>` says so.
 
 ## Tests

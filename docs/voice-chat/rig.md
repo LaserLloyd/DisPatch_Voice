@@ -61,7 +61,10 @@ variables are for servers that are configured as code.
    address or domain is refused unless the administrator lists it in `rig.allow` (or
    `DISPATCH_VOICE_RIG_ALLOW`, comma separated: a host, `*.example.org` or a CIDR). A plain
    `ws://` to anything but this machine is accepted with a warning: use `wss://` or keep the rig
-   on a VPN or tailnet. A name that resolves to a forbidden address is not dialled.
+   on a VPN or tailnet. An administrator who wants a refusal instead sets
+   `DISPATCH_VOICE_REQUIRE_TLS=1` in the server's environment (an environment variable on purpose: the
+   Settings page cannot turn it off); then a plain `ws://` / `http://` address off this machine and off
+   the tailnet is refused when it is saved and when it is used. A name that resolves to a forbidden address is not dialled.
 
    Optional tuning keys (defaults shown; the app keeps them in range). The two deadlines
    come from measurements on a 3090-class rig over a tailnet: final words 115 ms median,

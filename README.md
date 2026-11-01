@@ -174,7 +174,7 @@ uv pip install --python .venv/bin/python ../../DisPatch_Voice
 `doctor --backend .` prints the handshake, the missing models and the system programs (run from `backend/`, `--backend .` points it at DisPatch's own environment). If DisPatch runs as a systemd
 service, restart it instead of starting it by hand (`systemctl --user restart dispatch`). A later `uv sync`
 removes a pip-installed add-on, so repeat the `uv pip install` line after one. To follow releases instead of a
-checkout, install `"dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.1.tar.gz"` (the moving `v1` tag names the newest 1.x release).
+checkout, install `"dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.2.tar.gz"` (each release has its own exact tag; the add-on no longer asks you to follow a moving one).
 
 | Pros | Cons |
 | --- | --- |
@@ -198,7 +198,7 @@ uv run --with-editable ~/DisPatch_Voice-release python -c "import dispatch_voice
 
 Run the `import` line online after every release. `--offline` (added by the launcher), `--ws-max-size 262144`
 and `--ws-ping-timeout 60` are load-bearing; [docs/voice-chat/host.md](docs/voice-chat/host.md#running-dispatch-with-the-add-on)
-says why. Use a release tag such as `v1.6.1` in place of `origin/main`; later releases:
+says why. Use a release tag such as `v1.6.2` in place of `origin/main`; later releases:
 `git -C ~/DisPatch_Voice-release checkout --detach <tag>`.
 
 | Pros | Cons |
@@ -258,9 +258,9 @@ How the two get installed (every route installs both; no step to remember):
   with `Set-Content -Encoding utf8` (PowerShell 5.1 `>` writes UTF-16, which uv cannot read):
 
   ```sh
-  echo "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.1.tar.gz#subdirectory=packages/forge-voice-core" > override.txt
+  echo "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.2.tar.gz#subdirectory=packages/forge-voice-core" > override.txt
   uv pip install --python .venv/bin/python --no-sources --override override.txt \
-      "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.1.tar.gz"
+      "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.2.tar.gz"
   ```
 
 * **DisPatch's Dockerfile with `VOICE=1`** (stage "Optional: voice chat" in the DisPatch_Chat `Dockerfile`) does exactly
@@ -331,6 +331,8 @@ DisPatch 2.2.0 or later (newer DisPatch releases unlock more, see [Which DisPatc
 **One page, no terminal.** With the add-on installed and DisPatch restarted once, everything else is Settings → Voice: switch it on, **Download** the models (about 1.4 GB, with progress and Cancel), pick the speech-to-text and text-to-speech providers, test the microphone. The commands above remain for servers configured as code.
 
 `dispatch-voice doctor` prints the DisPatch handshake, which models are present, the engines and plugins, the switch, and whether the add-on the running server loaded is the one in this checkout (`--unit <name>` reads the voice settings and backend directory of a systemd `--user` unit; `--backend DIR` also checks DisPatch's venv and that the overlay resolves offline; `--check-update` compares with the latest release). `dispatch-voice fetch-models --verify` checks the speech models against their sha256 and that the Chatterbox files are present.
+
+From a terminal you can also do what Settings > Voice does: `dispatch-voice rig-token status|set|clear` (the token is read from a hidden prompt or `--stdin`, never from the command line), `dispatch-voice plugin list|enable|disable NAME`, and `dispatch-voice support-bundle` (one redacted JSON file for a bug report). Set `DISPATCH_VOICE_REQUIRE_TLS=1` in the server's environment to refuse, instead of warn about, a plain `ws://` or `http://` speech address off this machine and off the tailnet.
 
 Optional: the Kokoro built-in voices are a separate, GPL-3.0-or-later plugin package, `dispatch-voice-kokoro`: install it and switch it on under Settings → Voice → *Provider plugins* (it registers through the `dispatch_voice.providers` entry-point group; the old `DISPATCH_VOICE_EXTENSIONS=dispatch_voice_kokoro:setup` still works and is deprecated). Optional: per-bot character in the acknowledgements and spoken status lines for your own tools in `<data>/voice-acks.yaml` ([docs/voice-chat/persona-acks-rp.md](docs/voice-chat/persona-acks-rp.md)).
 

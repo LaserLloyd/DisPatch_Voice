@@ -21,7 +21,7 @@ from . import __version__, audio
 
 REPO_URL = "https://github.com/LaserLloyd/DisPatch_Voice"
 #: The moving tag the absent page installs from; its VERSION file says what the latest 1.x is.
-VERSION_URL = "https://raw.githubusercontent.com/LaserLloyd/DisPatch_Voice/v1/VERSION"
+VERSION_URL = "https://raw.githubusercontent.com/LaserLloyd/DisPatch_Voice/main/VERSION"
 DEFAULT_SERVER = "http://127.0.0.1:8765"
 
 
@@ -212,7 +212,7 @@ def probe_running(url: str) -> dict:
 
 
 def probe_update() -> dict:
-    """Compare this checkout with the repo's VERSION at the moving ``v1`` tag."""
+    """Compare this checkout with the repo's VERSION on ``main`` (the newest release)."""
     import urllib.request
 
     from . import __version__
@@ -541,6 +541,89 @@ def cmd_doctor(a) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# 1.6.2: the things Settings > Voice does, from a terminal (issue #8)
+
+def cmd_rig_token(a) -> int:
+    from .host import rig
+    if a.action == "status":
+        tok = rig.read_token()
+        print(f"rig token: {'set' if tok.value else 'not set'}"
+              + (f" (source: {tok.source})" if tok.value else "")
+              + (f"; problem: {tok.problem}" if tok.problem else ""))
+        return 0
+    if a.action == "clear":
+        if rig.read_token().source == "env":
+            print("rig token: it comes from the SPEECHFORGE_TOKEN environment variable; remove it there",
+                  file=sys.stderr)
+            return 2
+        print("rig token: removed" if rig.clear_token() else "rig token: there was none to remove")
+        return 0
+    if rig.read_token().source == "env":
+        print("rig token: it comes from the SPEECHFORGE_TOKEN environment variable; remove it there to "
+              "manage the token here", file=sys.stderr)
+        return 2
+    if a.stdin:
+        value = sys.stdin.readline()
+    else:
+        import getpass
+        value = getpass.getpass("SpeechForge token (not echoed): ")
+    try:
+        rig.write_token(value)
+    except ValueError as e:
+        print(f"rig token: {e}", file=sys.stderr)
+        return 2
+    print("rig token: saved")
+    return 0
+
+
+def cmd_plugin(a) -> int:
+    from .host import providers
+    from .host.config import load_settings, save_prefs
+    settings = load_settings()
+    enabled = {t for t in settings.extensions if ":" not in t}
+    rows = providers.discover_entry_points(enabled)
+    names = [r["name"] for r in rows]
+    if a.action == "list":
+        for r in rows:
+            print(f"{r['name']}\t{'on' if r.get('enabled') else 'off'}")
+        if not rows:
+            print("no provider plugins are installed")
+        return 0
+    if a.name not in names:
+        print(f"plugin: {a.name!r} is not an installed provider plugin"
+              + (f" (installed: {', '.join(names)})" if names else ""), file=sys.stderr)
+        return 2
+    if settings.sources.get("extensions", {}).get("source") == "env":
+        print("plugin: the list comes from DISPATCH_VOICE_EXTENSIONS on the server; change it there",
+              file=sys.stderr)
+        return 2
+    new = sorted(enabled | {a.name}) if a.action == "enable" else sorted(enabled - {a.name})
+    save_prefs({"extensions": new})
+    print(f"plugin {a.name}: {'on' if a.action == 'enable' else 'off'} (takes effect at the next DisPatch restart)")
+    return 0
+
+
+def cmd_support_bundle(a) -> int:
+    """One redacted JSON file for a bug report: the doctor report, where each setting came from and
+    whether a rig token is set. No token, no key, no voice, no audio; the home folder is shown as ``~``."""
+    from .host import rig
+    from .host.config import load_settings
+    rep = doctor_report(backend=None, url=a.url, check_update=False)
+    settings = load_settings()
+    tok = rig.read_token()
+    rep["settings_sources"] = settings.sources
+    rep["rig_token"] = {"set": bool(tok.value), "source": tok.source, "problem": tok.problem}
+    text = json.dumps(rep, indent=2, default=str)
+    text = text.replace(str(Path.home()), "~")
+    out = Path(a.out)
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text + "\n")
+    print(f"support bundle written to {out} (no token or key in it; read it before you send it)")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="dispatch-voice")
@@ -577,6 +660,21 @@ def main(argv: list[str] | None = None) -> int:
                                    "service really uses")
     dr.add_argument("--json", action="store_true")
     dr.set_defaults(fn=cmd_doctor)
+    rt = sub.add_parser("rig-token", help="status | set | clear the GPU rig token (set reads it from a hidden "
+                                          "prompt, or the first line of stdin with --stdin; never from argv)")
+    rt.add_argument("action", choices=("status", "set", "clear"))
+    rt.add_argument("--stdin", action="store_true")
+    rt.set_defaults(fn=cmd_rig_token)
+    pl = sub.add_parser("plugin", help="list | enable NAME | disable NAME: the provider plugins switch "
+                                       "(Settings > Voice > Provider plugins)")
+    pl.add_argument("action", choices=("list", "enable", "disable"))
+    pl.add_argument("name", nargs="?")
+    pl.set_defaults(fn=cmd_plugin)
+    sb = sub.add_parser("support-bundle", help="write one redacted JSON file (doctor report, setting sources, "
+                                               "whether a rig token is set) for a bug report")
+    sb.add_argument("-o", "--out", default="dispatch-voice-support.json")
+    sb.add_argument("--url", default=DEFAULT_SERVER)
+    sb.set_defaults(fn=cmd_support_bundle)
     s = sub.add_parser("serve", help="run the Voices panel on loopback for testing")
     s.add_argument("--data", help="a voice profile dir of its own (required; never DisPatch's live "
                                   "<data>/voices: this page has no login)")
@@ -588,7 +686,9 @@ def main(argv: list[str] | None = None) -> int:
     say.add_argument("--data")
     a = p.parse_args(argv)
 
-    if a.cmd in ("fetch-models", "doctor", "migrate-models"):
+    if a.cmd == "plugin" and a.action != "list" and not a.name:
+        p.error("plugin enable/disable needs a NAME")
+    if a.cmd in ("fetch-models", "doctor", "migrate-models", "rig-token", "plugin", "support-bundle"):
         return a.fn(a)
 
     if a.cmd == "serve":

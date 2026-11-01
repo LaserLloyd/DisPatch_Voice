@@ -184,12 +184,12 @@ test('voiceTabState: none / forced / off / setup / on', () => {
   assert.equal(voiceTabState({ switch: true, enabled: true, missing: [] }), 'on');
 });
 
-test('setupSteps: the add-on\'s own commands (reinstall at the moving v1 tag, fetch-models, doctor)', () => {
+test('setupSteps: the add-on\'s own commands (reinstall at the exact release tag, fetch-models, doctor)', () => {
   const cmds = (m) => setupSteps(m).map((s) => s.cmd);
   assert.deepEqual(cmds([]), []);
   assert.deepEqual(cmds(['model parakeet-tdt-0.6b-v2']), ['.venv/bin/dispatch-voice fetch-models', '.venv/bin/dispatch-voice doctor']);
   const pkg = cmds(['python package onnx-asr']);
-  assert.equal(pkg[0], `uv pip install --python .venv/bin/python "dispatch-voice @ git+${VOICE_REPO_URL}@v1"`);
+  assert.equal(pkg[0], `uv pip install --python .venv/bin/python "dispatch-voice @ git+${VOICE_REPO_URL}@v1.6.2"`);
   assert.equal(VOICE_REPO_URL, 'https://github.com/LaserLloyd/DisPatch_Voice');
   assert.ok(cmds(['MINIMAX_API_KEY missing']).includes('MINIMAX_API_KEY=…'));
   for (const s of setupSteps(['python package x', 'model y'])) assert.doesNotMatch(s.cmd, /--group voice|app\.voice/);

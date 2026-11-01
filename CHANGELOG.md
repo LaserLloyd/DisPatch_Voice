@@ -2,6 +2,16 @@
 
 All notable changes to DisPatch Voice.
 
+## [1.6.2] — 2026-11-01
+
+### Added
+- **Strict transport mode.** `DISPATCH_VOICE_REQUIRE_TLS=1` makes the server refuse a plain `ws://` or `http://` rig, speech-server or HQ address off this machine and off the tailnet, instead of only warning. It is an environment variable on purpose, so the Settings page cannot switch it off. (#10)
+- **Terminal parity with Settings > Voice.** `dispatch-voice rig-token status|set|clear` (the token is read from a hidden prompt or `--stdin`, never argv), `dispatch-voice plugin list|enable|disable NAME`, and `dispatch-voice support-bundle` (one redacted JSON file for a bug report: the doctor report, where each setting came from, whether a token is set; no token, key or voice). (#8)
+- A script-checkable accessibility floor for Settings > Voice (`tests/js/a11y.test.js`): every control has an accessible name, ids are unique, nothing takes a positive tab index, every aria/label reference resolves. (#9)
+
+### Changed
+- **No moving tag.** Every install line (the Settings page, the README, the docs) names the exact release tag, and `doctor --check-update` reads `VERSION` from `main`. The `v1` tag is no longer part of the install path. (#12)
+
 ## [1.6.1] — 2026-11-01
 
 ### Licence
