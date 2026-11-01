@@ -429,9 +429,10 @@ The table below is generated from the schema (`python -m dispatch_voice.host.set
 | `DISPATCH_VOICE_MODELS` | `chatterbox_models` | - | Chatterbox model folder |
 | `DISPATCH_VOICE_MODEL_REVISION` | `model_revision` | - | Chatterbox model revision |
 | `DISPATCH_DATA_DIR` | `data_dir` | - | Data folder |
-| `XDG_DATA_HOME` | `data_dir` | - | Data folder |
 | `DISPATCH_VOICE_ACK_RENDER` | `ack_render` | True | Pre-render acknowledgement lines |
 <!-- env-table:end -->
+
+`XDG_DATA_HOME` is not an alias for `data_dir`: it only sets the base of the default, `XDG_DATA_HOME/local-chat`, which applies when `DISPATCH_DATA_DIR` is unset.
 
 ## Standalone use
 

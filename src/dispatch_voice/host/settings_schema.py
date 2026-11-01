@@ -265,8 +265,8 @@ SETTINGS: tuple[Setting, ...] = (
        label="Chatterbox model folder", note="legacy name; now a subfolder of the unified models folder"),
     _s("model_revision", "str", "", store="env", env=("DISPATCH_VOICE_MODEL_REVISION",), patchable=False,
        group="models", label="Chatterbox model revision"),
-    _s("data_dir", "str", "", store="env", env=("DISPATCH_DATA_DIR", "XDG_DATA_HOME"), patchable=False,
-       group="models", label="Data folder", note="XDG_DATA_HOME/local-chat when DISPATCH_DATA_DIR is unset"),
+    _s("data_dir", "str", "", store="env", env=("DISPATCH_DATA_DIR",), patchable=False,
+       group="models", label="Data folder", note="the default is XDG_DATA_HOME/local-chat when DISPATCH_DATA_DIR is unset"),
     _s("ack_render", "bool", True, store="env", env=("DISPATCH_VOICE_ACK_RENDER",), group="voices",
        label="Pre-render acknowledgement lines"),
 
