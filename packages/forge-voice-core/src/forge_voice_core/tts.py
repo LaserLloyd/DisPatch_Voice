@@ -234,6 +234,10 @@ class HQTTS(_Base):
         if profile_id:
             body["voice"] = profile_id
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        from . import netpolicy
+        v = netpolicy.check_resolved(self.url)     # at request time: a name can be re-pointed after build
+        if not v.ok:
+            raise OSError(f"the speech server address resolves somewhere that is never used ({v.code})")
         if self.transport is None:
             r = httpx.post(self.url, json=body, timeout=self.timeout_s, headers=headers)
         else:

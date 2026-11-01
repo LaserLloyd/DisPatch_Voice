@@ -376,3 +376,36 @@ def test_register_provider_through_the_extension_api_and_the_catalog():
     finally:
         P.REGISTRY._factories.pop(("tts", "plugin-demo"), None)
     assert set(P.REGISTRY.ids("tts")) == before
+
+
+def _fake_dns(monkeypatch, address):
+    import socket
+    monkeypatch.setattr(socket, "getaddrinfo",
+                        lambda host, port, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))])
+
+
+async def test_openai_stt_refuses_a_name_that_resolves_to_a_metadata_address_at_request_time(monkeypatch):
+    seen: list = []
+    p = P.OpenAISTTProvider("http://stt.internal:8000", "m", transport=openai_transport(seen))
+    _fake_dns(monkeypatch, "169.254.169.254")          # the name is re-pointed AFTER the provider was built
+    with pytest.raises(OSError, match="url_blocked_resolved"):
+        [e async for e in p.transcribe(audio_stream())]
+    with pytest.raises(OSError, match="url_blocked_resolved"):
+        p.transcribe_sync(np.zeros(3200, "<i2"))
+    assert seen == []
+    _fake_dns(monkeypatch, "203.0.113.4")
+    events = [e async for e in p.transcribe(audio_stream())]
+    assert events[0].text == TEXT and len(seen) == 1
+
+
+def test_hq_tts_refuses_a_name_that_resolves_to_a_metadata_address_at_request_time(monkeypatch):
+    from forge_voice_core.tts import HQTTS
+    seen: list = []
+    t = HQTTS("http://tts.internal:8000", "m", 5.0, 24000, transport=openai_transport(seen))
+    _fake_dns(monkeypatch, "169.254.169.254")
+    with pytest.raises(OSError, match="url_blocked_resolved"):
+        t.synth("hello")
+    assert seen == []
+    _fake_dns(monkeypatch, "203.0.113.4")
+    pcm, rate = t.synth("hello")
+    assert rate == 24000 and len(pcm) == 2400 and len(seen) == 1

@@ -359,8 +359,19 @@ class OpenAISTTProvider(STTProvider):
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         return data, {"file": ("speech.wav", wav_bytes(pcm16), "audio/wav")}, headers
 
+    def _check_resolved(self) -> None:
+        """At request time (the engine is cached, so a build-time check would miss DNS rebinding):
+        a NAME that resolves to a link-local / metadata address is refused. Unresolvable is the
+        request's own business."""
+        from . import netpolicy
+        v = netpolicy.check_resolved(self.url, self.allow)
+        if not v.ok:
+            self._last = Health("down", v.reason, v.fix, v.code)
+            raise OSError(f"{v.code}: {v.reason}")
+
     def transcribe_sync(self, pcm16: np.ndarray) -> str:
         import httpx
+        self._check_resolved()
         data, files, headers = self._request_parts(pcm16)
         with httpx.Client(transport=self.transport, timeout=self.timeout_s, trust_env=False) as c:
             r = c.post(self.endpoint, data=data, files=files, headers=headers)
@@ -385,6 +396,7 @@ class OpenAISTTProvider(STTProvider):
         if len(pcm) < MIC_RATE // 10:
             yield Final("", len(pcm) / MIC_RATE)
             return
+        await asyncio.to_thread(self._check_resolved)
         data, files, headers = self._request_parts(pcm)
         async with httpx.AsyncClient(transport=self.transport, timeout=self.timeout_s, trust_env=False) as c:
             r = await c.post(self.endpoint, data=data, files=files, headers=headers)
