@@ -403,9 +403,15 @@ def test_status_shows_addresses_and_setup_detail_to_admins_only(on, monkeypatch)
     from dispatch_voice.host import config as vconfig
     vconfig.save_prefs({"rig": {"enabled": True, "url": "ws://192.0.2.7:1236/v1/realtime"},
                         "stt_url": "http://192.0.2.9:8000/v1"})
+    monkeypatch.setattr(vconfig.VoiceSettings, "missing", lambda self: [
+        "python package onnx-asr", "dispatch-voice models (run `dispatch-voice fetch-models`)",
+        "MINIMAX_API_KEY (DISPATCH_VOICE_TTS=minimax)",
+        "a transcription server address the network policy allows (stt_url: blocked)"])
+    leaks = ("fetch-models", "MINIMAX_API_KEY", "DISPATCH_VOICE", "stt_url", "onnx-asr", "`")
     as_(on, CALLER_ADMIN)
     st = on.client.get("/api/voice/status").json()
     assert st["rig"]["host"] == "192.0.2.7:1236" and "config" in st and st["plugins"]["builtin"].get("suggested")
+    assert any("fetch-models" in m for m in st["missing"]) and any("MINIMAX_API_KEY" in m for m in st["missing"])
     for who in (CALLER_A, CALLER_BASIC, None):
         as_(on, who)
         st = on.client.get("/api/voice/status").json()
@@ -415,6 +421,9 @@ def test_status_shows_addresses_and_setup_detail_to_admins_only(on, monkeypatch)
             assert k not in st, k
         assert set(st["rig"]) <= {"enabled", "active", "configured", "state"}
         assert "suggested" not in st["plugins"]["builtin"]
+        assert st["missing"] and not any(x in m for m in st["missing"] for x in leaks)
+        for part in st["plugins"].values():
+            assert not any(x in str(m) for m in part.get("missing", []) for x in leaks)
         assert all(set(h) <= {"id", "state", "code"} for h in st["health"])
         for k in ("enabled", "ready", "profiles", "bots", "proto", "opus", "default_voice", "health_state"):
             assert k in st, k

@@ -951,10 +951,33 @@ def _redact_for_voice_user(st: dict) -> None:
     st["rig"] = {k: rig_st[k] for k in ("enabled", "active", "configured", "state") if k in rig_st}
     st["health"] = [{k: h.get(k) for k in ("id", "state", "code")} for h in (st.get("health") or [])
                     if isinstance(h, dict)]
+    st["missing"] = _generic_missing(st.get("missing"))
     plugins = st.get("plugins") or {}
     for part in plugins.values():
         if isinstance(part, dict):
             part.pop("suggested", None)
+            if "missing" in part:
+                part["missing"] = _generic_missing(part.get("missing"))
+
+
+def _generic_missing(items) -> list[str]:
+    """``missing`` as short reason words for a non-Admin: the client only needs whether the list is
+    empty (ready or not); the install commands, package names and environment variables stay with
+    the Admin."""
+    out: list[str] = []
+    for x in items if isinstance(items, list) else []:
+        low = str(x).lower()
+        if "package" in low:
+            word = "components"
+        elif "model" in low:
+            word = "voice files"
+        elif "key" in low or "environment" in low or "_" in low:
+            word = "credentials"
+        else:
+            word = "setup"
+        if word not in out:
+            out.append(word)
+    return out
 
 
 def _fetch_status() -> dict:
