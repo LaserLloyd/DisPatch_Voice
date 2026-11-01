@@ -132,6 +132,19 @@ jobs:
       - name: Validate locale bundles
         run: python3 scripts/check-locales.py
 
+  lint:
+    name: Lint (ruff)
+    needs: privacy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - name: ruff check
+        # ruff is not a project dependency (adding it would need a re-lock), so the version is pinned here.
+        # Rules: [tool.ruff.lint] in pyproject.toml. tests/ is not linted yet.
+        run: uvx ruff==0.16.7 check src packages/forge-voice-core/src scripts
+
   installable:
     name: Installable with plain pip
     needs: privacy

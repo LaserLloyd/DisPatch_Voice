@@ -28,7 +28,6 @@ visible before ``rt.speculate: all`` widens the default.
 from __future__ import annotations
 
 import asyncio
-import logging
 import re
 import time
 from collections.abc import Awaitable, Callable

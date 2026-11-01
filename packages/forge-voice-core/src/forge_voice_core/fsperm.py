@@ -17,7 +17,6 @@ warning and goes on, instead of refusing every file (the 1.5.0 behaviour on Wind
 """
 from __future__ import annotations
 
-import logging
 import os
 import stat
 import subprocess

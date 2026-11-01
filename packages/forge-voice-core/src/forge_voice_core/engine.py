@@ -342,7 +342,8 @@ class ChatterboxOnnx:
                 start = 0
             mask = np.ones((1, start + emb.shape[1]), np.int64)
             pos = np.arange(start, start + emb.shape[1], dtype=np.int64)[None]
-            seen = np.zeros(STOP_SPEECH + 1, bool); seen[START_SPEECH] = True
+            seen = np.zeros(STOP_SPEECH + 1, bool)
+            seen[START_SPEECH] = True
             for _ in range(max_new):
                 if stop is not None and stop.is_set():
                     return

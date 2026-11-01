@@ -32,7 +32,6 @@ with its speech probability — that is how the streaming STT gets its audio.
 """
 from __future__ import annotations
 
-import logging
 import threading
 from collections import deque
 from collections.abc import Callable

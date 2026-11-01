@@ -83,3 +83,10 @@ markers = [
     "interrupt_default: the session starts at the shipped interrupt sensitivity (normal), not the 1.4.0 rules (high)",
     "store_not_read: migrate_voice_yaml as this release ships it (voice.yaml is the only settings source)",
 ]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# The classic ruff default set, written down here: ruff 0.16 defaults to a larger set, so this pins the smaller one.
+select = ["E4", "E7", "E9", "F"]

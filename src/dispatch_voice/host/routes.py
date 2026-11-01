@@ -42,16 +42,10 @@ from . import context, netpolicy, voice_access
 from . import settings_schema as _sch
 from .config import (
     BOT_KEYS,
-    GATEWAY_TRAILERS,
     HARD_SILENCE_MAX,
     HARD_SILENCE_MIN,
-    MAX_SESSIONS_MAX,
-    MAX_SESSIONS_MIN,
     MERGE_WINDOW_MAX,
     MERGE_WINDOW_MIN,
-    RP_MODES,
-    SPEED_MAX,
-    SPEED_MIN,
     THINKING_LEVELS,
     VoiceSettings,
     load_settings,

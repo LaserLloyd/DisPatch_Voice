@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import logging
 import threading
 import wave
 from abc import ABC, abstractmethod
@@ -45,7 +44,6 @@ from typing import Any
 
 import numpy as np
 
-from . import settings_schema as schema
 
 from . import _log
 

@@ -39,7 +39,6 @@ own text tokens: 55–100 ms (measured; same tokens for the same seed).
 """
 from __future__ import annotations
 
-import logging
 import queue
 import threading
 import time

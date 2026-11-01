@@ -59,7 +59,7 @@ import importlib.util
 import logging
 import os
 import threading
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from .. import fsperm

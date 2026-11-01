@@ -48,7 +48,6 @@ Engines:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import threading
 from collections.abc import AsyncIterator, Iterable, Iterator
@@ -57,6 +56,7 @@ from typing import Protocol
 import numpy as np
 
 from . import _log
+from .text.speech_text import SentenceSplitter, normalise
 
 log = _log.get()
 
@@ -64,7 +64,6 @@ log = _log.get()
 # Cleaning and sentence splitting: T5's text/speech_text.py (SPEC §6.3)
 # --------------------------------------------------------------------------- #
 
-from .text.speech_text import SentenceSplitter, normalise
 
 __all__ = ["REPLY_ACTIVITY", "SentenceSplitter", "normalise", "speak", "speakable", "to_pcm16"]
 

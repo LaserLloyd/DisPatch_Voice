@@ -26,7 +26,6 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import ctypes.util
-import logging
 import os
 import threading
 

@@ -33,7 +33,6 @@ This module never imports ``dispatch_voice.host``: the connection is handed in
 """
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from collections import deque

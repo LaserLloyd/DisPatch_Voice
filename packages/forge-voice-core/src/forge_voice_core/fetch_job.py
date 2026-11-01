@@ -15,7 +15,6 @@ removes its partial file; finished files stay, so a retry resumes at the next mi
 """
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from collections import deque

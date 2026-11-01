@@ -116,24 +116,24 @@ def _run_match(mine: list[str], said: list[str], j: int) -> int:
     ``ECHO_MAX_GAPS`` interior gaps (one token substituted, or inserted on either side).
     0 unless the run covers ALL of ``mine`` — an unmatched first or last token means the
     user said something of their own."""
-    matched, gaps, k, l = 0, 0, 0, j
+    matched, gaps, k, li = 0, 0, 0, j
     n, m = len(mine), len(said)
-    while k < n and l < m:
-        if mine[k] == said[l]:
-            matched, k, l = matched + 1, k + 1, l + 1
+    while k < n and li < m:
+        if mine[k] == said[li]:
+            matched, k, li = matched + 1, k + 1, li + 1
             continue
         if gaps >= ECHO_MAX_GAPS:
             break
         gaps += 1
-        if k + 1 < n and l + 1 < m and mine[k + 1] == said[l + 1]:
-            k, l = k + 1, l + 1                      # substitution
-        elif k + 1 < n and mine[k + 1] == said[l]:
+        if k + 1 < n and li + 1 < m and mine[k + 1] == said[li + 1]:
+            k, li = k + 1, li + 1                      # substitution
+        elif k + 1 < n and mine[k + 1] == said[li]:
             k += 1                                   # an extra token in mine
-        elif l + 1 < m and mine[k] == said[l + 1]:
-            l += 1                                   # an extra token in said
+        elif li + 1 < m and mine[k] == said[li + 1]:
+            li += 1                                   # an extra token in said
         else:
             break
-    return matched if k == n and mine[-1] == said[l - 1] else 0
+    return matched if k == n and mine[-1] == said[li - 1] else 0
 
 
 def _echo_fraction(words: list[str], recent_said: Sequence[str]) -> float:

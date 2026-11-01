@@ -13,7 +13,6 @@ buffers, ``final`` transcribes. A streaming engine can drop in behind it.
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from pathlib import Path
 
