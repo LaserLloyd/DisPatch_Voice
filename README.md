@@ -174,8 +174,7 @@ uv pip install --python .venv/bin/python ../../DisPatch_Voice
 `doctor --backend .` prints the handshake, the missing models and the system programs (run from `backend/`, `--backend .` points it at DisPatch's own environment). If DisPatch runs as a systemd
 service, restart it instead of starting it by hand (`systemctl --user restart dispatch`). A later `uv sync`
 removes a pip-installed add-on, so repeat the `uv pip install` line after one. To follow releases instead of a
-checkout, install `"dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz"` once that tag
-is published (the `v1` tag still names 1.5.0).
+checkout, install `"dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.1.tar.gz"` (the moving `v1` tag names the newest 1.x release).
 
 | Pros | Cons |
 | --- | --- |
@@ -199,7 +198,7 @@ uv run --with-editable ~/DisPatch_Voice-release python -c "import dispatch_voice
 
 Run the `import` line online after every release. `--offline` (added by the launcher), `--ws-max-size 262144`
 and `--ws-ping-timeout 60` are load-bearing; [docs/voice-chat/host.md](docs/voice-chat/host.md#running-dispatch-with-the-add-on)
-says why. Once a release tag such as `v1.6.0` is published, use it in place of `origin/main`; later releases:
+says why. Use a release tag such as `v1.6.1` in place of `origin/main`; later releases:
 `git -C ~/DisPatch_Voice-release checkout --detach <tag>`.
 
 | Pros | Cons |
@@ -259,9 +258,9 @@ How the two get installed (every route installs both; no step to remember):
   with `Set-Content -Encoding utf8` (PowerShell 5.1 `>` writes UTF-16, which uv cannot read):
 
   ```sh
-  echo "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz#subdirectory=packages/forge-voice-core" > override.txt
+  echo "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.1.tar.gz#subdirectory=packages/forge-voice-core" > override.txt
   uv pip install --python .venv/bin/python --no-sources --override override.txt \
-      "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.0.tar.gz"
+      "dispatch-voice @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.1.tar.gz"
   ```
 
 * **DisPatch's Dockerfile with `VOICE=1`** (stage "Optional: voice chat" in the DisPatch_Chat `Dockerfile`) does exactly

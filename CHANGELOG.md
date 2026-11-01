@@ -2,7 +2,7 @@
 
 All notable changes to DisPatch Voice.
 
-## [Unreleased]
+## [1.6.1] — 2026-11-01
 
 ### Licence
 
@@ -11,6 +11,29 @@ All notable changes to DisPatch Voice.
   project — but if you do, a link back is appreciated. `LICENSE`, both `pyproject.toml` files (`MIT-0`) and
   the READMEs say so. Releases up to 1.6.0 were MIT. The third-party models and libraries keep their own
   licences (`THIRD_PARTY_NOTICES.md`).
+
+### Security
+- A non-Admin's voice status no longer carries install commands, package names or environment-variable names: `missing` (and each plugin's `missing`) is reduced to short reason words, as the 1.6.0 notes already promised.
+- A voice folder whose metadata cannot be read is treated as owned by nobody instead of by the household, so its preview and use are denied.
+- A bot's default-voice lookup for the persona instructions now applies the same owner rule as the voice the call itself speaks with.
+- A numeric host written with a trailing dot (`169.254.169.254.`, `2852039166.`, `0xa9fea9fe.`, `127.1.`) is now classified by its numeric value, not treated as a LAN or public name. (#17)
+- The OpenAI-compatible STT provider and the HQ TTS client now resolve their hostname at request time and refuse a name that resolves to a link-local or metadata address (DNS rebinding), as the rig connection already did. (#16)
+
+### Fixed
+- Changing a voice's owner and name in one PATCH is now all-or-nothing: an invalid name no longer leaves the owner change saved.
+- Deleting a voice clears only that voice's cloned-voice caches, not other voices whose id ends the same way.
+- DisPatch 3.x Admins keep the Add-voice section (that host has no `voice_lab` permission); the Household-voice option appears only on hosts with profiles.
+- `dispatch-voice serve` and `say` print one line and exit 2 when the models folder is missing, with no traceback. (#3)
+- `XDG_DATA_HOME` is no longer listed as an alias of the data folder setting in the settings schema or the README table; it only sets the base of the default `XDG_DATA_HOME/local-chat`. (#5)
+
+### Docs
+- README: a "Removing the add-on and its data" section lists every place the add-on writes and how to remove each, and explains why the legacy `local-chat` names are kept. (#7, #2)
+- The provider contract test description says what the `cpu` legs and the model-backed tests cover; `rig.md` and `host.md` call `~/.config/local-chat/speechforge.env` the pre-1.6 token location. (#11)
+
+### Tooling
+- ruff runs in CI with its default rules; the findings in `src/`, the core package and `scripts/` are cleared. (#4)
+- The locale checker accepts the strings that are the same word in every language (Normal, Bluetooth, the shortcut template). (#6)
+- The release pins its engines: `pyproject.toml` names `refs/tags/v1.6.1` for `forge-voice-core`, so a plain `pip install` of the 1.6.1 archive gets its own engines (between releases it follows `main` again).
 
 ## [1.6.0] — 2026-10-23
 
@@ -247,7 +270,7 @@ setting, providers behind one interface, and the first Windows-supported release
 - **The rig token lives in DisPatch's data folder** (review F7c): the host's credential store
   (`ctx.secrets`) first, else `<data>/ext/voice/speechforge.env`, so it survives a container
   image update and `PUT /api/voice/rig/token` no longer answers 500 under a read-only root. The
-  1.6.0 file `~/.config/local-chat/speechforge.env` and `SPEECHFORGE_TOKEN` are still read.
+  pre-1.6 file `~/.config/local-chat/speechforge.env` and `SPEECHFORGE_TOKEN` are still read.
 
 ### Changed (host wiring, W6b)
 - **One models folder named `models`** (review F8): the default is `<data>/models` with

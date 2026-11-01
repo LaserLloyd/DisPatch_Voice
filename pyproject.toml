@@ -1,6 +1,6 @@
 [project]
 name = "dispatch-voice"
-version = "1.6.0"
+version = "1.6.1"
 description = "Voice chat for DisPatch Chat: the DisPatch Voice add-on (local speech, cloned voices, Chatterbox-Turbo ONNX on the CPU)"
 license = "MIT-0"
 requires-python = ">=3.12"
@@ -13,7 +13,7 @@ dependencies = [
     # commit that gets tagged, so that release always installs its own engines (tests/test_installable.py checks it).
     # `[tool.uv.sources]` below swaps in the in-tree copy for a checkout (`uv sync`, `uv pip install <dir>`).
     # The `speechforge` extra brings `websockets` for the rig client. See README "Install".
-    "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/heads/main.tar.gz#subdirectory=packages/forge-voice-core",
+    "forge-voice-core[speechforge] @ https://github.com/LaserLloyd/DisPatch_Voice/archive/refs/tags/v1.6.1.tar.gz#subdirectory=packages/forge-voice-core",
     "numpy>=1.26",
     "soundfile>=0.12",
     "pyyaml>=6.0",
