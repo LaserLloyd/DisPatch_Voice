@@ -333,6 +333,15 @@ def test_serve_refuses_without_its_own_data_dir(host_env, capsys):
     assert "DisPatch's own voice store" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("cmd", [["say", "p", "hello"], ["serve"]])
+def test_missing_models_is_one_line_and_exit_2(host_env, tmp_path, capsys, cmd):
+    argv = ["--models", str(tmp_path / "no-models")] + cmd + ["--data", str(tmp_path / "data")]
+    assert cli.main(argv) == 2
+    err = capsys.readouterr().err
+    assert "models missing" in err and "dispatch-voice fetch-models" in err and "Traceback" not in err
+    assert len(err.strip().splitlines()) == 1
+
+
 def test_standalone_page_answers_only_its_own_loopback_host(tmp_path):
     """DNS rebinding: a page on a hostile name that resolves to 127.0.0.1 sends its own
     name as Host; it gets 421, even for a GET of a recorded voice."""

@@ -600,7 +600,11 @@ def main(argv: list[str] | None = None) -> int:
     from .engine import ChatterboxOnnx
     from .profiles import ProfileStore
     models = Path(a.models) if a.models else None
-    engine = ChatterboxOnnx(models, a.dtype)
+    try:
+        engine = ChatterboxOnnx(models, a.dtype)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)       # already says what is missing and to run fetch-models
+        return 2
     store = ProfileStore(_data_dir(a.data), engine)
     if a.cmd == "say":
         t = time.perf_counter()
