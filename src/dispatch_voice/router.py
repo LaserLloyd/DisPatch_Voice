@@ -213,6 +213,9 @@ def build_router(store: ProfileStore, dependencies: Sequence[DependsParam] = (),
                 caller = access.writer(request)
                 row = access.row_or_404(pid, caller, "manage")
                 plan = access.plan_patch(row, caller, body)
+                if "name" in plan and not (isinstance(plan["name"], str) and plan["name"].strip()):
+                    # Validate before the owner change is saved, so a bad name leaves nothing half-done.
+                    raise ProfileError("Give the voice a name.")
                 if "owner" in plan:
                     store.set_owner(pid, plan["owner"])
                 if "name" in plan or "default" in plan:

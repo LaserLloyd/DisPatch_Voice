@@ -564,7 +564,13 @@ def build_host(ctx, sock, *, bot_id: str | None, profile_id: str | None = None, 
         pid = profile_id
         if pid is None:
             try:
-                pid = await asyncio.to_thread(registry.resolve_profile, bot_id)
+                if voice_access.declares_voice_access():
+                    # Same owner rule as the voice the session itself picked.
+                    from . import profiles_bridge
+                    owner = voice_access.bot_owner_of(getattr(sock, "bot", None), sock)
+                    pid = await asyncio.to_thread(profiles_bridge.resolve_profile, bot_id, None, owner)
+                else:
+                    pid = await asyncio.to_thread(registry.resolve_profile, bot_id)
             except Exception:
                 pid = None
         settings = load_settings()

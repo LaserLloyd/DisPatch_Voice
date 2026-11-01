@@ -127,6 +127,10 @@ def _can(caller, perm: str) -> bool:
 # Owners on disk (read-only: never creates the voices directory)
 # --------------------------------------------------------------------------- #
 
+#: Owner of a voice folder whose metadata is unreadable: matches no profile and is not household.
+UNKNOWN_OWNER = "\x00unknown"
+
+
 def owner_of_meta(meta: dict) -> str:
     o = meta.get("owner") if isinstance(meta, dict) else None
     return o if isinstance(o, str) and o.strip() and o != HOUSEHOLD else HOUSEHOLD
@@ -136,10 +140,15 @@ def owner_of_voice(voice_id) -> str:
     """The owner of a voice id. Built-in voices, the stock voice and unknown ids are household."""
     if not isinstance(voice_id, str) or not _ID_RE.match(voice_id):
         return HOUSEHOLD
+    folder = context.paths().voices_dir / voice_id
     try:
-        meta = json.loads((context.paths().voices_dir / voice_id / "profile.json").read_text(encoding="utf-8"))
+        meta = json.loads((folder / "profile.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return HOUSEHOLD
+        # No such voice: household (nothing to protect). A voice folder whose metadata cannot be
+        # read is of unknown ownership: nobody matches, so it is never treated as household.
+        return UNKNOWN_OWNER if folder.is_dir() else HOUSEHOLD
+    if not isinstance(meta, dict):
+        return UNKNOWN_OWNER
     return owner_of_meta(meta)
 
 

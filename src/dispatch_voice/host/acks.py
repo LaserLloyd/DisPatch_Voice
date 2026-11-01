@@ -24,6 +24,7 @@ The old per-profile ``fillers/<n>.wav`` are no longer played by the host
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import threading
 from collections.abc import Iterable
@@ -233,8 +234,9 @@ def forget(voice: str) -> None:
     root = context.paths().cache_dir
     try:
         # Cloned-voice tags are ``cb-<model>-<profile>-<created>``; sweep any left on disk.
-        for d in root.glob(f"cb-*-{key}-*"):
-            if d.is_dir():
+        exact = re.compile(rf"cb-[0-9a-f]+-{re.escape(key)}-[0-9.]*")
+        for d in root.glob("cb-*"):
+            if d.is_dir() and exact.fullmatch(d.name):
                 shutil.rmtree(d, ignore_errors=True)
     except OSError:
         pass

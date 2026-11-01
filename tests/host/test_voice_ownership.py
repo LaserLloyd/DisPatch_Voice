@@ -650,3 +650,50 @@ def test_a_caller_that_raises_is_signed_out(world):
     world.ctx.caller = boom
     assert ids(world.client.get("/api/voice/profiles")) == {"hh"}
     assert world.client.delete("/api/voice/profiles/hh").status_code == 403
+
+
+# ---------------------------------------------------------------- hardening round
+
+def test_patch_with_an_invalid_name_changes_nothing(world):
+    as_(world, CALLER_ADMIN)
+    r = world.client.patch("/api/voice/profiles/adm-mine", json={"household": True, "name": "   "})
+    assert r.status_code == 422
+    assert world.st.owner_of("adm-mine") == "admin-1" and world.st.get("adm-mine")["name"] == "adm-mine"
+    r = world.client.patch("/api/voice/profiles/adm-mine", json={"household": True, "name": "Shared"})
+    assert r.status_code == 200 and r.json()["household"] is True and r.json()["name"] == "Shared"
+
+
+def test_forget_removes_only_that_voices_cloned_caches(tmp_path, monkeypatch):
+    from dispatch_voice.host import context as host_context
+    monkeypatch.setattr(host_context, "paths", lambda: SimpleNamespace(cache_dir=tmp_path))
+    monkeypatch.setattr(acks, "current_queue", lambda: None)
+    names = ["cb-deadbeef-key-1700000000", "cb-deadbeef-key-", "cb-deadbeef-a-key-1700000000",
+             "cb-deadbeef-key-extra-1700000000", "cb-deadbeef-other-1"]
+    for n in names:
+        (tmp_path / n).mkdir()
+    acks.forget("key")
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(names[2:])
+    acks.forget("a-key")
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted([names[3], names[4]])
+
+
+def test_a_voice_folder_with_unreadable_metadata_is_not_household(world):
+    (world.st.root / "a-mine" / "profile.json").write_text("{not json", encoding="utf-8")
+    assert voice_access.owner_of_voice("a-mine") == voice_access.UNKNOWN_OWNER
+    assert voice_access.owner_of_voice("no-such-voice") == voice_access.HOUSEHOLD
+    assert not voice_access.voice_access("a-mine", None) and not voice_access.voice_access("a-mine", "prof-a")
+    assert not voice_access.can_use("a-mine", CALLER_A) and not voice_access.can_use("a-mine", CALLER_ADMIN)
+
+
+async def test_build_host_resolves_the_default_voice_with_the_owner_rule(world, monkeypatch):
+    from dispatch_voice.host import persona, ws as ws_mod
+    world.ctx.bots._bots["swift"] = BotView("swift", "Swift", backend="api", scope="personal",
+                                            owner_profile="prof-b", voice="a-mine")
+    world.ctx.add_thread("t-sw", "swift")
+    seen = []
+    real = persona.instructions_for
+    monkeypatch.setattr(persona, "instructions_for",
+                        lambda bot_id, pid, **kw: seen.append(pid) or real(bot_id, pid, **kw))
+    host = ws_mod.build_host(world.ctx, world.ctx.thread_socket("t-sw"), bot_id="swift")
+    await host.submit("t-sw", "hello", {"reply_style": "short", "follow_up": False})
+    assert seen and seen[-1] != "a-mine"          # prof-b's bot may not speak with prof-a's clone
