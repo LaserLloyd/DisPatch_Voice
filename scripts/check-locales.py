@@ -178,17 +178,24 @@ _ATTR_RE = re.compile(
 # Values that are legitimately identical to English in every locale: SI unit
 # templates, engine names, and the voice-recording script, which is English on
 # purpose (the voice engines speak English; voices.rec_hint says so).
+# drive.tip_shortcut is a pure "{label} ({key})" template: no words to translate.
 IDENTICAL_OK = {
     "drive.speed_value", "drive.timing_link", "vtools.seconds",
     "vtools.stt_parakeet", "vtools.stt_moonshine", "voices.script",
+    "drive.tip_shortcut",
 }
 # Values that happen to be spelled the same as English in one language.
 IDENTICAL_OK_LANG = {
+    # interrupt_normal: "Normal" is the ordinary word in de/es/pt. output_bluetooth:
+    # "Bluetooth" is a brand-name proper noun, used as-is in these languages.
     "de": {"drive.group_status", "drive.patience_normal", "drive.reply_normal", "drive.speed_normal",
-           "drive.pause", "voices.name"},
-    "es": {"drive.patience_normal", "drive.reply_normal", "drive.speed_normal", "drive.hangup_min"},
-    "fr": {"drive.pause", "drive.hangup_min"},
-    "pt": {"drive.patience_normal", "drive.reply_normal", "drive.speed_normal", "drive.hangup_min"},
+           "drive.pause", "voices.name", "drive.interrupt_normal", "drive.output_bluetooth"},
+    "es": {"drive.patience_normal", "drive.reply_normal", "drive.speed_normal", "drive.hangup_min",
+           "drive.interrupt_normal", "drive.output_bluetooth"},
+    "fr": {"drive.pause", "drive.hangup_min", "drive.output_bluetooth"},
+    "ja": {"drive.output_bluetooth"},  # Bluetooth: katakana-free proper noun, used as-is
+    "pt": {"drive.patience_normal", "drive.reply_normal", "drive.speed_normal", "drive.hangup_min",
+           "drive.interrupt_normal", "drive.output_bluetooth"},
     "zh": {"drive.you_said"},
 }
 
