@@ -63,7 +63,7 @@ _NUMERIC_V4 = re.compile(r"\A(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){
 
 
 def _addr(host: str):
-    h = host.strip("[]")
+    h = host.strip("[]").rstrip(".")
     try:
         a = ipaddress.ip_address(h)
     except ValueError:

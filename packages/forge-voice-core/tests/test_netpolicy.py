@@ -129,3 +129,9 @@ def test_numeric_shorthand_for_an_allowed_address_keeps_its_kind():
     assert N.classify_host("2130706433") == "loopback"            # 127.0.0.1
     assert N.classify_host("167772161") == "private"              # the first host of the 10/8 range  # scrub-ok: address-range fixture
     assert N.classify_host("rig") == "lan_name" and N.classify_host("cafe") == "lan_name"
+
+
+@pytest.mark.parametrize("host,kind", [("169.254.169.254.", "metadata"), ("2852039166.", "metadata"),
+                                        ("0xa9fea9fe.", "metadata"), ("127.1.", "loopback")])
+def test_a_trailing_dot_does_not_hide_a_numeric_host(host, kind):
+    assert N.classify_host(host) == kind
