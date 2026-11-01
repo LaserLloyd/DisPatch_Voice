@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -426,4 +427,5 @@ def test_cli_support_bundle_is_redacted(env, monkeypatch, tmp_path, capsys):
     rep = json.loads(text)
     assert rep["version"] == __version__ and rep["rig_token"]["set"] is True
     assert "super-secret-token-value" not in text and str(Path.home()) not in text
-    assert (out.stat().st_mode & 0o077) == 0
+    if os.name == "posix":
+        assert (out.stat().st_mode & 0o077) == 0
